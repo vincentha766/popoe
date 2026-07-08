@@ -1,0 +1,92 @@
+# Architecture
+
+popoe factors a training-free 6-DoF pose pipeline into **swappable stages**, each
+a `typing.Protocol` in [src/popoe/interfaces.py](src/popoe/interfaces.py). An
+implementation only needs matching method signatures — no base class, no
+registration — so stages stay decoupled and any one can be re-implemented alone.
+
+## Stages
+
+```
+ObjectModel (CAD) ─┐
+                   ├─ Segmentor ─ QueryEncoder ─┐
+Scene (RGB-D, K) ──┘            TargetEncoder ──┴─ PoseSolver ─ PoseRefiner* ─ PoseScorer ─ Selector ─ (R, t)
+```
+
+| Stage | Protocol | Reference implementation |
+|-------|----------|--------------------------|
+| Segmentation | `Segmentor` | `adapters.PrecomputedSegmentor`; `segmentor_cnos.CNOSSegmentor` |
+| Query features | `QueryEncoder` | `adapters.FreeZeQueryEncoder` (DINOv2 + GeDi) |
+| Target features | `TargetEncoder` | `adapters.FreeZeTargetEncoder` |
+| Fusion | `FeatureFusion` | `fusion.DinoGeDiFusion` |
+| Pose solve | `PoseSolver` | `adapters.RansacSolver`; `solvers.Open3DFeatureRansacSolver` |
+| Refine | `PoseRefiner` | `adapters.ICPRefiner` |
+| Score | `PoseScorer` | `adapters.FreeZeScorer` |
+| Select | `Selector` | `adapters.BestScoreSelector` |
+| Metrics | `Metric` | `metrics.vsd`, `metrics.ar` |
+
+The reference control flow is `interfaces.Pipeline.run`.
+
+## Cross-cutting data (conventions live in one place)
+
+`Scene`, `ObjectModel`, and `CanonFrame` are built once and threaded through
+every stage, carrying the conventions that would otherwise be re-derived per
+module and drift:
+
+- **Units** — mesh vertices in mm; depth-unprojected points and output `t` in
+  **metres** (BOP CSVs convert back to mm at the edge).
+- **Canonicalisation** — `CanonFrame` encodes `pts_canon = (pts - center) * scale`
+  with `center = 0` and `scale = 1 / max_extent` of the query sampled cloud (NOT
+  the BOP diameter): GeDi was trained at ~1 m, so the object is rescaled to ~1 m.
+  The frame is an OUTPUT of query encoding (it depends on the sampled points) and
+  is reused on the target side.
+
+## Design rationale (why these seams)
+
+- **Fusion is its own component.** `[w·L2(PCA(f_vis)), L2(f_geo)]` used to be
+  copy-pasted inside both encoders; extracting `DinoGeDiFusion` makes the whole
+  pure-geometric / pure-visual / fused ablation a one-liner
+  (`DinoGeDiFusion(vis_weight=0.0 | 1.0 | ...)`) and lets query & target **share
+  one fusion instance**, so the visual PCA fit on the query side is transparently
+  reused on the target side.
+- **Scoring is a stage, not baked into the refiner.** `PoseScorer` owns the whole
+  feature-scoring concern (fine re-score + the `s_coarse·s_fine·s_icp`
+  combination). `ICPRefiner` only moves geometry and reports `s_icp`. So a new
+  solver or refiner never re-implements the scoring rule. (Note: the RANSAC-internal
+  inlier score stays inside the solver — that's hypothesis ranking, not final
+  scoring.)
+- **A solver only PROPOSES; the scorer DISPOSES.** See below.
+
+## Pluggability proven — a second PoseSolver
+
+Two independent `PoseSolver` implementations run through the identical
+encoders→refiner→scorer→selector chain, changing one line:
+
+- `adapters.RansacSolver` — hand-rolled feature-aware RANSAC.
+- `solvers.Open3DFeatureRansacSolver` — Open3D's C++ correspondence RANSAC, added
+  as one new file, zero changes elsewhere.
+
+The A/B (see [examples/solver_swap_demo.py](examples/solver_swap_demo.py)) also
+surfaces a real finding and its fix by composition alone. On the near-symmetric
+mustard bottle (YCB-V obj 5, 5 instances), median rotation error:
+
+| solver | median rot | median trans |
+|--------|-----------|--------------|
+| `freeze_ransac` | 23.4° | 17.6 mm |
+| `open3d` (1 shot) | 42.5° (flips: 94°, 152°) | 19.5 mm |
+| `open3d` (`n_restarts=8`) | **23.9°** | 17.9 mm |
+
+One-shot Open3D ranks by geometric inlier fitness and flips on symmetric geometry
+the visual features would disambiguate. Emitting several candidates
+(`n_restarts=8`) and letting the EXISTING feature-aware `PoseScorer` + `Selector`
+pick the feature-best — **no new scoring code** — recovers parity. "Geometry
+proposes, features dispose." A robust backend (TEASER++, MAC) would slot in the
+same way.
+
+## Verification
+
+- **Adapter fidelity** — [examples/pipeline_selfcheck.py](examples/pipeline_selfcheck.py):
+  the adapter chain reproduces the inline `FreeZeV2.estimate_pose` body to ~1e-15
+  on identical arrays (fixed RANSAC seed + deterministic ICP).
+- **Fusion byte-identity & Protocol wiring** — [tests/](tests/), GPU-free
+  (numpy + scikit-learn), run with `pytest`.

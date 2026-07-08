@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "popoe"
+version = "0.1.0"
+description = "Pipeline Of Pose Estimation — a modular, training-free 6-DoF object pose framework"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+authors = [{ name = "vincentha", email = "vincentha766@gmail.com" }]
+keywords = ["6dof", "pose-estimation", "zero-shot", "bop", "point-cloud-registration", "dinov2", "gedi"]
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Image Recognition",
+]
+# The contract + fusion layer only needs these. `import popoe` works with just this.
+dependencies = ["numpy", "scikit-learn"]
+
+[project.optional-dependencies]
+# The reference implementation (feature extraction, RANSAC/ICP, rendering, eval).
+# Note: GeDi (POPOE_GEDI_PATH), nvdiffrast and SAM2 are external and NOT on PyPI —
+# see README "External dependencies".
+reference = ["torch", "torchvision", "open3d", "opencv-python", "trimesh", "Pillow", "scipy"]
+dev = ["pytest"]
+
+[project.urls]
+Documentation = "https://github.com/vincentha766/popoe/blob/main/ARCHITECTURE.md"
+
+[tool.setuptools.packages.find]
+where = ["src"]

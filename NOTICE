@@ -1,0 +1,26 @@
+popoe — Pipeline Of Pose Estimation
+Copyright 2026 popoe contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+--------------------------------------------------------------------------------
+Third-party components
+--------------------------------------------------------------------------------
+popoe is a FRAMEWORK that orchestrates external models and toolkits. The Apache-2.0
+license above covers popoe's own code only. Each upstream component keeps its own
+license, which you must comply with when you install and use it. popoe does NOT
+vendor these; they are optional/external dependencies.
+
+- DINOv2 (visual features)         — Apache-2.0    — github.com/facebookresearch/dinov2
+- SAM 2 (segmentation)             — Apache-2.0    — github.com/facebookresearch/sam2
+- GeDi (geometric descriptor)      — see upstream  — github.com/fabiopoiesi/gedi  (POPOE_GEDI_PATH)
+- dGeDi (distilled GeDi, optional) — see upstream  — github.com/tev-fbk/dGeDi
+- CNOS (segmentation proposals)    — see upstream  — github.com/nv-nguyen/cnos
+- FreeZe / FreeZeV2 (method this reference implementation reproduces)
+                                   — see upstream  — the FreeZe papers/repos
+- BOP toolkit (evaluation)         — MIT-style     — github.com/thodan/bop_toolkit  (POPOE_BOP_TOOLKIT)
+- nvdiffrast (rendering, optional) — NVIDIA Source Code License — github.com/NVlabs/nvdiffrast
+
+Before redistributing or using popoe with these components, verify each upstream
+license (some carry non-commercial or research-only terms). This NOTICE is a
+pointer, not legal advice.
