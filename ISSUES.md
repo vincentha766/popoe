@@ -2,7 +2,30 @@
 
 ## Eval runner does not yet reproduce the formal baseline (2026-07-11)
 
-Status: OPEN — blocks declaring popoe the experiment platform.
+Status: ROOT-CAUSED 2026-07-11, fixes landed; verification run pending.
+
+**Root cause (proven by local replay + PCA-basis analysis): visual-PCA basis
+incoherence between cached target features and re-fitted query features.**
+PCA component signs are arbitrary per fit; re-encoding the query in a later
+run (different surface sample) re-fits the PCA, and when a TOP component
+flips sign, cosine similarity against the cached targets (projected in the
+old basis) is scrambled. Measured on obj8: flipped-variance-mass 29-48% <->
+AR 0.16-0.25; 3-5% <-> AR 0.79-0.85. This also retro-explains v2 (cache-
+build run, self-consistent basis: 0.97) vs v3/v3b (cache-hit runs with
+fresh query PCA: 0.20/0.47). The ICP-iteration hypothesis was disproven
+(50 vs 2000 iters: no significant effect, fixed-query repeats 0.81-0.90).
+
+Fixes:
+1. `fusion.py`: PCA component-sign canonicalisation after fit (largest-
+   |loading| entry positive) — any two fits of one object now produce
+   compatible bases.
+2. `examples/bop_eval.py`: query features + fitted PCA are cached with the
+   target features — one basis per object, persisted.
+3. `adapters.py`: deterministic query sampling (seed=obj_id).
+
+Verification: fresh-cache run (v4) then cache-hit rerun (v4b) must agree
+within RANSAC noise (~±3pt/object) and match the formal subset baseline
+(0.638 AR(2/3) over the 8 hard objects).
 
 8-object YCB-V subset, formal baseline (gedi-repo sweep pipeline) = 0.638
 AR(2/3). popoe `examples/bop_eval.py` runs:

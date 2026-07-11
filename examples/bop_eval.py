@@ -99,13 +99,30 @@ def main():
     selector = BestScoreSelector()
 
     # Encode ALL queries up front (fail fast; PCA snapshots live in meta).
+    # Query features + fitted PCA are CACHED alongside target features: the
+    # cached targets' visual halves are projected in the query PCA basis, so
+    # re-fitting the PCA in a later run silently breaks them (PCA signs are
+    # arbitrary per fit — see fusion.py). One basis per object, persisted.
+    import pickle
     query_cache: dict = {}
     for obj_id in sorted({o for objs in by_img.values() for o in objs}):
         obj = ObjectModel(obj_id=obj_id,
                           mesh_path=str(bop / "models" / f"obj_{obj_id:06d}.ply"),
                           diameter=0.0)
         t0 = time.time()
-        q = q_enc.encode_query(obj)
+        qnpz = os.path.join(args.cache, f"query_{obj_id}.npz") if args.cache else None
+        qpkl = os.path.join(args.cache, f"query_{obj_id}_pca.pkl") if args.cache else None
+        if qnpz and os.path.exists(qnpz) and os.path.exists(qpkl):
+            z = np.load(qnpz)
+            q = PointFeatures(pts=z["pts"], feats=z["feats"],
+                              meta={"pca_vis": pickle.load(open(qpkl, "rb"))})
+            from popoe.interfaces import CanonFrame
+            q.meta["canon_frame"] = CanonFrame.from_points(q.pts)
+        else:
+            q = q_enc.encode_query(obj)
+            if qnpz:
+                np.savez_compressed(qnpz, pts=q.pts, feats=q.feats)
+                pickle.dump(q.meta.get("pca_vis"), open(qpkl, "wb"))
         q.meta["feats_w1"] = q.feats
         extent = float(np.ptp(q.pts, axis=0).max())
         stages = stages_for_object(extent, size_aware=obj_id in merge)

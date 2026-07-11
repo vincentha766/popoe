@@ -74,6 +74,19 @@ class DinoGeDiFusion:
         if self.pca_vis is None and valid.sum() > vis_dim and n_vis > vis_dim:
             self.pca_vis = PCA(n_components=vis_dim)
             self.pca_vis.fit(vis_feats[valid])
+            # Canonicalise component SIGNS (largest-|loading| entry positive).
+            # PCA signs are arbitrary per fit; two fits on slightly different
+            # query samples agree up to sign flips, and a flipped TOP component
+            # scrambles cosine similarity against features projected with the
+            # other fit (measured: flipped-variance-mass 29-48% <-> AR 0.16-0.25
+            # vs 3-5% <-> AR 0.79-0.85 on YCB-V obj8). With canonical signs any
+            # two fits of the same object produce compatible bases, so cached
+            # target features stay valid across runs.
+            comps = self.pca_vis.components_
+            signs = np.sign(comps[np.arange(len(comps)),
+                                  np.abs(comps).argmax(axis=1)])
+            signs[signs == 0] = 1.0
+            self.pca_vis.components_ = comps * signs[:, None]
 
         if self.pca_vis is not None and n_vis == self.pca_vis.n_features_in_:
             vis_reduced = self.pca_vis.transform(vis_feats)
