@@ -67,9 +67,17 @@ class FreeZeQueryEncoder:
         pts = (pts / 1000.0).astype(np.float32)          # BOP mm -> m
         feats, pts_q = self.ex.extract_query_features(obj.mesh_path, torch.from_numpy(pts))
         pts_q = pts_q.numpy() if hasattr(pts_q, "numpy") else np.asarray(pts_q)
+        # The fitted visual PCA is PER OBJECT. It is snapshotted here because the
+        # fusion instance is SHARED with the target encoder: encoding another
+        # object's query overwrites fusion.pca_vis, so any caller that
+        # interleaves objects (e.g. an image-major eval loop) must re-install
+        # this snapshot via FreeZeTargetEncoder.install_pca() before encoding
+        # targets. (Measured failure: texture-reliant objects crater, geometry-
+        # strong ones survive — a quiet cross-object feature corruption.)
         return PointFeatures(
             pts=pts_q, feats=feats,
-            meta={"canon_frame": self.ex.canon_frame, "fusion": self.ex.fusion},
+            meta={"canon_frame": self.ex.canon_frame, "fusion": self.ex.fusion,
+                  "pca_vis": self.ex.fusion.pca_vis},
         )
 
 
@@ -80,6 +88,12 @@ class FreeZeTargetEncoder:
 
     def __init__(self, extractor):
         self.ex = extractor
+
+    def install_pca(self, pca_vis) -> None:
+        """Install a query's visual-PCA snapshot (PointFeatures.meta['pca_vis'])
+        before encoding its targets. Required whenever queries for multiple
+        objects are encoded before their targets — see FreeZeQueryEncoder."""
+        self.ex.fusion.pca_vis = pca_vis
 
     def encode_target(self, scene: Scene, det: Detection,
                       obj: ObjectModel, frame: CanonFrame) -> PointFeatures:
