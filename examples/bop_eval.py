@@ -40,6 +40,7 @@ import cv2
 import numpy as np
 
 from popoe.adapters import BestScoreSelector
+from popoe.cache import StageCache, file_fingerprint, fingerprint
 from popoe.interfaces import ObjectModel, PointFeatures, PoseHypothesis, Scene
 from popoe.recipes import (WEIGHTS, YCBV_MERGE_LABELS, best_encoders,
                            best_segmentor, scale_vis, stages_for_object)
@@ -98,31 +99,46 @@ def main():
     q_enc, t_enc = best_encoders(target_grid=args.grid)
     selector = BestScoreSelector()
 
+    # Config-addressed stage cache: keys fingerprint the encoder configuration
+    # and input CONTENT (mesh bytes, mask pixels) plus — for targets — the
+    # query key whose PCA fit defines their basis. Same config -> automatic
+    # reuse; any knob change invalidates exactly what it should. See
+    # popoe/cache.py for the two invariants this encodes.
+    enc_cfg = {
+        "grid": args.grid,
+        "n_points": 3000,
+        "dino_layer": os.environ.get("POPOE_DINO_LAYER", "ratio0.78"),
+        "two_scale": os.environ.get("POPOE_TWO_SCALE_GEDI", "1"),
+        "crop": os.environ.get("POPOE_TARGET_CROP", "1"),
+        "vis_dim": os.environ.get("POPOE_VIS_DIM", "geo-matched"),
+    }
+    cache = StageCache(args.cache) if args.cache else None
+
     # Encode ALL queries up front (fail fast; PCA snapshots live in meta).
     # Query features + fitted PCA are CACHED alongside target features: the
     # cached targets' visual halves are projected in the query PCA basis, so
     # re-fitting the PCA in a later run silently breaks them (PCA signs are
     # arbitrary per fit — see fusion.py). One basis per object, persisted.
-    import pickle
     query_cache: dict = {}
     for obj_id in sorted({o for objs in by_img.values() for o in objs}):
         obj = ObjectModel(obj_id=obj_id,
                           mesh_path=str(bop / "models" / f"obj_{obj_id:06d}.ply"),
                           diameter=0.0)
         t0 = time.time()
-        qnpz = os.path.join(args.cache, f"query_{obj_id}.npz") if args.cache else None
-        qpkl = os.path.join(args.cache, f"query_{obj_id}_pca.pkl") if args.cache else None
-        if qnpz and os.path.exists(qnpz) and os.path.exists(qpkl):
-            z = np.load(qnpz)
-            q = PointFeatures(pts=z["pts"], feats=z["feats"],
-                              meta={"pca_vis": pickle.load(open(qpkl, "rb"))})
+        qkey = (fingerprint("query", enc_cfg, file_fingerprint(obj.mesh_path),
+                            obj_id) if cache else None)
+        hit = cache.get_arrays("query", qkey) if cache else None
+        if hit is not None:
+            q = PointFeatures(pts=hit["pts"], feats=hit["feats"],
+                              meta={"pca_vis": cache.get_pickle("query", qkey)})
             from popoe.interfaces import CanonFrame
             q.meta["canon_frame"] = CanonFrame.from_points(q.pts)
         else:
             q = q_enc.encode_query(obj)
-            if qnpz:
-                np.savez_compressed(qnpz, pts=q.pts, feats=q.feats)
-                pickle.dump(q.meta.get("pca_vis"), open(qpkl, "wb"))
+            if cache:
+                cache.put_arrays("query", qkey, pts=q.pts, feats=q.feats)
+                cache.put_pickle("query", qkey, q.meta.get("pca_vis"))
+        q.meta["qkey"] = qkey
         q.meta["feats_w1"] = q.feats
         extent = float(np.ptp(q.pts, axis=0).max())
         stages = stages_for_object(extent, size_aware=obj_id in merge)
@@ -141,17 +157,17 @@ def main():
                               "R", "t"])
 
     def encode_target_cached(scene, det, obj, q, ci):
-        key = (f"{scene.scene_id}_{scene.im_id}_{obj.obj_id}_{ci}.npz"
-               if args.cache else None)
-        if key and os.path.exists(os.path.join(args.cache, key)):
-            z = np.load(os.path.join(args.cache, key))
-            return PointFeatures(pts=z["pts"], feats=z["feats"],
-                                 meta={"feats_w1": z["feats"]})
+        key = (fingerprint("target", enc_cfg, scene.scene_id, scene.im_id,
+                           obj.obj_id, det.mask, q.meta["qkey"])
+               if cache else None)
+        hit = cache.get_arrays("target", key) if cache else None
+        if hit is not None:
+            return PointFeatures(pts=hit["pts"], feats=hit["feats"],
+                                 meta={"feats_w1": hit["feats"]})
         t_enc.install_pca(q.meta.get("pca_vis"))
         tgt = t_enc.encode_target(scene, det, obj, q.meta.get("canon_frame"))
-        if len(tgt.pts) >= 4 and key:
-            np.savez_compressed(os.path.join(args.cache, key),
-                                pts=tgt.pts, feats=tgt.feats)
+        if len(tgt.pts) >= 4 and cache:
+            cache.put_arrays("target", key, pts=tgt.pts, feats=tgt.feats)
         tgt.meta["feats_w1"] = tgt.feats
         return tgt
 

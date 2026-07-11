@@ -90,3 +90,25 @@ same way.
   on identical arrays (fixed RANSAC seed + deterministic ICP).
 - **Fusion byte-identity & Protocol wiring** — [tests/](tests/), GPU-free
   (numpy + scikit-learn), run with `pytest`.
+
+## Stage caching (config-addressed)
+
+Because stages are separable, their outputs are cacheable — `popoe.cache`
+keys every stage output by a fingerprint of (stage config, input CONTENT,
+and the keys of any upstream fits it depends on). Same configuration →
+automatic reuse; changing a knob invalidates exactly the entries it should.
+
+Measured payoff (reproduction study): reruns skip GeDi+DINO entirely
+(registration-only iterations), selection rules are swappable with zero GPU
+via the candidate dump, and whole diagnostic investigations run offline
+against cached features.
+
+Two invariants, both learned from real incidents (see ISSUES.md):
+
+1. **Fitted state is part of the key.** The target-feature key includes the
+   QUERY key, because the query's fitted visual PCA defines the basis the
+   target features live in. (Violation: silent cross-run basis mismatch;
+   texture-reliant objects crater.)
+2. **Content addressing, not positional indices.** A mask's identity is a
+   hash of its pixels, never its index in a detection list. (Violation:
+   pooling reorders the list and a *different* mask's features load.)
