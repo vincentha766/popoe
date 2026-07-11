@@ -1,0 +1,75 @@
+"""popoe.recipes — evaluated-best stage configurations, in one place.
+
+``best_recipe`` wires the configuration that produced the strongest measured
+numbers in the reproduction study (YCB-V full BOP AR 0.7668 / LM-O 0.6726 with
+the official CNOS-FastSAM detections):
+
+  * DINOv2 ViT-g intermediate layer (FoundPose depth ratio) + object crop;
+  * two-scale GeDi (30% + 40% of diameter, 64-D geometric);
+  * fused [vis|geo] at PCA-matched dims, visual-weight sweep at selection time;
+  * 32x32 target sampling grid (the "formal" density; 16 is the fast preset);
+  * Open3D feature-matching RANSAC + ICP, thresholds at 3% of object extent
+    (metric space — equivalent to the canonical-space 0.03 used in the study);
+  * ChampionScorer (icp * s_feat_1, size-aware for pooled confusable pairs);
+  * label pooling for confusable same-shape pairs (YCB-V clamps 19/20).
+
+Heavy models load lazily on first use; everything here is metric-space.
+"""
+
+from __future__ import annotations
+
+import os
+
+import numpy as np
+
+# The YCB-V clamp pair — same shape, different size. See segmentor_detections.
+YCBV_MERGE_LABELS = {19: [19, 20], 20: [19, 20]}
+
+# Selection-time visual-weight menu (per-target argmax via ChampionScorer).
+WEIGHTS = (1.0, 0.7, 0.5, 0.3, 0.2)
+
+TAU_FRAC = 0.03          # RANSAC/ICP threshold as a fraction of object extent
+
+
+def scale_vis(feats: np.ndarray, w: float) -> np.ndarray:
+    """Rescale the visual half of [vis | geo] fused features extracted at w=1.
+    Extracting once and rescaling reproduces any weight exactly."""
+    vd = feats.shape[1] // 2
+    out = feats.astype(np.float64).copy()
+    out[:, :vd] *= w
+    return out
+
+
+def best_encoders(device: str = "cuda", target_grid: int = 32):
+    """Shared-model query/target encoders at the formal configuration.
+    Returns (query_encoder, target_encoder). GPU required."""
+    os.environ.setdefault("POPOE_TARGET_GRID", str(target_grid))
+    from popoe.adapters import make_freeze_encoders
+    from popoe.feature_extractor import (
+        QueryFeatureExtractor, TargetFeatureExtractor, load_dinov2, load_gedi)
+    dino = load_dinov2(device)
+    gedi = load_gedi(device)
+    qx = QueryFeatureExtractor(device, dino=dino, gedi=gedi)
+    tx = TargetFeatureExtractor(device, dino=dino, gedi=gedi)
+    return make_freeze_encoders(qx, tx)
+
+
+def best_segmentor(detections_json: str, topk: int = 2,
+                   merge_labels: dict | None = None):
+    from popoe.segmentor_detections import BOPDetectionsSegmentor
+    return BOPDetectionsSegmentor(detections_json, topk=topk,
+                                  merge_labels=merge_labels)
+
+
+def stages_for_object(extent_m: float, size_aware: bool = False,
+                      n_ransac: int = 10000):
+    """Per-object solver/refiner/scorer with thresholds scaled to the object.
+    ``extent_m``: max bounding-box side of the sampled query cloud (metres)."""
+    from popoe.adapters import ICPRefiner
+    from popoe.scoring import ChampionScorer
+    from popoe.solvers import Open3DFeatureRansacSolver
+    tau = TAU_FRAC * extent_m
+    solver = Open3DFeatureRansacSolver(tau_inlier=tau, max_iteration=n_ransac)
+    refiner = ICPRefiner(tau_icp=tau)
+    scorer = ChampionScorer(tau_inlier_frac=TAU_FRAC, size_aware=size_aware)
+    return solver, refiner, scorer

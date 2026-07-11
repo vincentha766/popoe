@@ -4,8 +4,11 @@ Feature matching + RANSAC + ICP + feature-aware scoring.
 """
 
 import numpy as np
-import torch
-torch.backends.cudnn.enabled = False  # cuDNN init fails on this host
+try:  # torch is only needed by the GPU feature path; scoring/RANSAC are numpy
+    import torch
+    torch.backends.cudnn.enabled = False  # cuDNN init fails on some hosts
+except ImportError:
+    torch = None
 from sklearn.neighbors import KDTree
 from scipy.spatial.transform import Rotation
 import open3d as o3d
