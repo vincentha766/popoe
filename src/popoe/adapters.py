@@ -54,16 +54,22 @@ class FreeZeQueryEncoder:
     CanonFrame (derived from the sampled points, per the live convention) so the
     target side and solver can reuse it."""
 
-    def __init__(self, extractor, n_points: int = 3000):
+    def __init__(self, extractor, n_points: int = 3000, seed: int | None = None):
         self.ex = extractor
         self.n_points = n_points
+        # Deterministic surface sampling by default (seed = obj_id): unseeded
+        # sampling makes query features differ per RUN, which compounds with
+        # solver stochasticity into run-to-run AR variance (see ISSUES.md).
+        self.seed = seed
 
     def encode_query(self, obj: ObjectModel) -> PointFeatures:
         import trimesh, torch
         # Reset PCA per object so each fits its own (matches eval scripts).
         self.ex._pca_vis = None
         mesh = trimesh.load(obj.mesh_path, force="mesh")
-        pts, _ = trimesh.sample.sample_surface_even(mesh, self.n_points)
+        pts, _ = trimesh.sample.sample_surface_even(
+            mesh, self.n_points,
+            seed=self.seed if self.seed is not None else obj.obj_id)
         pts = (pts / 1000.0).astype(np.float32)          # BOP mm -> m
         feats, pts_q = self.ex.extract_query_features(obj.mesh_path, torch.from_numpy(pts))
         pts_q = pts_q.numpy() if hasattr(pts_q, "numpy") else np.asarray(pts_q)
