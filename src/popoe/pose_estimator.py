@@ -137,7 +137,8 @@ def ransac_pose_estimation(pts_query, feats_query, pts_target, feats_target,
     return best_R, best_t, best_score
 
 
-def icp_refinement(pts_query, pts_target_dense, R_init, t_init, tau_icp=0.03, max_iter=50):
+def icp_refinement(pts_query, pts_target_dense, R_init, t_init, tau_icp=0.03,
+                   max_iter=2000, rel_tol=1e-6):
     """
     ICP refinement (Stage 3, Eq. 6).
     Align pts_query (transformed) to dense target point cloud.
@@ -152,7 +153,7 @@ def icp_refinement(pts_query, pts_target_dense, R_init, t_init, tau_icp=0.03, ma
     result = o3d.pipelines.registration.registration_icp(
         src_pcd, tgt_pcd, tau_icp, init_T,
         o3d.pipelines.registration.TransformationEstimationPointToPoint(),
-        o3d.pipelines.registration.ICPConvergenceCriteria(max_iteration=max_iter)
+        o3d.pipelines.registration.ICPConvergenceCriteria(rel_tol, rel_tol, max_iter)
     )
 
     delta = result.transformation
