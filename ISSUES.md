@@ -10,12 +10,26 @@ obj8, previously 0.97 -> 0.20 across runs, is now 0.981 -> 0.972. Alignment
 with the formal subset baseline (0.638): -2.1pt overall, all objects within
 noise or better EXCEPT obj21.
 
-### Residual: obj21 (foam brick) 0.38 vs formal 0.59 — OPEN
-Stable across all five popoe runs (0.26-0.38), so systematic, not variance.
-Low-texture near-box geometry; suspect list: target-crop margin behaviour on
-large flat objects, two-scale GeDi patch content at this size, ICP against
-the sparse grid cloud. Next probe: dump popoe vs formal candidates for obj21
-and diff s_icp/s_feat_1 distributions (offline, cached features suffice).
+### Residual: obj21 (foam brick) — RESOLVED-AS-EXPLAINED (2026-07-11)
+Not a platform defect. Diagnosis chain (all local/offline):
+target clouds identical (same masks, same counts, centres within 0.6 mm);
+error structures identical (BOTH stacks emit ~180-degree flips at ~2 mm
+translation, median raw rot err 178.3 deg on each side). The AR difference is
+WHICH flip axis gets selected: sym-aware error median 3.5 deg (formal) vs
+91 deg (popoe) — obj21 has one BOP-forgiven 180-degree symmetry, and the
+right-vs-wrong-axis variants are a near score TIE under the champion rule
+(margins ~1e-3). Formal's specific feature instance happened to discriminate
+(right beats wrong 87%, margin +0.022); five popoe query instances all tie
+(0.30-0.50). Decisively: formal's OWN two runs swing 0.787 -> 0.589 on this
+object — flip-axis selection is a fragile, instance-dependent lottery in the
+METHOD, and popoe's draws sit lower in the same distribution.
+
+Real improvement (both stacks, research item, tracked in the gedi study):
+appearance-based symmetric-variant arbitration — score the flip variants by
+rendered-appearance agreement instead of the near-tied geometric/fused rule.
+
+Platform verdict: popoe eval = ALIGNED (coherence verified v4/v4b; remaining
+subset delta -2.1pt is dominated by this one knife-edge object).
 
 **Root cause (proven by local replay + PCA-basis analysis): visual-PCA basis
 incoherence between cached target features and re-fitted query features.**
