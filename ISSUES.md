@@ -2,7 +2,20 @@
 
 ## Eval runner does not yet reproduce the formal baseline (2026-07-11)
 
-Status: ROOT-CAUSED 2026-07-11, fixes landed; verification run pending.
+Status: RESOLVED 2026-07-11 (verified) — one residual single-object delta open.
+
+Verification (fresh-cache v4 -> cache-hit v4b, canonical-PCA + query caching):
+v4 = 0.6172, v4b = 0.6045; per-object agreement within +-1-4pt (RANSAC noise).
+obj8, previously 0.97 -> 0.20 across runs, is now 0.981 -> 0.972. Alignment
+with the formal subset baseline (0.638): -2.1pt overall, all objects within
+noise or better EXCEPT obj21.
+
+### Residual: obj21 (foam brick) 0.38 vs formal 0.59 — OPEN
+Stable across all five popoe runs (0.26-0.38), so systematic, not variance.
+Low-texture near-box geometry; suspect list: target-crop margin behaviour on
+large flat objects, two-scale GeDi patch content at this size, ICP against
+the sparse grid cloud. Next probe: dump popoe vs formal candidates for obj21
+and diff s_icp/s_feat_1 distributions (offline, cached features suffice).
 
 **Root cause (proven by local replay + PCA-basis analysis): visual-PCA basis
 incoherence between cached target features and re-fitted query features.**
