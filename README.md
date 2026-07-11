@@ -1,9 +1,16 @@
 # popoe — Pipeline Of Pose Estimation
 
-A modular, **training-free 6-DoF object pose** framework. The pipeline is broken
-into swappable stages behind small `Protocol` contracts, so **every step can grow
-its own method** — add a segmentor, a feature backbone, a pose solver, a scorer,
-without touching the rest.
+A modular, **training-free 6-DoF object pose** framework, built for and
+evaluated on the **BOP benchmark**. The pipeline is broken into swappable stages
+behind small `Protocol` contracts, so **every step can grow its own method** —
+add a segmentor, a feature backbone, a pose solver, a scorer, without touching
+the rest.
+
+**Scope**: popoe owns benchmark-grade pose estimation (BOP datasets, metrics,
+evaluated-best recipes). Applications — robot grasping, AR, inspection — live in
+their own repositories and consume popoe as a dependency behind the
+`PoseEstimator`-style seam (see e.g. a lab grasping stack wiring
+`popoe.recipes` into its own pipeline).
 
 ```
 ObjectModel (CAD) ─┐
