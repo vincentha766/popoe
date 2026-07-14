@@ -40,17 +40,32 @@ def scale_vis(feats: np.ndarray, w: float) -> np.ndarray:
     return out
 
 
-def best_encoders(device: str = "cuda", target_grid: int = 32):
+def best_encoders(device: str = "cuda", target_grid: int = 32,
+                  render_backend: str = "auto"):
     """Shared-model query/target encoders at the formal configuration.
-    Returns (query_encoder, target_encoder). GPU required."""
+    Returns (query_encoder, target_encoder). GPU required.
+
+    Extraction is PINNED to vis_weight=1.0: `scale_vis` and the selection-time
+    weight sweep are both specified against w=1 features ("extracted at w=1",
+    above), and ChampionScorer's s_feat_1 is documented as a w=1 re-score. The
+    pin makes that true regardless of POPOE_VIS_WEIGHT — previously the env
+    default (0.5) leaked in, so every "w" in the sweep and the "w=1" re-score
+    actually ran at half the advertised visual weight.
+
+    `render_backend='nvdiffrast'` refuses to run on a box without the GPU
+    rasteriser rather than silently producing CPU-ray-cast features, which are
+    NOT the same features (see QueryFeatureExtractor). The evaluated numbers
+    were produced on nvdiffrast."""
     os.environ.setdefault("POPOE_TARGET_GRID", str(target_grid))
     from popoe.adapters import make_freeze_encoders
     from popoe.feature_extractor import (
         QueryFeatureExtractor, TargetFeatureExtractor, load_dinov2, load_gedi)
     dino = load_dinov2(device)
     gedi = load_gedi(device)
-    qx = QueryFeatureExtractor(device, dino=dino, gedi=gedi)
+    qx = QueryFeatureExtractor(device, dino=dino, gedi=gedi,
+                               render_backend=render_backend)
     tx = TargetFeatureExtractor(device, dino=dino, gedi=gedi)
+    qx.fusion.vis_weight = 1.0   # pinned; make_freeze_encoders shares qx.fusion
     return make_freeze_encoders(qx, tx)
 
 

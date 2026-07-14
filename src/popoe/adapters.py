@@ -62,6 +62,13 @@ class FreeZeQueryEncoder:
         # solver stochasticity into run-to-run AR variance (see ISSUES.md).
         self.seed = seed
 
+    @property
+    def render_backend(self) -> str:
+        """Which renderer produces the CAD views these features come from —
+        'nvdiffrast' or 'trimesh'. Belongs in the cache key: the two are not
+        interchangeable (see feature_extractor.QueryFeatureExtractor)."""
+        return self.ex.render_backend
+
     def encode_query(self, obj: ObjectModel) -> PointFeatures:
         import trimesh, torch
         # Reset PCA per object so each fits its own (matches eval scripts).
@@ -195,3 +202,50 @@ class BestScoreSelector:
     def select(self, candidates: list[PoseHypothesis]):
         cands = [c for c in candidates if c is not None]
         return max(cands, key=lambda h: h.score) if cands else None
+
+
+def resolve_resume(row_stats: dict, target_counts: dict) -> tuple:
+    """Classify already-written eval targets for resume, by ROW COUNT alone.
+
+    Relies on the writer's completion invariant (examples/bop_eval.py): a
+    finished target emits EXACTLY inst_count rows, zero-padded when fewer
+    champions were found. Row contents are deliberately not consulted —
+    "crashed after two rows" and "completed with two champions" are
+    indistinguishable from contents, and a real score can format as 0.000000.
+
+    Args:
+        row_stats: {(scene, im, obj): n_rows} from the existing CSV.
+        target_counts: {(scene, im, obj): inst_count} for this run's targets.
+
+    Returns (done, partial):
+        done    — n_rows >= inst_count: skip.
+        partial — 0 < n_rows < inst_count: crash mid-target. Stale rows must
+            be dropped from the CSV before re-running, or the rerun appends
+            duplicates.
+
+    With inst_count == 1 everywhere (LMO / YCB-V) any existing row marks its
+    target done and partial is empty — identical to the old any-row rule."""
+    done, partial = set(), set()
+    for key, n_rows in row_stats.items():
+        if n_rows <= 0:
+            continue
+        if n_rows >= target_counts.get(key, 1):
+            done.add(key)
+        else:
+            partial.add(key)
+    return done, partial
+
+
+def select_top_instances(hyps_by_det: dict, selector, k: int) -> list:
+    """BOP multi-instance selection: one champion per detection, then the top-k
+    champions across detections.
+
+    A detection is one candidate INSTANCE, so hypotheses within a detection are
+    alternatives (pick one champion via `selector`), while champions of
+    different detections are candidate distinct instances (keep up to k, best
+    first — k comes from the BOP target's ``inst_count``). With k=1 this is
+    exactly the old global argmax: max over per-detection maxima."""
+    champs = [selector.select(hs) for hs in hyps_by_det.values()]
+    champs = [c for c in champs if c is not None]
+    champs.sort(key=lambda c: -c.score)
+    return champs[:k]
