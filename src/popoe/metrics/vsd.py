@@ -133,6 +133,16 @@ def compute_ar_vsd(csv_path, bop_root, models_eval_dir=None):
     rows = list(csv.DictReader(open(csv_path)))
     print(f"loaded {len(rows)} rows", flush=True)
 
+    # Rows are scored independently against their best GT instance — sound
+    # only with ONE row per (scene, im, obj). Multi-instance rows would let
+    # duplicates double-claim one GT and inflate AR_VSD; fail loudly instead
+    # (score with bop_toolkit, or extend with one-to-one assignment).
+    keys = [(r["scene_id"], r["im_id"], r["obj_id"]) for r in rows]
+    if len(keys) != len(set(keys)):
+        raise SystemExit(
+            "multi-instance CSV detected (duplicate (scene,im,obj) rows): "
+            "this local VSD scorer assumes one row per target.")
+
     # Index GT + scene depth
     scene_cache = {}
 

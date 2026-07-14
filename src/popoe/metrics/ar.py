@@ -24,6 +24,17 @@ BOP_PATH = Path(os.environ.get("BOP_PATH", "/workspace/bop_data/lmo"))
 rows = list(csv.DictReader(open(CSV_PATH)))
 print(f"loaded {len(rows)} rows from {CSV_PATH}", flush=True)
 
+# This scorer matches each row independently to its BEST GT instance — sound
+# only when there is ONE row per (scene, im, obj). With multi-instance rows
+# (inst_count > 1) two estimates could both claim the same GT while another
+# instance goes unpenalised, silently inflating AR. Fail loudly instead.
+_keys = [(r["scene_id"], r["im_id"], r["obj_id"]) for r in rows]
+if len(_keys) != len(set(_keys)):
+    raise SystemExit(
+        "multi-instance CSV detected (duplicate (scene,im,obj) rows): this "
+        "local AR scorer assumes one row per target. Score with the official "
+        "bop_toolkit, or extend this script with one-to-one GT assignment.")
+
 # Index GT
 scenes = sorted({int(r["scene_id"]) for r in rows})
 gt_by_scene_im_obj = {}
