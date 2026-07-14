@@ -89,9 +89,23 @@ def load_gedi(device='cuda'):
 
 
 class QueryFeatureExtractor:
-    """Extract fused DINOv2+GeDi features from 3D query model (offline, precomputed)."""
+    """Extract fused DINOv2+GeDi features from 3D query model (offline, precomputed).
 
-    def __init__(self, device='cuda', dino=None, gedi=None):
+    The query side RENDERS the CAD model, so which renderer ran is part of this
+    stage's configuration: nvdiffrast and the trimesh ray-caster produce
+    different images and therefore different DINOv2 features. Read it back from
+    `render_backend` and put it in the cache key — an entry computed on a
+    CPU-only box is NOT interchangeable with one computed on a GPU box, and
+    nothing else in the key distinguishes them (see cache.py).
+
+    `render_backend='nvdiffrast'` demands the GPU rasteriser and raises
+    RendererUnavailable without it, instead of silently running ~100x slower on
+    a different method. 'auto' (default) keeps the historical preference.
+    """
+
+    def __init__(self, device='cuda', dino=None, gedi=None, render_backend='auto'):
+        if render_backend not in ('auto', 'nvdiffrast', 'trimesh'):
+            raise ValueError(f"unknown render_backend: {render_backend!r}")
         self.device = device
         self.dino = dino if dino is not None else load_dinov2(device)
         self.gedi = gedi if gedi is not None else load_gedi(device)
@@ -99,8 +113,15 @@ class QueryFeatureExtractor:
         # per-object visual PCA; `_pca_vis` below proxies it so external callers
         # (e.g. pose_estimator sharing query PCA -> target) keep working.
         self.fusion = DinoGeDiFusion()
+        self._render_backend_pref = render_backend
         self._nvd_ctx = None
         self._nvd_init_tried = False
+
+    @property
+    def render_backend(self) -> str:
+        """'nvdiffrast' or 'trimesh' — the renderer that WILL run (resolved on
+        first access). Put this in the cache key."""
+        return 'nvdiffrast' if self._init_nvdiffrast() else 'trimesh'
 
     @property
     def _pca_vis(self):
@@ -143,6 +164,10 @@ class QueryFeatureExtractor:
         return pts_tensor
 
     def _init_nvdiffrast(self):
+        """True if the GPU rasteriser will be used. Honours render_backend:
+        'trimesh' never tries; 'nvdiffrast' raises rather than degrade."""
+        if self._render_backend_pref == 'trimesh':
+            return False
         if self._nvd_init_tried:
             return self._nvd_ctx is not None
         self._nvd_init_tried = True
@@ -151,14 +176,27 @@ class QueryFeatureExtractor:
             self._nvd_ctx = dr.RasterizeCudaContext(device=self.device)
             return True
         except Exception as e:
+            self._nvd_ctx = None
+            if self._render_backend_pref == 'nvdiffrast':
+                from popoe.renderer import RendererUnavailable
+                raise RendererUnavailable(
+                    f"render_backend='nvdiffrast' was required but it is unusable "
+                    f"({type(e).__name__}: {e}).\n"
+                    f"  pip install --no-build-isolation "
+                    f"git+https://github.com/NVlabs/nvdiffrast.git\n"
+                    f"Pass render_backend='auto' to accept the CPU ray-caster "
+                    f"instead — it renders DIFFERENT images, so it yields "
+                    f"DIFFERENT features.") from e
             bar = "!" * 80
             print(bar, flush=True)
             print("!! nvdiffrast NOT AVAILABLE — falling back to trimesh CPU raycast.", flush=True)
             print(f"!! Reason: {type(e).__name__}: {e}", flush=True)
+            print("!! Renders differ from GPU -> query FEATURES differ. The cache key", flush=True)
+            print("!! records render_backend, so this will not reuse GPU entries.", flush=True)
             print("!! LMO eval will be ~100x slower (10+ min per image with 18 views).", flush=True)
             print("!! Fix: pip install --no-build-isolation git+https://github.com/NVlabs/nvdiffrast.git", flush=True)
+            print("!! Or pass render_backend='nvdiffrast' to make this an error.", flush=True)
             print(bar, flush=True)
-            self._nvd_ctx = None
             return False
 
     def _nvdiffrast_render(self, mesh, cam_pos, H, W, fov_deg):

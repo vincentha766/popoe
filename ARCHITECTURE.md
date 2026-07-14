@@ -15,7 +15,7 @@ Scene (RGB-D, K) ──┘            TargetEncoder ──┴─ PoseSolver ─ 
 
 | Stage | Protocol | Reference implementation |
 |-------|----------|--------------------------|
-| Segmentation | `Segmentor` | `adapters.PrecomputedSegmentor`; `segmentor_cnos.CNOSSegmentor` |
+| Segmentation | `Segmentor` | `segmentor_detections.BOPDetectionsSegmentor` (evaluated); `segmentor_cnos.CNOSSegmentor` / `.DinoWindowSegmentor`; `segmentor.SAMSegmentor` / `.DepthSegmentor`; `adapters.PrecomputedSegmentor` |
 | Query features | `QueryEncoder` | `adapters.FreeZeQueryEncoder` (DINOv2 + GeDi) |
 | Target features | `TargetEncoder` | `adapters.FreeZeTargetEncoder` |
 | Fusion | `FeatureFusion` | `fusion.DinoGeDiFusion` |
@@ -56,6 +56,42 @@ module and drift:
   inlier score stays inside the solver — that's hypothesis ranking, not final
   scoring.)
 - **A solver only PROPOSES; the scorer DISPOSES.** See below.
+- **No stage hides a fallback.** A stage whose backend is missing raises
+  `interfaces.BackendUnavailable` — it never quietly substitutes a weaker method.
+  See below.
+
+## The availability contract (no hidden fallbacks)
+
+Two different methods behind one name is a bug, not a convenience. It used to be
+the norm here: `CNOSSegmentor.segment` caught a SAM2 load failure and silently
+ran a sliding-window variant, which silently swapped its own mask generator, and
+then topped the list up with depth blobs whose "score" was a mask **area
+fraction** mixed in among DINO **cosine similarities** — a blob covering 40% of
+the frame outranked a real template match at 0.35. `SAMSegmentor` and
+`get_renderer` did the same thing more quietly.
+
+Two things that costs:
+
+1. **The result becomes unattributable.** A run on a box without the SAM2
+   checkpoint produced depth-blob masks while every log line and config still
+   said "CNOS".
+2. **It poisons the config-addressed cache** (see below), whose key fingerprints
+   the config you *asked* for — not the method that silently ran instead. The
+   renderer was the live case: nvdiffrast and the trimesh CPU ray-caster produce
+   different CAD views, hence different query features, and `render_backend` was
+   absent from the key, so a cache built without a GPU was reused on one with it.
+
+So:
+
+- an implementation raises `BackendUnavailable` (`SegmentorUnavailable`,
+  `RendererUnavailable`) when a package / checkpoint / device is missing;
+- a **runtime** failure (CUDA OOM, corrupt mesh) propagates — "the fallback
+  handled it" is how real bugs get buried;
+- substitution is the **caller's** policy: compose
+  `segmentor.FirstAvailableSegmentor([...])`, then read `chain.last_used` and
+  `Detection.source` to see what ran;
+- anything that selects a method (`render_backend`, the segmentor's `source`)
+  is part of the stage config and belongs **in the cache key**.
 
 ## Pluggability proven — a second PoseSolver
 

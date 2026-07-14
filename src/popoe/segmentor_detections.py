@@ -43,6 +43,8 @@ class BOPDetectionsSegmentor:
         min_pixels: drop masks smaller than this (unreliable geometry).
     """
 
+    source = "bop-detections"
+
     def __init__(self, detections_json: str, topk: int = 2,
                  merge_labels: dict | None = None, iou_dedupe: float = 0.9,
                  min_pixels: int = 100):
@@ -83,5 +85,6 @@ class BOPDetectionsSegmentor:
             if any(_mask_iou(m, prev) > self.iou_dedupe for prev in kept_masks):
                 continue
             kept_masks.append(m)
-            dets.append(Detection(mask=m, score=float(d["score"])))
+            dets.append(Detection(mask=m, score=float(d["score"]),
+                                  source=self.source))
         return dets

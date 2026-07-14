@@ -1,7 +1,12 @@
 """
-GPU rasterization renderer for FreeZeV2.
-Primary: nvdiffrast (CUDA, headless)
-Fallback: trimesh ray casting (CPU, headless)
+Renderers for FreeZeV2 / CNOS templates.
+  nvdiffrast — CUDA rasteriser, headless
+  trimesh    — CPU ray caster, headless
+
+They are two METHODS, not a primary and a hidden safety net: the images differ,
+so the DINOv2 features derived from them differ. `get_renderer(backend=...)`
+makes the choice explicit and `renderer.source` reports what you got — put it in
+the cache key (see cache.py).
 """
 
 import numpy as np
@@ -9,7 +14,13 @@ import torch
 import math
 from typing import Tuple, Optional
 
+from popoe.interfaces import BackendUnavailable
+
 _NVDIFFRAST_AVAILABLE = None
+
+
+class RendererUnavailable(BackendUnavailable):
+    """nvdiffrast is not installed / has no CUDA context on this host."""
 
 
 def _check_nvdiffrast():
@@ -69,14 +80,22 @@ def perspective_matrix(fov_deg: float, aspect: float = 1.0,
 
 
 class NvdiffrastRenderer:
-    """GPU renderer using nvdiffrast."""
+    """GPU renderer using nvdiffrast. Raises RendererUnavailable without it."""
+
+    source = 'nvdiffrast'
 
     def __init__(self, H: int = 480, W: int = 480, device: str = 'cuda'):
-        import nvdiffrast.torch as dr
+        try:
+            import nvdiffrast.torch as dr
+            self.ctx = dr.RasterizeCudaContext(device=device)
+        except Exception as e:      # no package, no CUDA context, no driver
+            raise RendererUnavailable(
+                f"nvdiffrast unusable ({type(e).__name__}: {e}). Install with:\n"
+                f"  pip install --no-build-isolation "
+                f"git+https://github.com/NVlabs/nvdiffrast.git") from e
         self.H = H
         self.W = W
         self.device = device
-        self.ctx = dr.RasterizeCudaContext(device=device)
 
     def render(self, vertices: np.ndarray, faces: np.ndarray,
                cam_pos: np.ndarray, fov_deg: float = 60.0,
@@ -98,6 +117,10 @@ class NvdiffrastRenderer:
         # Transform vertices to clip space
         V_h = np.concatenate([V_np, np.ones((len(V_np), 1), dtype=np.float32)], axis=1)  # (V,4)
         V_clip = V_h @ MVP.T  # (V, 4)
+        # Camera-space z for the depth map. look_at_matrix is OpenGL-style
+        # (camera looks down -z), so visible points have z_cam < 0 and the
+        # metric distance along the view axis is -z_cam.
+        z_cam = (V_h @ MV.T)[:, 2:3].astype(np.float32)  # (V, 1)
 
         pos = torch.from_numpy(V_clip).unsqueeze(0).to(self.device)  # (1,V,4)
         tri = torch.from_numpy(F_np).to(self.device)
@@ -124,9 +147,14 @@ class NvdiffrastRenderer:
 
         rgb_np = (color.cpu().numpy() * 255).astype(np.uint8)
 
-        # Depth from clip-space w (1/z)
-        w_rast = rast[0, :, :, 3].cpu().numpy()
-        depth_np = np.where(hit_mask.cpu().numpy(), 1.0 / (w_rast + 1e-8), 0.0).astype(np.float32)
+        # Metric depth: interpolate camera-space z per pixel (rast[...,3] is the
+        # TRIANGLE ID, not depth — the previous 1/(id) "depth" was garbage as a
+        # depth map and only usable as a >0 hit test).
+        zcam_t = torch.from_numpy(z_cam).unsqueeze(0).to(self.device)  # (1,V,1)
+        zcam_interp, _ = dr.interpolate(zcam_t, rast, tri)             # (1,H,W,1)
+        depth_t = torch.where(hit_mask, -zcam_interp[0, :, :, 0],
+                              torch.zeros_like(zcam_interp[0, :, :, 0]))
+        depth_np = depth_t.cpu().numpy().astype(np.float32)
 
         return rgb_np, depth_np
 
@@ -145,7 +173,10 @@ class NvdiffrastRenderer:
 
 
 class TrimeshRenderer:
-    """CPU fallback renderer using trimesh ray casting."""
+    """CPU ray-casting renderer. Always available; ~100x slower than the GPU
+    rasteriser, and its images are NOT pixel-equivalent to nvdiffrast's."""
+
+    source = 'trimesh'
 
     def __init__(self, H: int = 480, W: int = 480):
         self.H = H
@@ -186,23 +217,49 @@ class TrimeshRenderer:
             shading = np.clip((-fn * forward).sum(axis=1), 0.1, 1.0)
             base = np.array([178, 158, 140], dtype=np.float32)
             rgb[idx_ray] = (base * shading[:, None]).astype(np.uint8)
-            depth_map[idx_ray] = np.linalg.norm(locs - cam_pos, axis=1)
+            # Camera-axis z, not Euclidean ray length — same convention as
+            # NvdiffrastRenderer, so the two depths backproject identically.
+            depth_map[idx_ray] = (locs - cam_pos) @ forward
 
         return rgb.reshape(H, W, 3), depth_map.reshape(H, W)
 
 
 def get_renderer(H: int = 480, W: int = 480, device: str = 'cuda',
-                 force_cpu: bool = False) -> object:
-    """Return best available renderer."""
-    if not force_cpu and _check_nvdiffrast():
-        try:
-            r = NvdiffrastRenderer(H, W, device)
-            print("Using nvdiffrast GPU renderer.")
-            return r
-        except Exception as e:
-            print(f"nvdiffrast failed ({e}), falling back to trimesh.")
-    print("Using trimesh CPU ray-cast renderer.")
-    return TrimeshRenderer(H, W)
+                 backend: str = 'auto') -> object:
+    """Build a renderer. `backend` is 'nvdiffrast' | 'trimesh' | 'auto'.
+
+    The two renderers do NOT produce the same image — different rasterisation
+    and shading — so they do not produce the same DINOv2 features from a CAD
+    render. Whichever ran is therefore part of your experiment's configuration:
+    read it back from `renderer.source` and put it in the cache key
+    (examples/bop_eval.py does; see cache.py on why an unkeyed upstream knob
+    silently poisons entries).
+
+    'auto' still prefers the GPU and drops to the CPU ray-caster, but that is
+    now the CALLER asking for a preference, not an implementation hiding a
+    substitution. Name a backend explicitly when a run must be reproducible —
+    it then raises RendererUnavailable instead of quietly going ~100x slower on
+    a different method.
+    """
+    if backend not in ('auto', 'nvdiffrast', 'trimesh'):
+        raise ValueError(f"unknown renderer backend: {backend!r}")
+
+    if backend == 'trimesh':
+        return TrimeshRenderer(H, W)
+    if backend == 'nvdiffrast':
+        return NvdiffrastRenderer(H, W, device)     # raises if unusable
+
+    try:
+        r = NvdiffrastRenderer(H, W, device)
+        print("Using nvdiffrast GPU renderer.")
+        return r
+    except RendererUnavailable as e:
+        print(f"[renderer] nvdiffrast unavailable -> {e}")
+        print("[renderer] backend='auto' -> falling back to the trimesh CPU "
+              "ray-caster. Renders (and any DINO features derived from them) "
+              "will DIFFER from a GPU run. Pass backend='nvdiffrast' to make "
+              "this an error instead.")
+        return TrimeshRenderer(H, W)
 
 
 def load_mesh_for_rendering(mesh_path: str, target_diameter: float = 0.1):

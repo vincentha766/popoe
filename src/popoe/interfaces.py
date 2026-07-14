@@ -23,6 +23,28 @@ import numpy as np
 
 
 # ════════════════════════════════════════════════════════════════════════
+# 0. The availability contract.
+# ════════════════════════════════════════════════════════════════════════
+
+class BackendUnavailable(RuntimeError):
+    """A stage's backend is missing: no package, no checkpoint, no device.
+
+    An implementation raises this INSTEAD of quietly substituting a weaker
+    method. Two different methods behind one name is the bug this exists to
+    prevent — it makes the reported result unattributable (which segmentor
+    produced this mask? which renderer produced these templates?) and it
+    poisons the config-addressed cache, whose key fingerprints the config you
+    ASKED for, not the method that silently ran instead (see cache.py).
+
+    Substitution is a CALLER's policy: the caller composes an explicit chain
+    (segmentor.FirstAvailableSegmentor) and can read back what ran.
+
+    This is an *availability* signal, not an error channel. A runtime failure —
+    CUDA OOM, a corrupt mesh — must propagate: "the fallback handled it" is how
+    real bugs get buried."""
+
+
+# ════════════════════════════════════════════════════════════════════════
 # 1. Cross-cutting data — constructed once, threaded through every stage.
 #    These carry the conventions (units, canonicalisation) that were
 #    previously implicit and re-derived per module (the #2 coupling point).
@@ -83,11 +105,18 @@ class CanonFrame:
 
 @dataclass
 class Detection:
-    """Output of segmentation: one candidate region for one object."""
+    """Output of segmentation: one candidate region for one object.
+
+    `score` is only comparable WITHIN one segmentor: it is a DINO cosine
+    similarity for the CNOS segmentors, SAM's predicted IoU for SAMSegmentor,
+    and a mask AREA FRACTION for DepthSegmentor. Never merge-and-sort
+    detections from different segmentors — `source` says which one produced
+    this, and is what a fallback chain records (see segmentor.py)."""
     mask: np.ndarray                    # (H, W) bool
     score: float
     bbox: Optional[tuple] = None        # (x0, y0, x1, y1)
     descriptor: Optional[np.ndarray] = None  # e.g. CNOS CLS feature; may be None
+    source: str = ""                    # segmentor that produced it, e.g. "cnos"
 
 
 @dataclass
@@ -204,9 +233,12 @@ class Pipeline:
     _query_cache: dict = field(default_factory=dict)
 
     def run(self, scene: Scene, obj: ObjectModel) -> Optional[PoseHypothesis]:
-        q = self._query_cache.get(obj.obj_id)
+        # Keyed by (obj_id, mesh_path): BOP object ids are only unique within
+        # one dataset, and a Pipeline instance may be reused across two.
+        qkey = (obj.obj_id, obj.mesh_path)
+        q = self._query_cache.get(qkey)
         if q is None:
-            q = self._query_cache[obj.obj_id] = self.query_encoder.encode_query(obj)
+            q = self._query_cache[qkey] = self.query_encoder.encode_query(obj)
         # CanonFrame is produced by query encoding and reused on the target side.
         frame = q.meta.get("canon_frame") or CanonFrame.from_points(q.pts)
         cands: list[PoseHypothesis] = []

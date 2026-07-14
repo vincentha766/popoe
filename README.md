@@ -101,6 +101,30 @@ The two shipped solvers (`popoe.adapters.RansacSolver`,
 `popoe.solvers.Open3DFeatureRansacSolver`) are worked examples. A robust backend
 like TEASER++ or MAC would be added the same way — one file.
 
+A stage never hides a fallback: if its backend is missing (no package, no
+checkpoint, no GPU) it raises `BackendUnavailable` rather than quietly running a
+weaker method under the same name. Substitution is the caller's call, and the
+caller can see what ran:
+
+```python
+from popoe.segmentor import DepthSegmentor, FirstAvailableSegmentor
+from popoe.segmentor_cnos import CNOSSegmentor, DepthBoxMasker, DinoWindowSegmentor
+
+seg = FirstAvailableSegmentor([
+    CNOSSegmentor(renderer),                                   # SAM2 + DINOv2
+    DinoWindowSegmentor(renderer, masker=DepthBoxMasker()),    # no SAM2 needed
+    DepthSegmentor(),                                          # no deps at all
+])
+dets = seg.segment(scene, obj)
+seg.last_used      # -> 'cnos' | 'dino-window' | 'depth-cc'
+dets[0].source     # per detection; the window segmentor appends its masker,
+                   # e.g. 'dino-window+depth-box' — survives into the CSV
+```
+
+See [ARCHITECTURE.md](ARCHITECTURE.md#the-availability-contract-no-hidden-fallbacks)
+for why (short version: a silent fallback makes results unattributable and
+poisons the config-addressed cache).
+
 Because a solver only has to *propose* candidates and the feature-aware
 `PoseScorer` + `Selector` *dispose*, `Open3DFeatureRansacSolver(n_restarts=8)`
 turns a geometry-only RANSAC (which flips on near-symmetric objects) back to
