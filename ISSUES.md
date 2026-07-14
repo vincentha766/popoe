@@ -1,5 +1,70 @@
 # Known issues
 
+## Adversarial review campaign: hidden fallbacks + eval correctness (2026-07-14)
+
+Status: FIXES LANDED, verified (local suite + GPU smoke on A40); the standing
+YCB-V/LMO numbers are INVALIDATED by design and must be re-run (accepted).
+
+Trigger: design review of `CNOSSegmentor._segment_v0` — a silent SAM2→
+sliding-window→depth-blob fallback chain hidden inside one segmentor, which
+also merge-sorted depth-blob AREA FRACTIONS among DINO COSINES. Generalised
+into a platform rule, then the whole repo was swept by four rounds of
+external review (codex/gpt-5.5, xhigh), each round fixing what the previous
+found, until round 4 returned a single already-fixed finding.
+
+The rule (now in ARCHITECTURE.md + interfaces.BackendUnavailable): a stage
+whose backend is missing RAISES; it never substitutes a weaker method under
+the same name. Substitution is the caller's policy (segmentor.
+FirstAvailableSegmentor), recorded in `chain.last_used` / `Detection.source`.
+Runtime failures propagate. Anything that selects a method is config and
+belongs in the cache key.
+
+Defects fixed that could have silently biased numbers:
+
+1. **w=1 was never w=1.** `scale_vis`/ChampionScorer are specified against
+   w=1 extraction, but `best_encoders` never pinned it, so the env default
+   0.5 leaked in: every sweep weight ran at half its label and `s_feat_1`
+   re-scored at 0.5. Fixed by pinning `fusion.vis_weight = 1.0` at
+   extraction (recipes.py); contract locked by a fusion unit test. THIS
+   CHANGES ALL RESULTS — prior CSVs/baselines are not comparable.
+2. **NvdiffrastRenderer "depth" was 1/(triangle_id)** (rast channel 3),
+   garbage as a depth map; only ever safe as a >0 hit test. Now interpolates
+   camera-space z (GPU-verified: median hit depth 0.219 m vs |cam| 0.236 m).
+   TrimeshRenderer aligned to the same camera-axis-z convention.
+3. **Cache keys under-keyed** (the same class as the 07-11 PCA invariant):
+   enc_cfg missed n_views/target_fill/target_canon/vis_weight/skip_vis/
+   geom_backbone/dgedi_mode/gedi_path AND the render backend; target keys
+   hashed BOP ids, not scene content (rgb/depth/K); `--grid` recorded the
+   arg while a pre-set POPOE_TARGET_GRID env silently won. All keyed now —
+   existing feature caches are therefore invalid (twice over).
+4. **Eval loop swallowed exceptions bare** — real bugs became zero rows
+   indistinguishable from "object not found". Now: per-failure print, first
+   traceback per (stage, type), end-of-run summary.
+5. **inst_count ignored** (latent: LMO/YCB-V are all 1). Now honoured end to
+   end. The load-bearing design, forced by review rounds 3-4: completion is
+   a WRITER invariant — a finished target emits EXACTLY inst_count rows
+   (champions + zero-row padding, missing-image branch included), so resume
+   classifies by row count alone. Content-based inference is impossible in
+   principle: "completed with fewer champions" and "crashed mid-target" are
+   indistinguishable from rows, and real scores format as "0.000000".
+   Partial targets' stale rows are dropped by atomic CSV rewrite before
+   re-run. Local metrics (ar.py/vsd.py) score one-row-per-target only and
+   now HARD-FAIL on multi-instance CSVs instead of silently double-claiming
+   GT instances (proper 1-1 assignment: use bop_toolkit, or a future item).
+
+Also: segmentor_cnos imports without torch/cv2 (a chain containing CNOS must
+be composable on a box that will route around it); template bank and
+Pipeline query cache keyed by (obj_id, mesh_path); BOP ids are only unique
+per dataset.
+
+Verification: 30-test local suite green (numpy-only), GPU smoke 18/18 on A40
+(chain routing, provenance stamping, metric depth, CNOS end-to-end);
+single-instance behaviour proven row-identical through all changes (codex
+round-4 clean checks + synthetic resume replay). Re-run criterion for the
+re-baselined numbers: fresh-cache and cache-hit runs agree within RANSAC
+noise, as per the 07-11 protocol — but expect a NEW baseline, not 0.638:
+the w=1 pin changes the operating point of the whole sweep.
+
 ## Eval runner does not yet reproduce the formal baseline (2026-07-11)
 
 Status: RESOLVED 2026-07-11 (verified) — one residual single-object delta open.
