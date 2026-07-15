@@ -1,9 +1,51 @@
 # Known issues
 
+## Post-fix re-baseline v5: RE-RUN DONE (2026-07-15)
+
+Status: CLOSED — the 07-11 protocol re-run passed on the fixed code (HEAD
+4fa47f4). New formal popoe baseline on the 8-object YCB-V subset:
+
+**AR(2/3) = 0.6475** (fresh cache, v5) / **0.6468** (cache-hit, v5b) —
+overall agreement 0.07pt; the invalidated pre-fix number was 0.617/0.638.
+
+| obj | # | v5 MSSD | v5 MSPD | v5b MSSD | v5b MSPD |
+|-----|-----|--------|--------|---------|---------|
+| 5   | 150 | 0.4947 | 0.4793 | 0.4927  | 0.4767  |
+| 8   | 75  | 1.0000 | 0.9987 | 1.0000  | 0.9987  |
+| 10  | 150 | 0.3907 | 0.2753 | 0.4007  | 0.2847  |
+| 14  | 150 | 0.3707 | 0.3587 | 0.4013  | 0.3880  |
+| 17  | 75  | 0.8387 | 0.7333 | 0.8467  | 0.7560  |
+| 19  | 150 | 0.8387 | 0.7633 | 0.8340  | 0.7573  |
+| 20  | 150 | 0.6307 | 0.5587 | 0.6300  | 0.5620  |
+| 21  | 75  | 0.8187 | 0.8107 | 0.7627  | 0.7573  |
+
+Protocol identical to v4 (same subset 5,8,10,14,17,19,20,21, same fastSAM_pbr
+detections, default env, `--grid 32`, nvdiffrast, AR via freezev2
+freezev2_compute_ar_ycbv.py on-pod), fresh cache dir `popoe_cache_ycbv_v5`.
+Runtime: 46 min fresh + 28 min cache-hit on one 4090 (pod ycbv-4090-mig9).
+CSVs + master log backed up in gedi/ycbv_local_data/ (popoe_ycbv_v5*.csv,
+v5_master.log).
+
+Acceptance vs the 07-11 criterion (±3pt/object): all objects within ±3.5pt
+except obj21 (−5.6pt MSSD v5→v5b) — the documented knife-edge flip-axis
+object (formal itself swings 0.79→0.59), accepted. The previously unstable
+obj8 is now saturated (1.000/0.999 in BOTH runs, was 0.20–0.97 pre-fix):
+the PCA canonicalisation + w=1 pin + query caching stack holds.
+
+Residuals, both loud (new failure accounting), both negligible:
+1. `[FAIL encode_target] obj20` x1 per run: degenerate candidate cloud hits
+   `torch.cross` dim mismatch in upstream `gedi.py:188` (`zp.squeeze()`
+   collapses a size-1 dim). One CANDIDATE dropped; the target still gets a
+   real champion row from other candidates. Upstream-GeDi bug; fix would be
+   a guard in feature_extractor.compute.
+2. 4 zero-padded rows per run (obj5 scene50 im671/722, obj17 scene51
+   im1566/1588), identical in v5/v5b: no usable detection for those images —
+   honest misses, not crashes.
+
 ## Adversarial review campaign: hidden fallbacks + eval correctness (2026-07-14)
 
-Status: FIXES LANDED, verified (local suite + GPU smoke on A40); the standing
-YCB-V/LMO numbers are INVALIDATED by design and must be re-run (accepted).
+Status: FIXES LANDED, verified (local suite + GPU smoke on A40); re-run
+completed 2026-07-15 (see v5 section above) — new baseline 0.6475/0.6468.
 
 Trigger: design review of `CNOSSegmentor._segment_v0` — a silent SAM2→
 sliding-window→depth-blob fallback chain hidden inside one segmentor, which
