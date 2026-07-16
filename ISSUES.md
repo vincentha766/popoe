@@ -239,3 +239,19 @@ solver/refiner/scorer from the cache for obj8 N times per config
 variance decomposition. Data: `popoe_cache_ycbv` on the pod volume;
 candidate dumps `popoe_ycbv_cands.csv`; result CSVs `popoe_ycbv_subset*.csv`
 (backed up in gedi/ycbv_local_data/).
+
+## 2026-07-16 · First popoe-native union scoring (supervisor-run, pod L40S)
+
+`bop_eval --sources` (6b3dccf), detections from `data/detections/` mirrored
+to the volume. Results (AR(2/3), VSD skipped as usual):
+
+- **YCB-V two-way CNOS+NIDS, v5 protocol subset: 0.6889** vs v5 baseline
+  0.6475 (+4.1). No object regresses; obj17 +9.7 / obj21 +10.9 MSSD — the
+  knife-edge objects gain most.
+- **LM-O three-way CNOS+SAM6D+NIDS, all objects, merge none: 0.7525.**
+  First popoe LM-O figure; balanced source usage (35/33/33% per the
+  union smoke). Indicatively ~+2 over the script-era two-way mainline
+  (cross-stack, ±2.1pt known tolerance applies).
+
+Artefacts: gedi/ycbv_local_data/union_scoring_20260716/ (result+cand CSVs,
+logs). Remaining gap: SAM-6D ISM was never generated for YCB-V.
