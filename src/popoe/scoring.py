@@ -37,11 +37,26 @@ from popoe.interfaces import PointFeatures, PoseHypothesis
 
 
 class ChampionScorer:
+    """Args:
+        compute_s_coarse: if True, ALSO record the paper's S_coarse — the same
+            feature_aware_score as s_feat_1 but at the PRE-ICP (coarse) pose,
+            in the SAME canonical w=1 space. It is a DIAGNOSTIC signal recorded
+            in ``breakdown["s_coarse"]`` ONLY; the final ``score`` is unchanged
+            (still ``s_icp * s_feat_1 * metric_fit``), so old configs are
+            byte-identical. Requires the coarse pose in the breakdown
+            (``R_coarse``/``t_coarse`` — set ICPRefiner(keep_coarse=True)); a
+            missing coarse pose is a loud error, never a silent skip. A new rule
+            family that USES s_coarse is evaluated offline from the cand dump
+            (examples/rule_replay.py), not wired into arbitration here — 26-rule
+            ablation shows rules do not transfer across datasets, so the rule is
+            re-swept per dataset, not hard-coded."""
+
     def __init__(self, tau_inlier_frac: float = 0.03, size_thr: float = 0.0075,
-                 size_aware: bool = False):
+                 size_aware: bool = False, compute_s_coarse: bool = False):
         self.tau_inlier_frac = tau_inlier_frac      # fraction of query extent
         self.size_thr = size_thr                    # metres, metric_fit inliers
         self.size_aware = size_aware
+        self.compute_s_coarse = compute_s_coarse
 
     def score(self, pose: PoseHypothesis,
               query: PointFeatures, target: PointFeatures) -> PoseHypothesis:
@@ -50,20 +65,33 @@ class ChampionScorer:
         fq = query.meta.get("feats_w1", query.feats)
         ft = target.meta.get("feats_w1", target.feats)
         diam = float(np.ptp(query.pts, axis=0).max())
+        tau = self.tau_inlier_frac * diam
         s1, _ = feature_aware_score(
-            pose.R, pose.t, query.pts, target.pts, fq, ft,
-            self.tau_inlier_frac * diam)
+            pose.R, pose.t, query.pts, target.pts, fq, ft, tau)
         s_icp = pose.breakdown.get("s_icp", pose.breakdown.get("fitness", 0.0))
 
         met = 1.0
         if self.size_aware:
             met = self._metric_fit(pose, query.pts, target.pts)
 
+        extra = {}
+        if self.compute_s_coarse:
+            if "R_coarse" not in pose.breakdown:
+                raise ValueError(
+                    "compute_s_coarse=True needs the coarse pose in the "
+                    "breakdown; set ICPRefiner(keep_coarse=True)")
+            # Same formula and canonical w=1 space as s_feat_1, but at the
+            # PRE-ICP pose -> the paper's S_coarse. Diagnostic only.
+            sc, _ = feature_aware_score(
+                pose.breakdown["R_coarse"], pose.breakdown["t_coarse"],
+                query.pts, target.pts, fq, ft, tau)
+            extra["s_coarse"] = float(sc)
+
         score = float(s_icp) * max(float(s1), 0.0) * float(met)
         return PoseHypothesis(
             R=pose.R, t=pose.t, score=score,
             breakdown={**pose.breakdown, "s_feat_1": float(s1),
-                       "metric_fit": float(met)})
+                       "metric_fit": float(met), **extra})
 
     def _metric_fit(self, pose: PoseHypothesis,
                     pts_q: np.ndarray, pts_t: np.ndarray) -> float:

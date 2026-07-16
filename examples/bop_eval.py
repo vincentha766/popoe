@@ -66,6 +66,14 @@ def validate_source_args(detections, sources):
         raise SystemExit("--sources is empty")
 
 
+def cand_csv_header(score_coarse):
+    """Column header for the --cand-csv dump. The optional s_coarse column
+    (--score-coarse) is appended, so an existing file's header pins its mode."""
+    return (["scene_id", "im_id", "obj_id", "cand", "w", "s_icp", "s_feat_1",
+             "metric_fit", "score", "R", "t"]
+            + (["s_coarse"] if score_coarse else []))
+
+
 def floored_topk(user_topk, max_inst):
     """Detection top-K must not cap output below the largest inst_count, or a
     4-instance target could never receive 4 champions. For a multi-source union
@@ -111,6 +119,13 @@ def main():
     ap.add_argument("--grid", type=int, default=32)
     ap.add_argument("--cache", default="", help="target-feature cache dir")
     ap.add_argument("--cand-csv", default="", help="dump every hypothesis")
+    ap.add_argument("--score-coarse", action="store_true",
+                    help="also record the paper's S_coarse (pre-ICP feature "
+                         "score, canonical w=1) as an s_coarse column in "
+                         "--cand-csv. Diagnostic only: the champion score/R/t "
+                         "(and the main --out rows) are unchanged; only the "
+                         "extra s_coarse column and the wall-clock `time` "
+                         "column (more compute) differ.")
     ap.add_argument("--merge", default="ycbv",
                     help="'ycbv' for the clamp pair, 'none', or '19:20,...'")
     ap.add_argument("--render-backend", default="nvdiffrast",
@@ -263,20 +278,31 @@ def main():
         q.meta["qkey"] = qkey
         q.meta["feats_w1"] = q.feats   # genuinely w=1: extraction is pinned
         extent = float(np.ptp(q.pts, axis=0).max())
-        stages = stages_for_object(extent, size_aware=obj_id in merge)
+        stages = stages_for_object(extent, size_aware=obj_id in merge,
+                                   score_coarse=args.score_coarse)
         query_cache[obj_id] = (obj, q, stages)
         print(f"  obj{obj_id}: extent={extent*1000:.0f}mm "
               f"encode={time.time()-t0:.1f}s", flush=True)
 
     cand_f = None
     if args.cand_csv:
+        header = cand_csv_header(args.score_coarse)
         new = not os.path.exists(args.cand_csv)
+        if not new:
+            # Appending: the existing header must match this run's column set,
+            # or --score-coarse toggling between runs would write rows under a
+            # mismatched header (silent schema corruption).
+            with open(args.cand_csv, newline="") as fchk:
+                existing = next(csv.reader(fchk), [])
+            if existing != header:
+                raise SystemExit(
+                    f"--cand-csv {args.cand_csv} has header {existing} but this "
+                    f"run would write {header} (—score-coarse mismatch). Use a "
+                    f"fresh file or match the flag.")
         cand_f = open(args.cand_csv, "a", newline="")
         cand_wr = csv.writer(cand_f)
         if new:
-            cand_wr.writerow(["scene_id", "im_id", "obj_id", "cand", "w",
-                              "s_icp", "s_feat_1", "metric_fit", "score",
-                              "R", "t"])
+            cand_wr.writerow(header)
 
     def encode_target_cached(scene, det, obj, q, ci, scene_fp):
         # scene_fp content-hashes rgb/depth/K (invariant 2 in cache.py): the
@@ -385,7 +411,9 @@ def main():
                                         f"{h.breakdown.get('metric_fit', 1):.4f}",
                                         f"{h.score:.6f}",
                                         " ".join(f"{v:.6f}" for v in h.R.flatten()),
-                                        " ".join(f"{v:.4f}" for v in (h.t * 1000.0))])
+                                        " ".join(f"{v:.4f}" for v in (h.t * 1000.0))]
+                                        + ([f"{h.breakdown['s_coarse']:.4f}"]
+                                           if args.score_coarse else []))
                         except Exception as e:
                             note_failure("solve/refine/score", obj_id, e)
                             continue

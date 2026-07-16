@@ -155,19 +155,26 @@ class ICPRefiner:
     """Adapt icp_refinement — GEOMETRY ONLY (coupling point #3). ICP aligns the
     query cloud to the dense target and records its fitness as s_icp; it does NOT
     compute the feature score (that is FreeZeScorer's job). The provisional score
-    (s_coarse) is carried through untouched for FreeZeScorer to finalise."""
+    (s_coarse) is carried through untouched for FreeZeScorer to finalise.
 
-    def __init__(self, tau_icp: float = 0.03):
+    `keep_coarse=True` stashes the PRE-ICP pose in the breakdown
+    (``R_coarse`` / ``t_coarse``) so a scorer can evaluate the paper's S_coarse
+    (a feature score at the coarse pose). Off by default — the stash is the only
+    breakdown difference, so the refiner is byte-identical when it is off."""
+
+    def __init__(self, tau_icp: float = 0.03, keep_coarse: bool = False):
         self.tau_icp = tau_icp
+        self.keep_coarse = keep_coarse
 
     def refine(self, pose: PoseHypothesis, scene: Scene, obj: ObjectModel,
                query: PointFeatures, target: PointFeatures) -> PoseHypothesis:
         from popoe.pose_estimator import icp_refinement
         dense = target.pts_dense if target.pts_dense is not None else target.pts
         R_f, t_f, s_icp = icp_refinement(query.pts, dense, pose.R, pose.t, self.tau_icp)
+        extra = {"R_coarse": pose.R, "t_coarse": pose.t} if self.keep_coarse else {}
         return PoseHypothesis(
             R=R_f, t=t_f, score=pose.score,     # provisional; FreeZeScorer sets final
-            breakdown={**pose.breakdown, "s_icp": s_icp, "fitness": s_icp},
+            breakdown={**pose.breakdown, "s_icp": s_icp, "fitness": s_icp, **extra},
         )
 
 

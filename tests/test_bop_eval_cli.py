@@ -82,6 +82,15 @@ def test_sources_list_builds_named_union(bop_eval, tmp_path):
 
 # ── the max-inst topk floor ──────────────────────────────────────────────
 
+def test_cand_csv_header_s_coarse_column(bop_eval):
+    """--score-coarse appends exactly one s_coarse column at the end; off keeps
+    the historical 11-column schema."""
+    off = bop_eval.cand_csv_header(False)
+    on = bop_eval.cand_csv_header(True)
+    assert "s_coarse" not in off and off[-1] == "t"
+    assert on == off + ["s_coarse"]
+
+
 def test_floored_topk(bop_eval):
     """The floor lifts topk to at least max_inst (so a k-instance target can get
     k champions), but never LOWERS a larger user topk."""

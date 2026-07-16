@@ -86,14 +86,21 @@ def best_segmentor(detections_json: str | None = None, topk: int = 2,
 
 
 def stages_for_object(extent_m: float, size_aware: bool = False,
-                      n_ransac: int = 10000):
+                      n_ransac: int = 10000, score_coarse: bool = False):
     """Per-object solver/refiner/scorer with thresholds scaled to the object.
-    ``extent_m``: max bounding-box side of the sampled query cloud (metres)."""
+    ``extent_m``: max bounding-box side of the sampled query cloud (metres).
+
+    ``score_coarse=True`` records the paper's S_coarse (pre-ICP feature score)
+    into the scorer breakdown as a DIAGNOSTIC — the final score is unchanged, so
+    the evaluated config is byte-identical when it is off. It wires the coarse
+    pose through: ICPRefiner(keep_coarse=True) + ChampionScorer(compute_s_coarse
+    =True)."""
     from popoe.adapters import ICPRefiner
     from popoe.scoring import ChampionScorer
     from popoe.solvers import Open3DFeatureRansacSolver
     tau = TAU_FRAC * extent_m
     solver = Open3DFeatureRansacSolver(tau_inlier=tau, max_iteration=n_ransac)
-    refiner = ICPRefiner(tau_icp=tau)
-    scorer = ChampionScorer(tau_inlier_frac=TAU_FRAC, size_aware=size_aware)
+    refiner = ICPRefiner(tau_icp=tau, keep_coarse=score_coarse)
+    scorer = ChampionScorer(tau_inlier_frac=TAU_FRAC, size_aware=size_aware,
+                            compute_s_coarse=score_coarse)
     return solver, refiner, scorer
