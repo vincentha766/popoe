@@ -25,6 +25,12 @@ covers those; targets a detector missed entirely are absent. Rule-vs-rule flip
 counts are exact (same candidate set); AR over the output CSV is a CEILING until
 missing targets are zero-padded.
 
+Precision: the dump serialises the term columns to 4 decimals, so replay
+recomputes products from ROUNDED values — an approximation of the live scorer's
+full-precision argmax. For candidates that tie within ~1e-4 the champion can
+differ from a live run; this bounds replay's fidelity (it applies to the
+existing champion columns too, not just s_coarse).
+
 Usage:
     python examples/rule_replay.py cands.csv \
         --rule "s_icp*s_feat_1" --rule "s_icp*s_feat_1*s_coarse" --out-dir replays/

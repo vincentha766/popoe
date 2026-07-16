@@ -37,26 +37,33 @@ from popoe.interfaces import PointFeatures, PoseHypothesis
 
 
 class ChampionScorer:
-    """Args:
-        compute_s_coarse: if True, ALSO record the paper's S_coarse — the same
-            feature_aware_score as s_feat_1 but at the PRE-ICP (coarse) pose,
-            in the SAME canonical w=1 space. It is a DIAGNOSTIC signal recorded
-            in ``breakdown["s_coarse"]`` ONLY; the final ``score`` is unchanged
-            (still ``s_icp * s_feat_1 * metric_fit``), so old configs are
-            byte-identical. Requires the coarse pose in the breakdown
-            (``R_coarse``/``t_coarse`` — set ICPRefiner(keep_coarse=True)); a
-            missing coarse pose is a loud error, never a silent skip. A new rule
-            family that USES s_coarse is evaluated offline from the cand dump
-            (examples/rule_replay.py), not wired into arbitration here — 26-rule
-            ablation shows rules do not transfer across datasets, so the rule is
-            re-swept per dataset, not hard-coded."""
+    """The paper's S_coarse (pre-ICP feature score, canonical w=1) can be either
+    RECORDED as a diagnostic or USED as an arbitration factor:
+
+        compute_s_coarse: record ``breakdown["s_coarse"]`` (S_coarse — the same
+            feature_aware_score as s_feat_1 but at the PRE-ICP coarse pose, in
+            the SAME canonical w=1 space) WITHOUT changing the score. Diagnostic.
+        use_s_coarse: multiply the final score by ``max(s_coarse, 0)`` — i.e.
+            arbitrate with ``s_icp * s_feat_1 * metric_fit * s_coarse``,
+            byte-identical to rule_replay's rule of that name (all evidence
+            clamped at 0; s_icp/metric_fit are already >= 0). Implies recording.
+
+    Either needs the coarse pose in the breakdown (``R_coarse``/``t_coarse`` —
+    set ICPRefiner(keep_coarse=True)); a missing coarse pose is a loud error,
+    never a silent skip. With BOTH off the scorer is byte-identical to before
+    (``s_icp * s_feat_1 * metric_fit``). S_coarse HELPS YCB-V (+2.5 in replay)
+    but HURTS LM-O (-1.9): the 26-rule ablation shows rules do not transfer, so
+    this is a per-DATASET switch (recipes.stages_for_object / bop_eval), not a
+    hard-coded default — the first formal carrier of a per-dataset rule."""
 
     def __init__(self, tau_inlier_frac: float = 0.03, size_thr: float = 0.0075,
-                 size_aware: bool = False, compute_s_coarse: bool = False):
+                 size_aware: bool = False, compute_s_coarse: bool = False,
+                 use_s_coarse: bool = False):
         self.tau_inlier_frac = tau_inlier_frac      # fraction of query extent
         self.size_thr = size_thr                    # metres, metric_fit inliers
         self.size_aware = size_aware
         self.compute_s_coarse = compute_s_coarse
+        self.use_s_coarse = use_s_coarse
 
     def score(self, pose: PoseHypothesis,
               query: PointFeatures, target: PointFeatures) -> PoseHypothesis:
@@ -75,19 +82,22 @@ class ChampionScorer:
             met = self._metric_fit(pose, query.pts, target.pts)
 
         extra = {}
-        if self.compute_s_coarse:
-            if "R_coarse" not in pose.breakdown:
+        sc_factor = 1.0
+        if self.compute_s_coarse or self.use_s_coarse:
+            if not {"R_coarse", "t_coarse"} <= pose.breakdown.keys():
                 raise ValueError(
-                    "compute_s_coarse=True needs the coarse pose in the "
-                    "breakdown; set ICPRefiner(keep_coarse=True)")
-            # Same formula and canonical w=1 space as s_feat_1, but at the
-            # PRE-ICP pose -> the paper's S_coarse. Diagnostic only.
+                    "s_coarse needs the coarse pose (R_coarse AND t_coarse) in "
+                    "the breakdown; set ICPRefiner(keep_coarse=True)")
+            # Same formula and canonical w=1 space as s_feat_1, at the PRE-ICP
+            # pose -> the paper's S_coarse.
             sc, _ = feature_aware_score(
                 pose.breakdown["R_coarse"], pose.breakdown["t_coarse"],
                 query.pts, target.pts, fq, ft, tau)
             extra["s_coarse"] = float(sc)
+            if self.use_s_coarse:
+                sc_factor = max(float(sc), 0.0)     # arbitration factor
 
-        score = float(s_icp) * max(float(s1), 0.0) * float(met)
+        score = float(s_icp) * max(float(s1), 0.0) * float(met) * sc_factor
         return PoseHypothesis(
             R=pose.R, t=pose.t, score=score,
             breakdown={**pose.breakdown, "s_feat_1": float(s1),

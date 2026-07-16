@@ -86,21 +86,27 @@ def best_segmentor(detections_json: str | None = None, topk: int = 2,
 
 
 def stages_for_object(extent_m: float, size_aware: bool = False,
-                      n_ransac: int = 10000, score_coarse: bool = False):
+                      n_ransac: int = 10000, score_coarse: bool = False,
+                      use_s_coarse: bool = False):
     """Per-object solver/refiner/scorer with thresholds scaled to the object.
     ``extent_m``: max bounding-box side of the sampled query cloud (metres).
 
-    ``score_coarse=True`` records the paper's S_coarse (pre-ICP feature score)
-    into the scorer breakdown as a DIAGNOSTIC — the final score is unchanged, so
-    the evaluated config is byte-identical when it is off. It wires the coarse
-    pose through: ICPRefiner(keep_coarse=True) + ChampionScorer(compute_s_coarse
-    =True)."""
+    S_coarse (pre-ICP feature score, canonical w=1) is wired here:
+      * ``score_coarse=True`` RECORDS it into the breakdown (diagnostic; score
+        unchanged).
+      * ``use_s_coarse=True`` USES it as an arbitration factor (score *=
+        max(s_coarse, 0)) — a per-DATASET switch (helps YCB-V, hurts LM-O).
+    Either wires the coarse pose through (ICPRefiner(keep_coarse=True)); with
+    both off the config is byte-identical."""
     from popoe.adapters import ICPRefiner
     from popoe.scoring import ChampionScorer
     from popoe.solvers import Open3DFeatureRansacSolver
     tau = TAU_FRAC * extent_m
     solver = Open3DFeatureRansacSolver(tau_inlier=tau, max_iteration=n_ransac)
-    refiner = ICPRefiner(tau_icp=tau, keep_coarse=score_coarse)
+    refiner = ICPRefiner(tau_icp=tau, keep_coarse=score_coarse or use_s_coarse)
+    # use_s_coarse implies s_coarse IS computed and emitted, so compute_s_coarse
+    # reflects reality (an inspector reading the flag sees the truth).
     scorer = ChampionScorer(tau_inlier_frac=TAU_FRAC, size_aware=size_aware,
-                            compute_s_coarse=score_coarse)
+                            compute_s_coarse=score_coarse or use_s_coarse,
+                            use_s_coarse=use_s_coarse)
     return solver, refiner, scorer

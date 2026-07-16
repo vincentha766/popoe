@@ -126,6 +126,16 @@ def main():
                          "(and the main --out rows) are unchanged; only the "
                          "extra s_coarse column and the wall-clock `time` "
                          "column (more compute) differ.")
+    ap.add_argument("--use-s-coarse", action="store_true",
+                    help="USE S_coarse in arbitration: score *= max(s_coarse,0) "
+                         "(rule s_icp*s_feat_1*metric_fit*s_coarse). Per-DATASET "
+                         "switch — helps YCB-V, hurts LM-O. Implies "
+                         "--score-coarse (records the s_coarse column too). This "
+                         "DOES change the main --out score/R/t, so use a FRESH "
+                         "--out and --cand-csv: resume/append are keyed by rows, "
+                         "not config, so reusing a file written without this "
+                         "flag silently keeps its old scores (as with any "
+                         "score-affecting knob — --merge, --weights, --grid).")
     ap.add_argument("--merge", default="ycbv",
                     help="'ycbv' for the clamp pair, 'none', or '19:20,...'")
     ap.add_argument("--render-backend", default="nvdiffrast",
@@ -135,6 +145,10 @@ def main():
                          "errors without it; 'auto' accepts the ~100x slower CPU "
                          "ray-caster, which yields DIFFERENT features.")
     args = ap.parse_args()
+    # --use-s-coarse implies recording it too (the s_coarse cand-csv column and
+    # the coarse-pose wiring), so it depends on --score-coarse.
+    if args.use_s_coarse:
+        args.score_coarse = True
     # Validate the source-mode BEFORE any file work (resume cleanup rewrites
     # --out): a CLI-argument error must not fire after destructive steps.
     validate_source_args(args.detections, args.sources)
@@ -279,7 +293,8 @@ def main():
         q.meta["feats_w1"] = q.feats   # genuinely w=1: extraction is pinned
         extent = float(np.ptp(q.pts, axis=0).max())
         stages = stages_for_object(extent, size_aware=obj_id in merge,
-                                   score_coarse=args.score_coarse)
+                                   score_coarse=args.score_coarse,
+                                   use_s_coarse=args.use_s_coarse)
         query_cache[obj_id] = (obj, q, stages)
         print(f"  obj{obj_id}: extent={extent*1000:.0f}mm "
               f"encode={time.time()-t0:.1f}s", flush=True)
