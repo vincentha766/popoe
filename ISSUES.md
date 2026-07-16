@@ -26,13 +26,25 @@ Design decisions worth recording (were not obvious, resolved here not by fiat):
    For the single-file form this is byte-identical to the old global behaviour
    (all masks share one source), so the evaluated v5 numbers are unaffected.
 
-3. **SAM-6D ISM has no committed local detections file** (it runs on a GPU
-   pod, no public per-dataset JSON). The intended three-way CNOS+SAM-6D+NIDS
-   union is exercised as the available two-way CNOS+NIDS subset
-   (`examples/union_smoke.py`, both YCB-V and LM-O). The N=3 path itself is
-   unit-tested with synthetic sources; `--source sam6d=<file>` wires a real
-   third source once ISM output exists. No pod opened, no inference env
-   installed (per the task constraint).
+3. **SAM-6D ISM: LM-O available (pod-generated), YCB-V not.** SAM-6D ISM was
+   run on a pod and its LM-O output retrieved
+   (`data/detections/sam6d/sam6d_ism_lmo.json`, 20496 dets / 200 imgs); YCB-V
+   ISM was never generated, so YCB-V stays a two-way CNOS+NIDS union. The full
+   three-way CNOS+SAM-6D+NIDS union is exercised on LM-O
+   (`examples/union_smoke.py --dataset lmo --source sam6d=…`: balanced 35/33/33%
+   candidate source split over 200 images). No pod opened by this work, no
+   inference env installed — only the published/retrieved JSON is consumed.
+
+4. **Union ingestion cross-validated against the gedi merge script.** The
+   gedi-era CNOS+SAM-6D LM-O union reference
+   (`union_cnos_sam6d_lmo.reference.json`, 33765 = 13269 CNOS + 20496 SAM-6D)
+   is the merged detection POOL — raw source-tagged concatenation, no top-M/
+   dedup baked in (that runs at segment() time in both stacks). popoe's
+   two-source ingestion (`load_bop_detections` per source + combine, which is
+   what `BOPDetectionsSegmentor` does into `_by_img`) reproduces it EXACTLY:
+   identical multiset of FULL normalised records (all fields, exact scores),
+   0 divergences. Pinned by `tests/test_union_reference_xval.py` (skips when
+   the local files are absent).
 
 Env note: the full suite needs `open3d`, which has no Python 3.13/3.14 wheel,
 so the uv venv is pinned to **3.12** (`.python-version`); `pycocotools` (a real

@@ -54,6 +54,27 @@ pytest` 全绿后提交），在分支 `nids-integration` 上：
 CNOS 默认检测文件由督导补充（`data/detections/cnos/cnos-fastsam_{ycbv,lmo}-test.json`，
 来源 HF bop-benchmark/bop_extra）。
 
+### 收尾补充：SAM-6D LM-O 三路 + 交叉验证（督导第二次注入后）
+
+督导从 pod 取回 SAM-6D ISM 的 LM-O 检测（`data/detections/sam6d/sam6d_ism_lmo.json`，
+20496 条 / 200 图；YCB-V ISM 从未生成，YCB-V 维持 CNOS+NIDS 两路）。两件收尾：
+
+1. **完整三路实跑（LM-O）**：`examples/union_smoke.py --dataset lmo --source
+   sam6d=data/detections/sam6d/sam6d_ism_lmo.json` —— 三源载入
+   cnos 13269 / nids 7179 / sam6d 20496，1558 个检测标签探针（200 图），
+   候选来源分布 **sam6d 35% / nids 33% / cnos 33%**（均衡三路并集），
+   掩码全部 (480,640) bool，实例选择管路端到端跑通。
+
+2. **交叉验证（vs gedi merge 脚本参考）**：参考文件
+   `union_cnos_sam6d_lmo.reference.json` 是 CNOS+SAM-6D 两路**合并池**
+   （33765 = 13269 + 20496，带 source 标注，未做 top-M/去重——该选择在两套
+   栈里都发生在 segment() 时）。用 popoe 的载入逻辑对同样两路输入复算
+   （`load_bop_detections` 各自打标 + 拼接，即 `BOPDetectionsSegmentor` 写入
+   `_by_img` 的内容），与参考文件**逐条完全一致**：全字段规范化记录（含
+   bbox/time、精确 score）多重集相同，0 条差异。由
+   `tests/test_union_reference_xval.py` 钉住（本地文件缺失时跳过，且路径锚定
+   仓库根以免异地误跳）。测试套件 60 项全绿。commit `473f6ba` 之后收尾提交。
+
 ## 每块完成后的固定流程（不可跳过）
 
 1. `git add -A && git diff HEAD --stat` 确认改动范围符合本块预期；
