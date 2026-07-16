@@ -268,3 +268,22 @@ the third source re-proposes masks the union already holds. Ensemble value
 Remaining lever: feature-aware mask scoring in the union selector (FreeZe's
 mechanism for its larger published gain). Artefacts in
 gedi/ycbv_local_data/union_scoring_20260716/.
+
+## 2026-07-16 · A-layer S_coarse arbitration: measured, dataset-asymmetric
+
+Rescan with --score-coarse (both datasets, caches hot) + local rule_replay
+(replay baseline matches full runs within 0.04pt). Same-candidate-set AR(2/3):
+
+| rule | YCB-V | LM-O |
+|---|---|---|
+| baseline fit*s_feat_1*metric | 0.6885 | **0.7755** |
+| *s_coarse (plain product) | **0.7137 (+2.5)** | 0.7568 (−1.9) |
+
+YCB-V: gains land exactly on the ICP-attachment objects (obj14 +10.6, obj20
++11.8 MSSD; obj21 gives back 3.2). LM-O (occlusion): pre-ICP feature
+consistency is unreliable — s_coarse hurts. Rules remain per-dataset (26-rule
+ablation lesson holds). Plain product again optimal where it works.
+Cumulative YCB-V subset chain: 0.6475 → 0.6889 (union) → 0.7137 (+S_coarse)
+= +6.6 total, matching the magnitude of FreeZe's published ensemble gain with
+a measurable two-part decomposition. B-layer (feature-aware RANSAC fitness)
+remains the open lever for LM-O.
