@@ -9,6 +9,9 @@ venv/
 .ipynb_checkpoints/
 *.so
 # data / weights / outputs (never commit these)
+# Downloaded BOP detection files (CNOS / SAM-6D / NIDS) — large; see README
+# "Detections" for download sources. Test fixtures live under tests/fixtures/.
+data/detections/
 *.ply
 *.pth
 *.tar

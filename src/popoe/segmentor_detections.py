@@ -29,6 +29,129 @@ def _mask_iou(a: np.ndarray, b: np.ndarray) -> float:
     return (np.logical_and(a, b).sum() / union) if union else 0.0
 
 
+# ── Loading: field coercion + RLE compatibility ──────────────────────────
+#
+# BOP detection files in the wild are NOT uniformly typed. The public
+# CNOS-FastSAM files are already numeric with list-valued (uncompressed) RLE;
+# the NIDS-Net WA_Sappe release hosted on Box is documented to arrive with
+# EVERY field stringified ("scene_id": "48", "score": "0.74...", bbox as a
+# stringified list). Both must load without special-casing at the call site.
+#
+# Why coerce at load time rather than trust the values: an un-coerced string
+# category poisons the *silent* path, not the loud one. `d["category_id"] in
+# labels` with category_id=="1" and labels==[1] is simply False -> the image
+# yields zero candidates and looks like "object not in frame", never an error.
+# (`-d["score"]` on a str would at least raise.) Coercion turns a silent miss
+# into correct matching. See test_detections_load.py.
+
+def _to_int(x) -> int:
+    """Coerce ids/counts to int, accepting int, float, or numeric string
+    ('48' and '48.0' both -> 48). A NON-integral value ('1.9', '1e-1') RAISES
+    rather than truncating: a truncated scene_id/image_id/category_id silently
+    routes to the wrong image/object, the exact silent miss this loader exists
+    to prevent."""
+    f = float(x)
+    if not f.is_integer():
+        raise ValueError(f"expected an integer-valued field, got {x!r}")
+    return int(f)
+
+
+def _to_float(x) -> float:
+    return float(x)
+
+
+def _coerce_bbox(b):
+    """bbox may be a real list [x, y, w, h] or a stringified one "[x, y, w, h]"."""
+    if isinstance(b, str):
+        b = json.loads(b)
+    return [float(v) for v in b]
+
+
+def _normalize_segmentation(seg):
+    """Return an RLE dict with a numeric `size` and `counts` that is either a
+    list of ints (uncompressed) or a str/bytes (compressed COCO RLE).
+
+    Handles the stringified variants of the WA_Sappe release:
+      * `size` as "[480, 640]"  -> [480, 640]
+      * `counts` as "[6628, 2, ...]" (a stringified uncompressed run list)
+        -> parsed back to a list.
+    A genuine compressed-RLE string is passed through as-is — including ones
+    that START WITH '[': COCO's compressed counts are LEB128 bytes mapped into
+    printable ASCII, so e.g. "[1d0Q6" is a valid compressed RLE, NOT a JSON
+    list. The discriminator is therefore "parses as a JSON array of numbers",
+    tried and rolled back on failure, not a cheap first-character check.
+    """
+    if not isinstance(seg, dict):
+        return seg
+    size = seg.get("size")
+    if isinstance(size, str):
+        size = json.loads(size)
+    size = [int(s) for s in size]
+    counts = seg.get("counts")
+    if isinstance(counts, str) and counts.lstrip().startswith("["):
+        try:
+            parsed = json.loads(counts)
+        except json.JSONDecodeError:
+            parsed = None                    # compressed RLE that begins with '['
+        if isinstance(parsed, list):
+            counts = parsed                  # stringified uncompressed run list
+    if isinstance(counts, list):
+        counts = [int(c) for c in counts]    # stringified ints -> ints
+    return {"counts": counts, "size": size}
+
+
+def load_bop_detections(path: str, source: str | None = None) -> list[dict]:
+    """Load a BOP-format detections JSON into normalised, numerically-typed
+    records, robust to the fully-stringified WA_Sappe (NIDS) variant.
+
+    Each returned record has int scene_id/image_id/category_id, float score,
+    and a `segmentation` RLE dict normalised by `_normalize_segmentation`.
+    `bbox` (if present) is coerced to a float list. Any OTHER fields on the
+    record (e.g. BOP's per-detection `time`) are carried through untouched, so
+    the loader can also normalise-and-rewrite without dropping metadata.
+    `source` is set from the argument when given (it stamps the origin for
+    multi-source union), else from the record's own "source" field when
+    present, else left absent (the segmentor buckets those under "_")."""
+    with open(path) as f:
+        raw = json.load(f)
+    records = []
+    for d in raw:
+        rec = dict(d)                        # keep unknown fields (time, ...)
+        rec["scene_id"] = _to_int(d["scene_id"])
+        rec["image_id"] = _to_int(d["image_id"])
+        rec["category_id"] = _to_int(d["category_id"])
+        rec["score"] = _to_float(d["score"])
+        rec["segmentation"] = _normalize_segmentation(d["segmentation"])
+        if "bbox" in d:
+            rec["bbox"] = _coerce_bbox(d["bbox"])
+        if source is not None:
+            rec["source"] = source
+        records.append(rec)
+    return records
+
+
+def decode_detection_mask(seg: dict) -> np.ndarray:
+    """Decode a BOP RLE `segmentation` dict to a (H, W) bool mask.
+
+    Accepts BOTH RLE encodings that appear in BOP files:
+      * uncompressed — `counts` is a list of run lengths (column-major, COCO
+        convention). pycocotools decodes these via `frPyObjects(seg, h, w)`,
+        which is byte-identical to a manual column-major run decode (verified).
+      * compressed — `counts` is a str/bytes COCO RLE, decoded directly.
+
+    The dict-vs-string distinction is exactly the "counts gotcha": a list
+    `counts` is an uncompressed RLE and MUST go through `frPyObjects` (passing
+    it to `decode` treats it as already-compressed and returns garbage)."""
+    from pycocotools import mask as coco_mask
+    h, w = int(seg["size"][0]), int(seg["size"][1])
+    counts = seg["counts"]
+    rle = coco_mask.frPyObjects(seg, h, w) if isinstance(counts, list) else seg
+    m = coco_mask.decode(rle).astype(bool)
+    if m.ndim == 3:
+        m = m[:, :, 0]
+    return m
+
+
 class BOPDetectionsSegmentor:
     """Segmentor over a BOP default-detections JSON.
 
@@ -53,7 +176,7 @@ class BOPDetectionsSegmentor:
         self.iou_dedupe = iou_dedupe
         self.min_pixels = min_pixels
         self._by_img: dict = {}
-        for d in json.load(open(detections_json)):
+        for d in load_bop_detections(detections_json):
             self._by_img.setdefault(
                 (d["scene_id"], d["image_id"]), []).append(d)
 
@@ -70,16 +193,10 @@ class BOPDetectionsSegmentor:
         for lst in buckets.values():
             picked.extend(sorted(lst, key=lambda d: -d["score"])[: self.topk])
 
-        from pycocotools import mask as coco_mask
         dets: list[Detection] = []
         kept_masks: list[np.ndarray] = []
         for d in sorted(picked, key=lambda d: -d["score"]):
-            seg = d["segmentation"]
-            rle = (coco_mask.frPyObjects(seg, seg["size"][0], seg["size"][1])
-                   if isinstance(seg["counts"], list) else seg)
-            m = coco_mask.decode(rle).astype(bool)
-            if m.ndim == 3:
-                m = m[:, :, 0]
+            m = decode_detection_mask(d["segmentation"])
             if m.sum() < self.min_pixels:
                 continue
             if any(_mask_iou(m, prev) > self.iou_dedupe for prev in kept_masks):

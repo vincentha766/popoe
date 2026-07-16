@@ -23,7 +23,7 @@ dependencies = ["numpy", "scikit-learn"]
 # The reference implementation (feature extraction, RANSAC/ICP, rendering, eval).
 # Note: GeDi (POPOE_GEDI_PATH), nvdiffrast and SAM2 are external and NOT on PyPI —
 # see README "External dependencies".
-reference = ["torch", "torchvision", "open3d", "opencv-python", "trimesh", "Pillow", "scipy"]
+reference = ["torch", "torchvision", "open3d", "opencv-python", "trimesh", "Pillow", "scipy", "pycocotools"]
 dev = ["pytest"]
 
 [project.urls]
