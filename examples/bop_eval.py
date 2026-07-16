@@ -52,17 +52,62 @@ IDN = " ".join(f"{v:.6f}" for v in np.eye(3).flatten())
 ZT = "0.0 0.0 0.0"
 
 
+def _parse_sources_arg(sources):
+    return [s.strip() for s in sources.split(",") if s.strip()]
+
+
+def validate_source_args(detections, sources):
+    """Enforce the --detections / --sources one-of rule. Called EARLY (right
+    after parse_args) so an argument error can never fire after the resume-
+    cleanup step has already rewritten --out."""
+    if bool(detections) == bool(sources):
+        raise SystemExit("pass exactly one of --detections or --sources")
+    if sources and not _parse_sources_arg(sources):
+        raise SystemExit("--sources is empty")
+
+
+def floored_topk(user_topk, max_inst):
+    """Detection top-K must not cap output below the largest inst_count, or a
+    4-instance target could never receive 4 champions. For a multi-source union
+    this floor holds PER (source, label) bucket (see BOPDetectionsSegmentor), so
+    every backend can still supply enough candidates for a multi-instance
+    target — it is not a shared global cap one source could exhaust."""
+    return max(user_topk, max_inst)
+
+
+def resolve_segmentor(detections, sources, topk, merge_labels):
+    """Build the detections segmentor from the mutually-exclusive --detections /
+    --sources knobs (exactly one required).
+
+    --sources is a comma-separated ``name=path`` list unioned as named backends
+    (e.g. ``cnos=/a.json,nids=/b.json``). ``topk`` is the per-(source, label)
+    bucket cap and is passed straight through (already floored by the caller)."""
+    validate_source_args(detections, sources)
+    if sources:
+        return best_segmentor(sources=_parse_sources_arg(sources), topk=topk,
+                              merge_labels=merge_labels)
+    return best_segmentor(detections, topk=topk, merge_labels=merge_labels)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--bop", required=True)
-    ap.add_argument("--detections", required=True)
+    ap.add_argument("--detections", default=None,
+                    help="single BOP detections JSON. Mutually exclusive with "
+                         "--sources; pass exactly one.")
+    ap.add_argument("--sources", default="",
+                    help="comma-separated name=path list unioned as named "
+                         "backends, e.g. cnos=/a.json,nids=/b.json. Mutually "
+                         "exclusive with --detections.")
     ap.add_argument("--out", required=True)
     ap.add_argument("--objs", default="")
     ap.add_argument("--weights", default=",".join(str(w) for w in WEIGHTS))
     ap.add_argument("--topk", type=int, default=2,
                     help="detections kept per (source,label) bucket; floored "
                          "at the dataset's max inst_count so multi-instance "
-                         "targets can receive enough champions")
+                         "targets can receive enough champions. With --sources "
+                         "this cap is PER source (each backend supplies up to "
+                         "topk per label), not a shared global cap")
     ap.add_argument("--grid", type=int, default=32)
     ap.add_argument("--cache", default="", help="target-feature cache dir")
     ap.add_argument("--cand-csv", default="", help="dump every hypothesis")
@@ -75,6 +120,9 @@ def main():
                          "errors without it; 'auto' accepts the ~100x slower CPU "
                          "ray-caster, which yields DIFFERENT features.")
     args = ap.parse_args()
+    # Validate the source-mode BEFORE any file work (resume cleanup rewrites
+    # --out): a CLI-argument error must not fire after destructive steps.
+    validate_source_args(args.detections, args.sources)
 
     bop = Path(args.bop)
     weights = [float(w) for w in args.weights.split(",")]
@@ -142,12 +190,12 @@ def main():
     print(f"{len(targets)} targets / {len(by_img)} images"
           + (f" (resuming past {len(done)})" if done else ""), flush=True)
 
-    # Detection top-K must not cap output below the largest inst_count, or a
-    # 4-instance target could never receive 4 champions (codex round-2 minor).
+    # Detection top-K floored at the dataset's max inst_count (see floored_topk);
+    # for a union the floor holds per (source, label) bucket.
     max_inst = max(target_counts.values(), default=1)
-    segmentor = best_segmentor(args.detections,
-                               topk=max(args.topk, max_inst),
-                               merge_labels=merge)
+    segmentor = resolve_segmentor(args.detections, args.sources,
+                                  topk=floored_topk(args.topk, max_inst),
+                                  merge_labels=merge)
     q_enc, t_enc = best_encoders(target_grid=args.grid,
                                  render_backend=args.render_backend)
     selector = BestScoreSelector()
