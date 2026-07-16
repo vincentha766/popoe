@@ -271,17 +271,22 @@ class BOPDetectionsSegmentor:
         for lst in buckets.values():
             picked.extend(sorted(lst, key=lambda d: -d["score"])[: self.topk])
 
+        # The N-way top-M union does NOT filter ACROSS sources (FreeZe's
+        # "top-M union without filtering"): two sources may propose the same
+        # region and BOTH are kept, so the feature-aware scorer disposes with
+        # every source's evidence intact. iou_dedupe is therefore scoped
+        # PER SOURCE — a single backend still drops its own near-duplicates,
+        # which for the one-source form is byte-identical to before.
         dets: list[Detection] = []
-        kept_masks: list[np.ndarray] = []
+        kept_by_source: dict = {}
         for d in sorted(picked, key=lambda d: -d["score"]):
             m = decode_detection_mask(d["segmentation"])
             if m.sum() < self.min_pixels:
                 continue
-            if any(_mask_iou(m, prev) > self.iou_dedupe for prev in kept_masks):
+            src = d.get("source", self.source)
+            kept = kept_by_source.setdefault(src, [])
+            if any(_mask_iou(m, prev) > self.iou_dedupe for prev in kept):
                 continue
-            kept_masks.append(m)
-            # Provenance: the RECORD's source (nids/cnos/sam6d in a union), or
-            # the segmentor's default tag for an untagged single file.
-            dets.append(Detection(mask=m, score=float(d["score"]),
-                                  source=d.get("source", self.source)))
+            kept.append(m)
+            dets.append(Detection(mask=m, score=float(d["score"]), source=src))
         return dets

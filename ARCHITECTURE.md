@@ -143,7 +143,11 @@ dets[0].source        # -> 'cnos' | 'sam6d' | 'nids' — which backend produced 
 `topk` is applied per `(source, label)` bucket, so a top-M union keeps M
 candidates **per source** (no source crowds out another before scoring), and
 every mask carries its origin in `Detection.source` — the same provenance
-discipline as the fallback chain. The single-file form
+discipline as the fallback chain. The union across sources is **unfiltered**
+(FreeZe's "top-M union without filtering"): `iou_dedupe` is scoped per source,
+so two backends proposing the same region both survive and the feature-aware
+scorer disposes with every source's evidence intact — a single backend still
+drops its own near-duplicates. The single-file form
 `BOPDetectionsSegmentor(path)` is unchanged (its masks keep the historical
 `bop-detections` tag). The loader (`load_bop_detections`) coerces the
 fully-stringified NIDS WA_Sappe variant and decodes both compressed and

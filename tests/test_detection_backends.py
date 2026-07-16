@@ -171,3 +171,43 @@ def test_multi_source_records_sources_attribute(tmp_path):
     b = _write(tmp_path, "cnos", [_det(5, 0.8, _mask(2, 40))])
     seg = BOPDetectionsSegmentor(sources={"nids": a, "cnos": b})
     assert [s.name for s in seg.sources] == ["nids", "cnos"]
+
+
+def test_union_does_not_filter_across_sources(tmp_path):
+    """Two sources proposing the SAME region: the top-M union keeps BOTH (no
+    cross-source NMS), so the pose scorer sees every source's evidence. Same
+    mask, so global IoU-dedupe WOULD have dropped one."""
+    same = _mask(2, 2)
+    a = _write(tmp_path, "nids", [_det(5, 0.9, same)])
+    b = _write(tmp_path, "cnos", [_det(5, 0.8, same.copy())])
+    seg = BOPDetectionsSegmentor(sources={"nids": a, "cnos": b},
+                                 topk=2, iou_dedupe=0.9)
+    dets = seg.segment(_scene(), _obj(5))
+    assert sorted(d.source for d in dets) == ["cnos", "nids"]   # both survive
+
+
+def test_union_still_dedupes_within_a_source(tmp_path):
+    """Filtering is scoped per-source, not disabled: one backend proposing two
+    near-identical masks still drops the duplicate."""
+    m = _mask(2, 2)
+    m2 = m.copy(); m2[2, 2] = False                    # ~identical (IoU ~ 1)
+    a = _write(tmp_path, "nids", [_det(5, 0.9, m), _det(5, 0.85, m2)])
+    seg = BOPDetectionsSegmentor(sources={"nids": a}, topk=2, iou_dedupe=0.9)
+    dets = seg.segment(_scene(), _obj(5))
+    assert len(dets) == 1 and dets[0].source == "nids"
+
+
+def test_three_way_union_provenance_and_counts(tmp_path):
+    """N=3 sources, per-source top-M=2: each contributes up to 2 distinct masks,
+    all kept with their origin — the three-way union shape."""
+    files = {}
+    for name, base_c in (("cnos", 0), ("sam6d", 20), ("nids", 40)):
+        files[name] = _write(tmp_path, name, [
+            _det(5, 0.9, _mask(0, base_c)),
+            _det(5, 0.8, _mask(20, base_c)),
+            _det(5, 0.7, _mask(35, base_c)),          # 3rd, trimmed by top-M=2
+        ])
+    seg = BOPDetectionsSegmentor(sources=files, topk=2)
+    dets = seg.segment(_scene(), _obj(5))
+    from collections import Counter
+    assert Counter(d.source for d in dets) == {"cnos": 2, "sam6d": 2, "nids": 2}
