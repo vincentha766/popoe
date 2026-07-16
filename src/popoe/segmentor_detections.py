@@ -18,6 +18,7 @@ Pure numpy + pycocotools; no GPU.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -152,33 +153,110 @@ def decode_detection_mask(seg: dict) -> np.ndarray:
     return m
 
 
+# ── Pluggable file-based detection backends ──────────────────────────────
+#
+# CNOS-FastSAM, SAM-6D ISM and NIDS-Net all publish the SAME artefact: a
+# BOP-format detections JSON. They are not different *code* paths, only
+# different files under different NAMES. So a "segmentation backend" here is
+# just a named file source; the swap-and-compose seam is the existing
+# `Segmentor` Protocol (interfaces.py), and `BOPDetectionsSegmentor` is the one
+# implementation that serves one OR several such sources. Naming each source
+# keeps provenance on every mask (`Detection.source`), exactly as the fallback
+# chain does (segmentor.FirstAvailableSegmentor) — see ARCHITECTURE.md.
+
+@dataclass(frozen=True)
+class DetectionSource:
+    """One named BOP-detections file. `name` is the provenance tag stamped onto
+    every `Detection` it yields (canonically 'cnos' / 'sam6d' / 'nids'); `path`
+    is the JSON. It is the config-level handle a caller selects BY NAME and
+    composes with others (see BOPDetectionsSegmentor's `sources=`)."""
+    name: str
+    path: str
+
+
+def _coerce_sources(sources) -> list[DetectionSource]:
+    """Accept the ways a config can name detection sources and normalise to a
+    list[DetectionSource]:
+      * dict            {"nids": path, "cnos": path}
+      * (name, path) tuples / DetectionSource instances, in a list
+      * "name=path" strings (CLI-friendly), in a list
+    """
+    out: list[DetectionSource] = []
+    items = sources.items() if isinstance(sources, dict) else sources
+    for s in items:
+        if isinstance(sources, dict):
+            out.append(DetectionSource(s[0], s[1]))
+        elif isinstance(s, DetectionSource):
+            out.append(s)
+        elif isinstance(s, str) and "=" in s:
+            name, path = s.split("=", 1)
+            out.append(DetectionSource(name, path))
+        elif isinstance(s, (tuple, list)) and len(s) == 2:
+            out.append(DetectionSource(str(s[0]), str(s[1])))
+        else:
+            raise TypeError(
+                f"cannot read detection source spec {s!r}; expected a "
+                f"DetectionSource, (name, path), or 'name=path'")
+    if not out:
+        raise ValueError("no detection sources given")
+    names = [s.name for s in out]
+    if any(not n for n in names):
+        raise ValueError("every detection source needs a non-empty name")
+    if len(set(names)) != len(names):
+        raise ValueError(f"duplicate source names would collide: {names}")
+    return out
+
+
 class BOPDetectionsSegmentor:
-    """Segmentor over a BOP default-detections JSON.
+    """Segmentor over one OR several BOP default-detections JSON files.
 
     Args:
-        detections_json: path to the BOP-format detections file (list of dicts
-            with scene_id / image_id / category_id / score / segmentation RLE,
-            optionally a "source" tag when files were unioned).
+        detections_json: path to a single BOP-format detections file (list of
+            dicts with scene_id / image_id / category_id / score / segmentation
+            RLE). Back-compatible single-source form. Mutually exclusive with
+            `sources`.
         topk: detections kept per (source, label) bucket.
         merge_labels: {obj_id: [obj_id, partner_id, ...]} — pool these labels'
             candidates for the given object. Default None (no pooling).
         iou_dedupe: drop a mask whose IoU with an already-kept one exceeds this.
         min_pixels: drop masks smaller than this (unreliable geometry).
+        sources: a config of NAMED backends to union — dict {name: path},
+            DetectionSource / (name, path) list, or "name=path" strings (see
+            `_coerce_sources`). Each record is tagged with its source name, so
+            the per-(source, label) bucketing keeps top-K PER SOURCE and every
+            returned `Detection.source` says which backend produced it.
+        source: provenance tag for the single-file form (default: the class
+            tag 'bop-detections', which preserves historical `Detection.source`).
     """
 
     source = "bop-detections"
 
-    def __init__(self, detections_json: str, topk: int = 2,
+    def __init__(self, detections_json: str | None = None, topk: int = 2,
                  merge_labels: dict | None = None, iou_dedupe: float = 0.9,
-                 min_pixels: int = 100):
+                 min_pixels: int = 100, *, sources=None,
+                 source: str | None = None):
+        if (detections_json is None) == (sources is None):
+            raise ValueError("pass exactly one of detections_json or sources")
+        if source is not None and not source:
+            raise ValueError("source name must be non-empty")
         self.topk = topk
         self.merge_labels = merge_labels or {}
         self.iou_dedupe = iou_dedupe
         self.min_pixels = min_pixels
         self._by_img: dict = {}
-        for d in load_bop_detections(detections_json):
-            self._by_img.setdefault(
-                (d["scene_id"], d["image_id"]), []).append(d)
+        if sources is not None:
+            self.sources = _coerce_sources(sources)
+        else:
+            # Single file: one source whose name is the given tag, or the class
+            # default 'bop-detections' — which every record is stamped with
+            # (overwriting any stray per-record "source"), so the single-file
+            # form keeps its historical, uniform Detection.source.
+            self.sources = [DetectionSource(source or self.source,
+                                            detections_json)]
+        for s in self.sources:
+            for d in load_bop_detections(s.path, source=s.name):
+                self._by_img.setdefault(
+                    (d["scene_id"], d["image_id"]), []).append(d)
 
     def segment(self, scene: Scene, obj: ObjectModel) -> list[Detection]:
         labels = self.merge_labels.get(obj.obj_id, [obj.obj_id])
@@ -202,6 +280,8 @@ class BOPDetectionsSegmentor:
             if any(_mask_iou(m, prev) > self.iou_dedupe for prev in kept_masks):
                 continue
             kept_masks.append(m)
+            # Provenance: the RECORD's source (nids/cnos/sam6d in a union), or
+            # the segmentor's default tag for an untagged single file.
             dets.append(Detection(mask=m, score=float(d["score"]),
-                                  source=self.source))
+                                  source=d.get("source", self.source)))
         return dets

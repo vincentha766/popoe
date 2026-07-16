@@ -15,7 +15,7 @@ Scene (RGB-D, K) ──┘            TargetEncoder ──┴─ PoseSolver ─ 
 
 | Stage | Protocol | Reference implementation |
 |-------|----------|--------------------------|
-| Segmentation | `Segmentor` | `segmentor_detections.BOPDetectionsSegmentor` (evaluated); `segmentor_cnos.CNOSSegmentor` / `.DinoWindowSegmentor`; `segmentor.SAMSegmentor` / `.DepthSegmentor`; `adapters.PrecomputedSegmentor` |
+| Segmentation | `Segmentor` | `segmentor_detections.BOPDetectionsSegmentor` (evaluated; single file or a named-source union — see below); `segmentor_cnos.CNOSSegmentor` / `.DinoWindowSegmentor`; `segmentor.SAMSegmentor` / `.DepthSegmentor`; `adapters.PrecomputedSegmentor` |
 | Query features | `QueryEncoder` | `adapters.FreeZeQueryEncoder` (DINOv2 + GeDi) |
 | Target features | `TargetEncoder` | `adapters.FreeZeTargetEncoder` |
 | Fusion | `FeatureFusion` | `fusion.DinoGeDiFusion` |
@@ -118,6 +118,36 @@ the visual features would disambiguate. Emitting several candidates
 pick the feature-best — **no new scoring code** — recovers parity. "Geometry
 proposes, features dispose." A robust backend (TEASER++, MAC) would slot in the
 same way.
+
+## File-based detection backends (CNOS / SAM-6D / NIDS)
+
+CNOS-FastSAM, SAM-6D ISM and NIDS-Net all publish the same artefact — a
+BOP-format detections JSON — so they are not separate code paths, only
+different files under different names. `segmentor_detections.DetectionSource`
+`(name, path)` is the config handle: select a backend BY NAME and compose
+several into one `BOPDetectionsSegmentor` to reproduce FreeZe-style multi-source
+segmentation.
+
+```python
+from popoe.segmentor_detections import BOPDetectionsSegmentor
+
+seg = BOPDetectionsSegmentor(sources={           # or [("nids", p), ...] / "name=path"
+    "cnos":  "…/cnos_ycbv.json",
+    "sam6d": "…/sam6d_ycbv.json",
+    "nids":  "…/nids_wa_sappe_ycbv.json",
+}, topk=2)
+dets = seg.segment(scene, obj)
+dets[0].source        # -> 'cnos' | 'sam6d' | 'nids' — which backend produced it
+```
+
+`topk` is applied per `(source, label)` bucket, so a top-M union keeps M
+candidates **per source** (no source crowds out another before scoring), and
+every mask carries its origin in `Detection.source` — the same provenance
+discipline as the fallback chain. The single-file form
+`BOPDetectionsSegmentor(path)` is unchanged (its masks keep the historical
+`bop-detections` tag). The loader (`load_bop_detections`) coerces the
+fully-stringified NIDS WA_Sappe variant and decodes both compressed and
+uncompressed RLE — see the module docstring.
 
 ## Verification
 

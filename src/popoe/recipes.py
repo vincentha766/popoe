@@ -69,9 +69,18 @@ def best_encoders(device: str = "cuda", target_grid: int = 32,
     return make_freeze_encoders(qx, tx)
 
 
-def best_segmentor(detections_json: str, topk: int = 2,
-                   merge_labels: dict | None = None):
+def best_segmentor(detections_json: str | None = None, topk: int = 2,
+                   merge_labels: dict | None = None, sources=None):
+    """Detections segmentor over one file (`detections_json`) or a union of
+    NAMED backends (`sources` — dict {name: path}, DetectionSource/(name, path)
+    list, or 'name=path' strings; see BOPDetectionsSegmentor). Exactly one of
+    the two must be given."""
+    if (detections_json is None) == (sources is None):
+        raise ValueError("pass exactly one of detections_json or sources")
     from popoe.segmentor_detections import BOPDetectionsSegmentor
+    if sources is not None:
+        return BOPDetectionsSegmentor(sources=sources, topk=topk,
+                                      merge_labels=merge_labels)
     return BOPDetectionsSegmentor(detections_json, topk=topk,
                                   merge_labels=merge_labels)
 
