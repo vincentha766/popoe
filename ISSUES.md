@@ -255,3 +255,16 @@ to the volume. Results (AR(2/3), VSD skipped as usual):
 
 Artefacts: gedi/ycbv_local_data/union_scoring_20260716/ (result+cand CSVs,
 logs). Remaining gap: SAM-6D ISM was never generated for YCB-V.
+
+## 2026-07-16 · YCB-V three-way completes: saturation at two sources
+
+SAM-6D ISM detections for YCB-V generated on-pod (56 min on a 4090; 49151
+dets / 900 imgs, `sam6d_ism_ycbv.json` — the "never generated" note above is
+now stale). Three-way CNOS+SAM6D+NIDS on the v5 subset: **AR(2/3) 0.6899**
+vs two-way 0.6889 (+0.1, per-object changes cancel: obj21 +2.1, obj10
+−1.3). Reading: NIDS and SAM-6D ISM both propose with SAM-family models —
+the third source re-proposes masks the union already holds. Ensemble value
+= diversity of proposal/confidence computation, not source count.
+Remaining lever: feature-aware mask scoring in the union selector (FreeZe's
+mechanism for its larger published gain). Artefacts in
+gedi/ycbv_local_data/union_scoring_20260716/.
