@@ -131,6 +131,51 @@ turns a geometry-only RANSAC (which flips on near-symmetric objects) back to
 parity with the feature-aware solver — with no new scoring code. See
 [ARCHITECTURE.md](ARCHITECTURE.md#pluggability-proven--a-second-posesolver).
 
+## Detections (segmentation sources)
+
+The evaluated segmentor consumes **precomputed BOP-format detections**. popoe
+reads three open sources — CNOS-FastSAM, SAM-6D ISM, and NIDS-Net — under one
+backend and can **union any subset**, reproducing FreeZe-v2's multi-source
+segmentation (top-M per source, unioned without cross-source filtering; the
+feature-aware scorer disposes). Each is just a named file:
+
+```python
+from popoe.segmentor_detections import BOPDetectionsSegmentor
+seg = BOPDetectionsSegmentor(sources={          # or a single path=one source
+    "cnos": "data/detections/cnos/cnos-fastsam_ycbv-test.json",
+    "nids": "data/detections/nids/nids_wa_sappe_ycbv.json",
+    # "sam6d": "…",                             # optional third source
+}, topk=2)
+dets = seg.segment(scene, obj)                  # dets[i].source -> 'cnos'|'nids'|…
+```
+
+| Source | What | Download |
+|--------|------|----------|
+| **CNOS-FastSAM** | Official BOP default detections (FastSAM proposals + DINOv2 re-rank) | HuggingFace [`bop-benchmark/bop_extra`](https://huggingface.co/datasets/bop-benchmark/bop_extra), the default-detections bundle → `cnos-fastsam_{ycbv,lmo}-test.json` |
+| **NIDS-Net** | WA_Sappe variant BOP predictions | UT Dallas Box, linked from [`IRVLUTD/NIDS-Net`](https://github.com/IRVLUTD/NIDS-Net) README → "Inference on BOP datasets"; saved as `nids_wa_sappe_{ycbv,lmo}.json` |
+| **SAM-6D ISM** | Instance Segmentation Model masks | No public per-dataset file — run [`JiehongLin/SAM-6D`](https://github.com/JiehongLin/SAM-6D) ISM on the BOP test images (GPU); optional |
+
+**Format notes.** A detections file is a JSON list of records
+`{scene_id, image_id, category_id, score, segmentation}` where `segmentation`
+is a COCO RLE. The loader (`load_bop_detections`) handles the format variance
+seen across these releases without special-casing at the call site:
+
+- **Fully-stringified records** — the NIDS WA_Sappe Box release ships every
+  field as a string (`"scene_id": "48"`, `"score": "0.74…"`, bbox as a
+  stringified list). Coerced at load; a non-integral id is a loud error, not a
+  silent truncation.
+- **Uncompressed vs compressed RLE** — `counts` may be a run-length **list**
+  (uncompressed, both the CNOS and NIDS files here) or a COCO RLE **string**;
+  `decode_detection_mask` routes each correctly (a compressed string may itself
+  begin with `[`, so the discriminator parses, it does not sniff the first byte).
+
+Files are **not committed** (large; gitignored under `data/detections/`). A
+no-GPU end-to-end check over whatever files you have:
+
+```bash
+python examples/union_smoke.py --dataset ycbv    # load -> decode -> union -> select
+```
+
 ## Layout
 
 ```

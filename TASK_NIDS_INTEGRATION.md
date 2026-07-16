@@ -22,21 +22,37 @@ WA_Sappe 变体 BOP 预测（来源：UT Dallas Box，仓库 IRVLUTD/NIDS-Net RE
    或在 mask 解码处兼容两种。注意 counts 里的坑：它是 dict 不是 JSON 字符串时
    pycocotools 的行为差异，写测试钉住。
 
-## 工作分块（每块一个 commit，完成一块再进下一块）
+## 工作分块（完成状态记录）
 
-1. **NIDS 加载适配**：让 `segmentor_detections.py`（或其新子类/新 loader 函数）
-   能吃 NIDS JSON——字段转型 + RLE 兼容。用真实文件写单测（抽几条真实记录做
-   fixture，不要把 43MB 全塞进测试）。
-2. **可插拔 segmentation backend 抽象**：现有 CNOS / SAM-6D / NIDS 三种文件式
-   来源统一到一个 backend 接口（参考 `interfaces.py` 现有风格），配置里按名字
-   选源、可组合多源。保持向后兼容：现有 recipe/测试不许挂。
-3. **三路 top-M union**：把现有双路并集逻辑（gedi 里 LM-O 的 CNOS+SAM-6D 并集
-   是模板，popoe 里对应 `segmentor_chain` / `select_instances` 一带）推广到 N 路，
-   per-source top-M、不过滤、保留来源标注（后续分析要用）。默认 M=2 与现配置一致。
-4. **端到端冒烟**：无 GPU（本机没有），所以到"检测加载→掩码解码→实例选择"为止，
-   用真实 NIDS JSON + 本地已有的 CNOS/SAM-6D 检测文件（如 popoe 里没有，从
-   `~/work/gedi/ycbv_local_data/` 找，找不到就只跑 NIDS 单路冒烟并在 PR 说明里注明）
-   跑通三路 union 的形状/数量/来源分布检查，输出一份简短统计到 stdout。
+全部四块已完成，各自一个 commit（均经 codex review、处置 findings、`uv run
+pytest` 全绿后提交），在分支 `nids-integration` 上：
+
+1. ✅ **NIDS 加载适配** — `409bed4`。`segmentor_detections.py` 新增
+   `load_bop_detections`（字段转型，非整数 id 报错不静默截断）+
+   `decode_detection_mask`（压缩/未压缩 RLE 兼容）。真实 fixture
+   `tests/fixtures/nids_lmo_sample.json`（5 条真实 LM-O 记录）+ 9 项单测。
+   codex 3 findings 全修（压缩 RLE 首字符可为 `[`、`_to_int` 截断、丢弃 `time`）。
+   *实测：交付的 NIDS 文件本身已是数值化 + 未压缩 RLE，现有解码路径即可读；
+   适配主要是为文档所述的全字符串 Box 变体做加固。详见 ISSUES.md。*
+2. ✅ **可插拔 backend 抽象** — `346c2de`。`DetectionSource(name, path)` +
+   `BOPDetectionsSegmentor(sources=…)`，按名字选源（dict / 元组 / `name=path`）、
+   可组合多源，每源 top-M、`Detection.source` 保留来源。单文件形式向后兼容
+   （统一 `bop-detections` 标签）。ARCHITECTURE.md 新增一节。codex 3 findings 全修。
+3. ✅ **N 路 top-M union** — `dc73e93`。`iou_dedupe` 改为 per-source 作用域：
+   跨源不过滤（FreeZe「top-M 并集不过滤」），源内仍去重；单源行为逐字节不变
+   （v5 基线不受影响）。默认 M=2。codex 无 findings。
+4. ✅ **端到端冒烟（无 GPU）** — `473f6ba`。`examples/union_smoke.py`：
+   加载→RLE 解码→N 路 union→实例选择，输出来源分布统计。本地实跑
+   CNOS+NIDS 两路（YCB-V 900 图 / LM-O 200 图）。codex 4 findings 全修。
+   **SAM-6D ISM 本地无产出文件**（需 pod 跑 ISM），故三路降级为两路子集并注明；
+   N=3 路径由合成源单测覆盖，`--source sam6d=<file>` 可接真实第三源。
+
+收尾：README「Detections」一节（三路来源 + 下载出处 + 格式说明）、ISSUES.md
+设计决策记录、本节完成状态。约束遵守：未开 GPU pod、未装 NIDS/SAM-6D 推理环境，
+仅消费已发布 JSON。
+
+CNOS 默认检测文件由督导补充（`data/detections/cnos/cnos-fastsam_{ycbv,lmo}-test.json`，
+来源 HF bop-benchmark/bop_extra）。
 
 ## 每块完成后的固定流程（不可跳过）
 

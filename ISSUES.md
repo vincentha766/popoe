@@ -1,5 +1,44 @@
 # Known issues
 
+## NIDS-Net integration + pluggable detection backends (2026-07-16)
+
+Status: DONE (four blocks, each codex-reviewed; 59-test suite green on the
+Python-3.12 venv — see below). NIDS-Net added as a third file-based
+segmentation source behind a named-backend abstraction; N-way top-M union.
+
+Design decisions worth recording (were not obvious, resolved here not by fiat):
+
+1. **The delivered NIDS files did NOT match the brief's format warning.** The
+   task expected fully-stringified fields; the actual
+   `data/detections/nids/nids_wa_sappe_{ycbv,lmo}.json` are already
+   numerically typed, with **uncompressed** RLE (`counts` a list) — which the
+   existing `frPyObjects` branch already decoded byte-correctly (verified vs a
+   manual column-major decode). So no adaptation was strictly required for the
+   files in hand. The loader still HARDENS for the stringified variant
+   (coercion + stringified-RLE parsing) because the documented Box source is
+   stringified and a re-download could be; the cost is a few coercions and the
+   payoff is that the failure mode is loud, not a silent zero-candidate miss
+   (`"1" in [1]` is False). Real files pass through unchanged.
+
+2. **Union filtering is scoped PER SOURCE, not global.** FreeZe's "top-M union
+   without filtering" means two sources proposing the same region both survive
+   (the scorer disposes). `iou_dedupe` therefore dedupes within a source only.
+   For the single-file form this is byte-identical to the old global behaviour
+   (all masks share one source), so the evaluated v5 numbers are unaffected.
+
+3. **SAM-6D ISM has no committed local detections file** (it runs on a GPU
+   pod, no public per-dataset JSON). The intended three-way CNOS+SAM-6D+NIDS
+   union is exercised as the available two-way CNOS+NIDS subset
+   (`examples/union_smoke.py`, both YCB-V and LM-O). The N=3 path itself is
+   unit-tested with synthetic sources; `--source sam6d=<file>` wires a real
+   third source once ISM output exists. No pod opened, no inference env
+   installed (per the task constraint).
+
+Env note: the full suite needs `open3d`, which has no Python 3.13/3.14 wheel,
+so the uv venv is pinned to **3.12** (`.python-version`); `pycocotools` (a real
+dep of the RLE decode) is now declared in the `reference` extra. A fresh
+default-3.14 venv fails 4 tests on missing open3d/pycocotools — not a code bug.
+
 ## Post-fix re-baseline v5: RE-RUN DONE (2026-07-15)
 
 Status: CLOSED — the 07-11 protocol re-run passed on the fixed code (HEAD
