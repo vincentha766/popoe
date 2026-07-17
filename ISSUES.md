@@ -306,3 +306,15 @@ an open-source published method on YCB-V. Ran as a 2-way object-split with
 resume-from-copied-CSV; merged by (scene,im,obj) dedupe. Gotcha for the
 runbook: `pkill -f bop_eval.py` from an ssh one-liner kills the ssh shell
 itself (pattern matches its own cmdline) — kill by PID.
+
+## 2026-07-17 · B-layer closed: feature-aware RANSAC fitness is a negative
+
+GPURansacSolver sweep (best per-dataset detection configs, hot caches):
+o3d 0.7137/0.7525 (YCB-V subset / LM-O AR(2/3)) vs gpu 0.6429/0.6419 vs
+gpu-feat 0.6498/0.6416. Eq.5-inside-RANSAC is marginal on YCB-V (+0.7) and
+flat on LM-O — the relative-ranking hypothesis is refuted; occlusion breaks
+hypothesis-level feature ordering too. The dominant factor is the solver
+family itself (O3D +7-11pt over the GPU port, matching the historical
+grid-16-fast-config gap): the accuracy lever lives in O3D's correspondence
+construction/convergence, not the fitness formula. Feature-aware line
+closes as: A-layer +2.5 YCB-V (in production) + three measured negatives.
