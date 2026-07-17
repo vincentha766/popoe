@@ -19,7 +19,7 @@ Scene (RGB-D, K) ──┘            TargetEncoder ──┴─ PoseSolver ─ 
 | Query features | `QueryEncoder` | `adapters.FreeZeQueryEncoder` (DINOv2 + GeDi) |
 | Target features | `TargetEncoder` | `adapters.FreeZeTargetEncoder` |
 | Fusion | `FeatureFusion` | `fusion.DinoGeDiFusion` |
-| Pose solve | `PoseSolver` | `adapters.RansacSolver`; `solvers.Open3DFeatureRansacSolver` |
+| Pose solve | `PoseSolver` | `adapters.RansacSolver`; `solvers.Open3DFeatureRansacSolver` (default); `solvers.GPURansacSolver` (ported batched RANSAC, geometric or Eq.5 feature fitness) |
 | Refine | `PoseRefiner` | `adapters.ICPRefiner` |
 | Score | `PoseScorer` | `adapters.FreeZeScorer` |
 | Select | `Selector` | `adapters.BestScoreSelector` |
@@ -118,6 +118,28 @@ the visual features would disambiguate. Emitting several candidates
 pick the feature-best — **no new scoring code** — recovers parity. "Geometry
 proposes, features dispose." A robust backend (TEASER++, MAC) would slot in the
 same way.
+
+### A third solver — feature-aware fitness INSIDE selection (the B layer)
+
+Open3D's C++ RANSAC ranks hypotheses by geometric inlier count and cannot take a
+custom fitness, so feature agreement can only re-rank the survivors (that is the
+A layer — `PoseScorer`). To put feature agreement INSIDE hypothesis selection —
+changing which hypotheses survive — `solvers.GPURansacSolver` ports gedi's
+batched RANSAC (vectorised triplet sampling + batched Kabsch/SVD; runs on CPU or
+CUDA) with a selectable `fitness`:
+
+- `"geometric"` (default) — rank by inlier count; a faithful port whose
+  behaviour is verifiable against Open3D alone.
+- `"feature"` — the paper's Eq.5 score `Σ_inlier cos(f_q,f_t) / |P_T|`. The
+  denominator is the **fixed** sparse-target count `|P_T|`, never the inlier
+  count: normalise-by-inlier (mean cosine) lets a few high-similarity spurious
+  correspondences beat many true ones (a −31 pt regression in the study). The
+  features are the **w=1** canonical space (the same lesson the A-layer S_coarse
+  learned).
+
+Select with `recipes.stages_for_object(solver=...)` or `bop_eval --solver
+o3d|gpu|gpu-feat`. The default stays `o3d`, so the evaluated mainline is
+unperturbed; the B-layer solver is reported as an independent configuration.
 
 ## File-based detection backends (CNOS / SAM-6D / NIDS)
 

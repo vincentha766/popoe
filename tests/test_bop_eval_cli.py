@@ -82,13 +82,14 @@ def test_sources_list_builds_named_union(bop_eval, tmp_path):
 
 # ── the max-inst topk floor ──────────────────────────────────────────────
 
-def test_cand_csv_header_s_coarse_column(bop_eval):
-    """--score-coarse appends exactly one s_coarse column at the end; off keeps
-    the historical 11-column schema."""
+def test_cand_csv_header_s_coarse_and_solver_columns(bop_eval):
+    """The header always ends with a `solver` column; --score-coarse inserts an
+    s_coarse column just before it."""
     off = bop_eval.cand_csv_header(False)
     on = bop_eval.cand_csv_header(True)
-    assert "s_coarse" not in off and off[-1] == "t"
-    assert on == off + ["s_coarse"]
+    assert off[-1] == "solver" and "s_coarse" not in off
+    assert on[-1] == "solver" and on[-2] == "s_coarse"
+    assert on == off[:-1] + ["s_coarse", "solver"]
 
 
 def test_floored_topk(bop_eval):

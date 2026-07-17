@@ -52,6 +52,15 @@ def test_parse_rule_missing_column_is_loud(rr):
         rr.parse_rule("s_icp * nonsense", df.columns)
 
 
+def test_parse_rule_rejects_non_numeric_columns(rr):
+    """id / pose / provenance columns (incl. the new `solver`) are not scoring
+    terms — referencing one is a loud error, not a string-arithmetic crash."""
+    cols = list(_df().columns) + ["solver"]
+    for bad in ("solver", "R", "scene_id"):
+        with pytest.raises(SystemExit, match="not a numeric scoring term"):
+            rr.parse_rule(f"s_icp * {bad}", cols)
+
+
 def test_parse_rule_rejects_negative_exponent(rr):
     df = _df()
     with pytest.raises(SystemExit, match="negative exponent"):
@@ -91,6 +100,21 @@ def test_champions_pick_per_target_argmax(rr):
     assert a2.iloc[0]["cand"] == 1
     # exactly one champion per target either way
     assert len(champs) == len(champs2) == 2
+
+
+def test_warns_on_mixed_solver_dump(rr, tmp_path, capsys):
+    df = _df()
+    df["solver"] = ["o3d", "gpu", "o3d"]           # two solvers in one dump
+    csv = tmp_path / "mixed.csv"
+    df.to_csv(csv, index=False)
+    import sys
+    old = sys.argv
+    try:
+        sys.argv = ["rule_replay.py", str(csv), "--rule", "s_icp"]
+        rr.main()
+    finally:
+        sys.argv = old
+    assert "mixes 2 solvers" in capsys.readouterr().out
 
 
 def test_end_to_end_writes_results_and_reports_flips(rr, tmp_path, capsys):

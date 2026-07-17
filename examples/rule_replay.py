@@ -47,8 +47,8 @@ import pandas as pd
 KEY = ["scene_id", "im_id", "obj_id"]           # one champion per BOP target
 # Row identity within a target: which (mask, weight) hypothesis was chosen.
 CAND = ["cand", "w"]
-# Columns that are NOT rule terms (ids / pose / provenance).
-NON_TERMS = set(KEY) | set(CAND) | {"R", "t", "time"}
+# Columns that are NOT numeric rule terms (ids / pose / provenance / solver id).
+NON_TERMS = set(KEY) | set(CAND) | {"R", "t", "time", "solver"}
 
 
 def parse_rule(rule: str, columns) -> dict:
@@ -67,6 +67,10 @@ def parse_rule(rule: str, columns) -> dict:
         if not m:
             raise SystemExit(f"cannot parse rule factor {f!r} in rule {rule!r}")
         name, exp = m.group(1), m.group(2)
+        if name in NON_TERMS:
+            raise SystemExit(
+                f"rule {rule!r}: {name!r} is not a numeric scoring term "
+                f"(it is an id / pose / provenance column)")
         if name not in cols:
             hint = (" — re-dump with `bop_eval --cand-csv … --score-coarse`"
                     if name == "s_coarse" else "")
@@ -133,6 +137,15 @@ def main():
             raise SystemExit(f"{args.cand_csv} missing required column {c!r}")
     if args.out_dir:
         os.makedirs(args.out_dir, exist_ok=True)
+
+    if "solver" in df.columns:
+        solvers = sorted(df["solver"].dropna().unique())
+        if len(solvers) > 1:
+            print(f"WARNING: dump mixes {len(solvers)} solvers {solvers} — "
+                  "champions are selected ACROSS solvers (a target may pick a "
+                  "different solver than its neighbour). Filter the CSV to ONE "
+                  "solver for a clean per-solver comparison; the B layer is "
+                  "reported as an independent solver configuration.")
 
     base_idx = champion_index(df, df[args.baseline_col])
     n_targets = len(base_idx)

@@ -68,10 +68,13 @@ def validate_source_args(detections, sources):
 
 def cand_csv_header(score_coarse):
     """Column header for the --cand-csv dump. The optional s_coarse column
-    (--score-coarse) is appended, so an existing file's header pins its mode."""
+    (--score-coarse) is appended, then a `solver` column that stamps which pose
+    solver produced each row (so a dump self-identifies its solver, and the
+    header pins the mode on append)."""
     return (["scene_id", "im_id", "obj_id", "cand", "w", "s_icp", "s_feat_1",
              "metric_fit", "score", "R", "t"]
-            + (["s_coarse"] if score_coarse else []))
+            + (["s_coarse"] if score_coarse else [])
+            + ["solver"])
 
 
 def floored_topk(user_topk, max_inst):
@@ -136,6 +139,14 @@ def main():
                          "not config, so reusing a file written without this "
                          "flag silently keeps its old scores (as with any "
                          "score-affecting knob — --merge, --weights, --grid).")
+    ap.add_argument("--solver", default="o3d", choices=["o3d", "gpu", "gpu-feat"],
+                    help="pose solver: o3d (default, evaluated mainline — "
+                         "unchanged) | gpu (ported batched RANSAC, geometric "
+                         "fitness) | gpu-feat (gpu with the Eq.5 feature-aware "
+                         "fitness, the B layer). gpu* need torch. A non-default "
+                         "solver changes score/R/t, so use a FRESH --out and "
+                         "--cand-csv: resume/append are keyed by rows, not "
+                         "config (as with --use-s-coarse/--merge/--weights).")
     ap.add_argument("--merge", default="ycbv",
                     help="'ycbv' for the clamp pair, 'none', or '19:20,...'")
     ap.add_argument("--render-backend", default="nvdiffrast",
@@ -294,7 +305,8 @@ def main():
         extent = float(np.ptp(q.pts, axis=0).max())
         stages = stages_for_object(extent, size_aware=obj_id in merge,
                                    score_coarse=args.score_coarse,
-                                   use_s_coarse=args.use_s_coarse)
+                                   use_s_coarse=args.use_s_coarse,
+                                   solver=args.solver)
         query_cache[obj_id] = (obj, q, stages)
         print(f"  obj{obj_id}: extent={extent*1000:.0f}mm "
               f"encode={time.time()-t0:.1f}s", flush=True)
@@ -428,7 +440,8 @@ def main():
                                         " ".join(f"{v:.6f}" for v in h.R.flatten()),
                                         " ".join(f"{v:.4f}" for v in (h.t * 1000.0))]
                                         + ([f"{h.breakdown['s_coarse']:.4f}"]
-                                           if args.score_coarse else []))
+                                           if args.score_coarse else [])
+                                        + [args.solver])
                         except Exception as e:
                             note_failure("solve/refine/score", obj_id, e)
                             continue

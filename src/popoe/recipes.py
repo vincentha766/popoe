@@ -85,9 +85,25 @@ def best_segmentor(detections_json: str | None = None, topk: int = 2,
                                   merge_labels=merge_labels)
 
 
+SOLVERS = ("o3d", "gpu", "gpu-feat")   # o3d is the evaluated mainline default
+
+
+def _build_solver(name: str, tau: float, n_ransac: int):
+    """o3d (default, mainline) | gpu (ported RANSAC, geometric fitness) |
+    gpu-feat (gpu with the Eq.5 feature-aware fitness — the B layer)."""
+    if name == "o3d":
+        from popoe.solvers import Open3DFeatureRansacSolver
+        return Open3DFeatureRansacSolver(tau_inlier=tau, max_iteration=n_ransac)
+    if name in ("gpu", "gpu-feat"):
+        from popoe.solvers import GPURansacSolver
+        return GPURansacSolver(tau_inlier=tau, iters=n_ransac,
+                               fitness="feature" if name == "gpu-feat" else "geometric")
+    raise ValueError(f"solver must be one of {SOLVERS}, got {name!r}")
+
+
 def stages_for_object(extent_m: float, size_aware: bool = False,
                       n_ransac: int = 10000, score_coarse: bool = False,
-                      use_s_coarse: bool = False):
+                      use_s_coarse: bool = False, solver: str = "o3d"):
     """Per-object solver/refiner/scorer with thresholds scaled to the object.
     ``extent_m``: max bounding-box side of the sampled query cloud (metres).
 
@@ -100,9 +116,8 @@ def stages_for_object(extent_m: float, size_aware: bool = False,
     both off the config is byte-identical."""
     from popoe.adapters import ICPRefiner
     from popoe.scoring import ChampionScorer
-    from popoe.solvers import Open3DFeatureRansacSolver
     tau = TAU_FRAC * extent_m
-    solver = Open3DFeatureRansacSolver(tau_inlier=tau, max_iteration=n_ransac)
+    solver = _build_solver(solver, tau, n_ransac)
     refiner = ICPRefiner(tau_icp=tau, keep_coarse=score_coarse or use_s_coarse)
     # use_s_coarse implies s_coarse IS computed and emitted, so compute_s_coarse
     # reflects reality (an inspector reading the flag sees the truth).
