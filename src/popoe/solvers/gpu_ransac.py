@@ -14,10 +14,17 @@ stay the existing stages (ICPRefiner / ChampionScorer), exactly as for
 Open3DFeatureRansacSolver — GPURansacSolver returns the same shape (a list of
 coarse `PoseHypothesis`, `score = s_coarse`, breakdown carrying `s_coarse`).
 
-`fitness="geometric"` (the only mode in this step) ranks by inlier COUNT — a
-faithful port of a correspondence-RANSAC whose behaviour can be verified against
-Open3D alone. The feature-aware fitness (the paper's Eq.5) is added as a second
-mode in the B-layer feature-fitness step.
+`fitness`:
+  * ``"geometric"`` (default) — rank hypotheses by inlier COUNT, a faithful port
+    of a correspondence-RANSAC (verifiable against Open3D alone). Zero-perturbs
+    the mainline: the default solver stays Open3D.
+  * ``"feature"`` — the B-layer increment: rank by the paper's Eq.5 feature-
+    aware score, ``Σ_inlier cos(f_q, f_t) / |P_T|``. The denominator is the
+    FIXED sparse-target count |P_T|, never the inlier count — normalise-by-
+    inlier (mean cosine) lets a few high-similarity spurious correspondences
+    beat many true ones (ch3 tax #2: -31pt, AR 0.37). Puts feature agreement
+    INSIDE hypothesis selection (which hypotheses survive), not just the A-layer
+    re-ranking of survivors.
 
 Convention: R maps QUERY -> TARGET (`p_t ≈ R p_q + t`), matching
 feature_aware_score and Open3DFeatureRansacSolver.
@@ -33,7 +40,7 @@ _EDGE_RATIO = 0.9          # Open3D CorrespondenceCheckerBasedOnEdgeLength(0.9)
 
 
 def _gpu_ransac(pts_q, feats_q, pts_t, feats_t, thr, iters, k, min_inliers,
-                mutual_filter, device, seed):
+                fitness, mutual_filter, device, seed):
     """Batched RANSAC. Returns (R, t, fitness_value, n_inliers) as numpy/floats,
     or None if degenerate. `feats_*` are the (already chosen) w=1 features.
 
@@ -56,9 +63,10 @@ def _gpu_ransac(pts_q, feats_q, pts_t, feats_t, thr, iters, k, min_inliers,
     # Eq.3: top-k query NNs per target point by cosine similarity.
     sim = ft @ fq.T                                   # (Nt, Nq)
     k_eff = min(k, sim.shape[1])
-    _, topi = sim.topk(k_eff, dim=1)                  # (Nt, k) query NN indices
+    topv, topi = sim.topk(k_eff, dim=1)               # (Nt, k) cosines + indices
     c_t = torch.arange(N_t, device=device).repeat_interleave(k_eff)
     c_q = topi.reshape(-1)
+    c_sim = topv.reshape(-1)                          # (C,) cosine of each corr
 
     # mutual filter restricts the SAMPLING pool (fewer spurious triplets);
     # scoring still uses the full top-k pool. OFF by default, matching the gedi
@@ -108,10 +116,16 @@ def _gpu_ransac(pts_q, feats_q, pts_t, feats_t, thr, iters, k, min_inliers,
         d = (moved - dst[None]).norm(dim=2)           # (b, C)
         inl = d < thr
         n_in = inl.sum(1)
-        # geometric fitness: inlier fraction (argmax == inlier count). The
-        # feature-aware fitness is added as a selectable mode in the B-layer
-        # feature-fitness step.
-        val = n_in.to(torch.float32) / float(N_t)
+        if fitness == "feature":
+            # Eq.5: Σ_inlier cos(f_q, f_t) / |P_T^sparse| — the denominator is
+            # the FIXED sparse-target count, NEVER the inlier count. Dividing by
+            # n_in (mean cosine) lets a tiny set of high-similarity spurious
+            # correspondences outscore a large set of true ones; that exact bug
+            # (ch3 reproduction tax #2) collapsed real-data AR to 0.37 (-31pt).
+            # Fixed |P_T| makes the score reward inlier QUANTITY x quality.
+            val = (c_sim[None] * inl).sum(1) / float(N_t)
+        else:  # geometric: inlier fraction (argmax == inlier count)
+            val = n_in.to(torch.float32) / float(N_t)
         score = torch.where(n_in >= min_inliers, val, torch.full_like(val, -1e9))
         best[s0:s1] = score
         n_in_all[s0:s1] = n_in
@@ -138,10 +152,9 @@ class GPURansacSolver:
                  k: int = 10, min_inliers: int = 6,
                  fitness: str = "geometric", mutual_filter: bool = False,
                  device: str | None = None, seed: int = 42):
-        if fitness != "geometric":
+        if fitness not in ("geometric", "feature"):
             raise ValueError(
-                f"fitness={fitness!r} not available yet; only 'geometric' in "
-                f"this step (feature fitness is the next B-layer step)")
+                f"fitness must be 'geometric' or 'feature', got {fitness!r}")
         self.tau_inlier = tau_inlier
         self.iters = iters
         self.k = k
@@ -164,19 +177,24 @@ class GPURansacSolver:
 
         out = _gpu_ransac(query.pts, fq, target.pts, ft, thr=self.tau_inlier,
                           iters=self.iters, k=self.k, min_inliers=self.min_inliers,
-                          mutual_filter=self.mutual_filter, device=dev, seed=self.seed)
+                          fitness=self.fitness, mutual_filter=self.mutual_filter,
+                          device=dev, seed=self.seed)
         if out is None:
             return []
         R, t, fit, n_in = out
-        # s_coarse on the FULL cloud (w=1) — same downstream key/shape as the
-        # Open3D solver, so ICPRefiner/ChampionScorer are unchanged.
+        # s_coarse is the provisional A-layer signal: feature_aware_score on the
+        # FULL cloud (w=1) — the SAME mean-cosine key/shape the Open3D solver
+        # emits, so ICPRefiner/ChampionScorer are unchanged. IMPORTANT: it is
+        # mean-over-inliers, NOT the B-layer selection fitness; do not read it as
+        # the Eq.5 score (that would reintroduce the mean-cosine hijack this
+        # solver's fitness avoids). The fixed-|P_T| Eq.5 score that actually
+        # RANKED hypotheses is `gpu_score`.
         s_coarse, _ = feature_aware_score(R, t, query.pts, target.pts, fq, ft,
                                           self.tau_inlier)
-        # gpu_score is the WINNING hypothesis's internal ranking score
-        # (geometric: inlier-correspondence count / |P_T|, which can exceed 1
-        # since a target has up to k correspondences). It is NOT Open3D's
-        # fitness and must not be compared to o3d_fitness. n_inliers is the raw
-        # inlier-correspondence count.
+        # gpu_score: the winning hypothesis's internal ranking score in the
+        # chosen mode (feature: Σcos/|P_T|; geometric: inlier-correspondences/
+        # |P_T|, which can exceed 1). NOT Open3D's fitness — do not compare to
+        # o3d_fitness. n_inliers is the raw inlier-correspondence count.
         return [PoseHypothesis(R=R, t=t, score=s_coarse,
                                breakdown={"s_coarse": s_coarse,
                                           "gpu_score": fit, "n_inliers": n_in,
