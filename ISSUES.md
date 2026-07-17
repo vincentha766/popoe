@@ -287,3 +287,22 @@ Cumulative YCB-V subset chain: 0.6475 → 0.6889 (union) → 0.7137 (+S_coarse)
 = +6.6 total, matching the magnitude of FreeZe's published ensemble gain with
 a measurable two-part decomposition. B-layer (feature-aware RANSAC fitness)
 remains the open lever for LM-O.
+
+## 2026-07-17 · Promoted config, full-set, official-metric (VSD included)
+
+Full-set runs of the promoted configs (2fd93cb), VSD via the reference
+freezev2_vsd_compute.py:
+
+| | LM-O | YCB-V |
+|---|---|---|
+| full BOP AR | **0.6896** | **0.8201** |
+| MSSD/MSPD/VSD | .7363/.7688/.5638 | .8413/.7879/.8312 |
+| script-line formal baseline | 0.6726 | 0.7668 |
+
+YCB-V = 2-way union + use_s_coarse + clamp pooling (all 21 objects, 2-proc
+object-split resume). LM-O = 3-way union, baseline rule (s_coarse harmful
+there). YCB-V passes SAM-6D's published 0.815 — first time this stack beats
+an open-source published method on YCB-V. Ran as a 2-way object-split with
+resume-from-copied-CSV; merged by (scene,im,obj) dedupe. Gotcha for the
+runbook: `pkill -f bop_eval.py` from an ssh one-liner kills the ssh shell
+itself (pattern matches its own cmdline) — kill by PID.
