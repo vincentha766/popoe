@@ -139,11 +139,14 @@ def main():
                          "not config, so reusing a file written without this "
                          "flag silently keeps its old scores (as with any "
                          "score-affecting knob — --merge, --weights, --grid).")
-    ap.add_argument("--solver", default="o3d", choices=["o3d", "gpu", "gpu-feat"],
+    ap.add_argument("--solver", default="o3d",
+                    choices=["o3d", "gpu", "gpu-feat", "teaser"],
                     help="pose solver: o3d (default, evaluated mainline — "
                          "unchanged) | gpu (ported batched RANSAC, geometric "
                          "fitness) | gpu-feat (gpu with the Eq.5 feature-aware "
-                         "fitness, the B layer). gpu* need torch. A non-default "
+                         "fitness, the B layer) | teaser (TEASER++ certifiable "
+                         "registration). gpu* need torch; teaser needs "
+                         "teaserpp_python (source build). A non-default "
                          "solver changes score/R/t, so use a FRESH --out and "
                          "--cand-csv: resume/append are keyed by rows, not "
                          "config (as with --use-s-coarse/--merge/--weights).")

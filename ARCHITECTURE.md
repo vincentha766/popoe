@@ -19,7 +19,7 @@ Scene (RGB-D, K) ──┘            TargetEncoder ──┴─ PoseSolver ─ 
 | Query features | `QueryEncoder` | `adapters.FreeZeQueryEncoder` (DINOv2 + GeDi) |
 | Target features | `TargetEncoder` | `adapters.FreeZeTargetEncoder` |
 | Fusion | `FeatureFusion` | `fusion.DinoGeDiFusion` |
-| Pose solve | `PoseSolver` | `adapters.RansacSolver`; `solvers.Open3DFeatureRansacSolver` (default); `solvers.GPURansacSolver` (ported batched RANSAC, geometric or Eq.5 feature fitness) |
+| Pose solve | `PoseSolver` | `adapters.RansacSolver`; `solvers.Open3DFeatureRansacSolver` (default); `solvers.GPURansacSolver` (ported batched RANSAC, geometric or Eq.5 feature fitness); `solvers.TeaserSolver` (TEASER++ certifiable registration, needs `teaserpp_python`) |
 | Refine | `PoseRefiner` | `adapters.ICPRefiner` |
 | Score | `PoseScorer` | `adapters.FreeZeScorer` |
 | Select | `Selector` | `adapters.BestScoreSelector` |
@@ -137,9 +137,23 @@ CUDA) with a selectable `fitness`:
   features are the **w=1** canonical space (the same lesson the A-layer S_coarse
   learned).
 
+### A fourth solver — TEASER++ certifiable registration
+
+`solvers.TeaserSolver` wraps TEASER++ (Yang, Shi & Carlone, T-RO 2021) — the
+robust backend the second-solver section anticipated. Instead of sampling
+minimal triplets, it prunes the correspondence pool with a pairwise
+translation-invariant-measurement max-clique and solves rotation by GNC-TLS:
+robust to >90% outlier correspondences, deterministic (no RNG, no seed), with
+optimality certificates. Correspondences come from the same Eq.3 per-target
+top-k cosine NN pool as `GPURansacSolver` (w=1 features); `tau_inlier` doubles
+as TEASER's noise bound. Needs `teaserpp_python`, built from source
+([MIT-SPARK/TEASER-plusplus](https://github.com/MIT-SPARK/TEASER-plusplus) —
+no PyPI wheel); the import is deferred to `.solve`, so construction is
+dep-light.
+
 Select with `recipes.stages_for_object(solver=...)` or `bop_eval --solver
-o3d|gpu|gpu-feat`. The default stays `o3d`, so the evaluated mainline is
-unperturbed; the B-layer solver is reported as an independent configuration.
+o3d|gpu|gpu-feat|teaser`. The default stays `o3d`, so the evaluated mainline is
+unperturbed; the non-default solvers are reported as independent configurations.
 
 ## File-based detection backends (CNOS / SAM-6D / NIDS)
 

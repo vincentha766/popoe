@@ -85,12 +85,14 @@ def best_segmentor(detections_json: str | None = None, topk: int = 2,
                                   merge_labels=merge_labels)
 
 
-SOLVERS = ("o3d", "gpu", "gpu-feat")   # o3d is the evaluated mainline default
+SOLVERS = ("o3d", "gpu", "gpu-feat", "teaser")   # o3d is the evaluated mainline default
 
 
 def _build_solver(name: str, tau: float, n_ransac: int):
     """o3d (default, mainline) | gpu (ported RANSAC, geometric fitness) |
-    gpu-feat (gpu with the Eq.5 feature-aware fitness — the B layer)."""
+    gpu-feat (gpu with the Eq.5 feature-aware fitness — the B layer) |
+    teaser (TEASER++ certifiable registration; deterministic, so n_ransac
+    does not apply — needs teaserpp_python, see popoe.solvers.teaser)."""
     if name == "o3d":
         from popoe.solvers import Open3DFeatureRansacSolver
         return Open3DFeatureRansacSolver(tau_inlier=tau, max_iteration=n_ransac)
@@ -98,6 +100,9 @@ def _build_solver(name: str, tau: float, n_ransac: int):
         from popoe.solvers import GPURansacSolver
         return GPURansacSolver(tau_inlier=tau, iters=n_ransac,
                                fitness="feature" if name == "gpu-feat" else "geometric")
+    if name == "teaser":
+        from popoe.solvers import TeaserSolver
+        return TeaserSolver(tau_inlier=tau)
     raise ValueError(f"solver must be one of {SOLVERS}, got {name!r}")
 
 

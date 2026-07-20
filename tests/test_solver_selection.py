@@ -1,11 +1,11 @@
-"""recipes.stages_for_object solver selection (o3d | gpu | gpu-feat). Solver
-CONSTRUCTION is dep-light (torch/open3d import lazily inside .solve), so this
-runs without them.
+"""recipes.stages_for_object solver selection (o3d | gpu | gpu-feat | teaser).
+Solver CONSTRUCTION is dep-light (torch/open3d/teaserpp import lazily inside
+.solve), so this runs without them.
 """
 import pytest
 
 from popoe.recipes import stages_for_object
-from popoe.solvers import GPURansacSolver, Open3DFeatureRansacSolver
+from popoe.solvers import GPURansacSolver, Open3DFeatureRansacSolver, TeaserSolver
 
 
 def test_default_solver_is_open3d_unchanged():
@@ -21,6 +21,11 @@ def test_gpu_solver_geometric():
 def test_gpu_feat_solver_feature():
     solver, _, _ = stages_for_object(0.1, solver="gpu-feat")
     assert isinstance(solver, GPURansacSolver) and solver.fitness == "feature"
+
+
+def test_teaser_solver():
+    solver, _, _ = stages_for_object(0.1, solver="teaser")
+    assert isinstance(solver, TeaserSolver)
 
 
 def test_unknown_solver_raises():
