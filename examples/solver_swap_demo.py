@@ -15,9 +15,10 @@ the 1-shot flips on near-symmetric objects.
 import argparse
 import numpy as np
 
-from popoe.pose_estimator import FreeZeV2
+from freezev2_monolith import FreeZeV2   # sibling module (run from examples/)
 from popoe import Scene, ObjectModel, Detection, PointFeatures
-from popoe.adapters import make_freeze_encoders, RansacSolver, ICPRefiner, FreeZeScorer, BestScoreSelector
+from popoe.adapters import RansacSolver, ICPRefiner, BestScoreSelector
+from popoe.freeze.adapters import make_freeze_encoders, FreeZeScorer
 from popoe.solvers import Open3DFeatureRansacSolver
 from popoe.datasets.bop import find_instances, load_inputs, load_gt
 

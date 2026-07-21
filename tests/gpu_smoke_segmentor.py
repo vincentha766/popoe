@@ -246,7 +246,7 @@ def main():
 
     def backend_reported():
         try:
-            from popoe.feature_extractor import QueryFeatureExtractor
+            from popoe.freeze.feature_extractor import QueryFeatureExtractor
         except ImportError as e:
             # feature_extractor does `from gedi import GeDi` at module level;
             # render_backend needs neither gedi nor dino, so a missing

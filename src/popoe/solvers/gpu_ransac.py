@@ -167,7 +167,7 @@ class GPURansacSolver:
     def solve(self, query: PointFeatures, target: PointFeatures,
               frame: CanonFrame) -> list[PoseHypothesis]:
         import torch
-        from popoe.pose_estimator import feature_aware_score
+        from popoe.registration import feature_aware_score
 
         dev = self.device or ("cuda" if torch.cuda.is_available() else "cpu")
         # w=1 canonical features (A-layer lesson: absolute feature scores are

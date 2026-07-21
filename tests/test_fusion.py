@@ -3,7 +3,7 @@ import numpy as np
 from sklearn.decomposition import PCA
 
 import popoe
-from popoe.fusion import DinoGeDiFusion
+from popoe.freeze.fusion import DinoGeDiFusion
 
 
 def _reference(vis, geo, pca, vis_w):
@@ -34,7 +34,7 @@ def test_w1_extraction_plus_scale_vis_reproduces_any_weight():
     and rescaling with recipes.scale_vis(w) must equal extracting directly at
     vis_weight=w. (The old bug: extraction silently happened at the env
     default 0.5, so every 'w' in the sweep was really 0.5*w.)"""
-    from popoe.recipes import scale_vis
+    from popoe.freeze.recipes import scale_vis
     rng = np.random.default_rng(3)
     vis = rng.standard_normal((200, 1536)).astype(np.float32)
     geo = rng.standard_normal((200, 64)).astype(np.float32)

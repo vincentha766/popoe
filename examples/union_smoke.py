@@ -38,7 +38,7 @@ from popoe.adapters import BestScoreSelector, select_top_instances
 from popoe.interfaces import ObjectModel, PoseHypothesis, Scene
 from popoe.segmentor_detections import (DetectionSource,
                                         BOPDetectionsSegmentor, _coerce_sources)
-from popoe.recipes import YCBV_MERGE_LABELS
+from popoe.freeze.recipes import YCBV_MERGE_LABELS
 
 # Repo-relative default detection files (downloaded under data/, gitignored —
 # see README "Detections"). CNOS + NIDS give a real two-way union out of the box.

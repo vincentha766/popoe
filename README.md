@@ -10,7 +10,7 @@ the rest.
 evaluated-best recipes). Applications — robot grasping, AR, inspection — live in
 their own repositories and consume popoe as a dependency behind the
 `PoseEstimator`-style seam (see e.g. a lab grasping stack wiring
-`popoe.recipes` into its own pipeline).
+`popoe.freeze.recipes` into its own pipeline).
 
 ```
 ObjectModel (CAD) ─┐
@@ -179,16 +179,20 @@ python examples/union_smoke.py --dataset ycbv    # load -> decode -> union -> se
 ## Layout
 
 ```
-src/popoe/
-  interfaces.py        # stage Protocols + data classes + reference Pipeline
-  fusion.py            # FeatureFusion (DinoGeDiFusion)
-  adapters.py          # reference stage implementations (FreeZe encoders/solver/refiner/scorer)
-  feature_extractor.py # DINOv2 + GeDi encoders
-  pose_estimator.py    # RANSAC / ICP / feature-aware scoring
+src/popoe/               # method-agnostic pipeline
+  interfaces.py          # stage Protocols + data classes + reference Pipeline
+  registration.py        # RANSAC / ICP / feature-aware scoring primitives
+  adapters.py            # generic stage adapters (RansacSolver/ICPRefiner/selector)
+  scoring.py             # ChampionScorer (evaluated scorer)
   renderer.py  segmentor.py  segmentor_cnos.py  visualizer.py
-  solvers/open3d_ransac.py
+  solvers/open3d_ransac.py  solvers/gpu_ransac.py  solvers/teaser.py
   metrics/vsd.py  metrics/ar.py
   datasets/bop.py
+  freeze/                # the FreeZe-v2 reference method
+    feature_extractor.py # DINOv2 + GeDi encoders
+    fusion.py            # FeatureFusion (DinoGeDiFusion)
+    adapters.py          # FreeZe encoder/scorer stage adapters
+    recipes.py           # evaluated-best configuration
 examples/  tests/  ARCHITECTURE.md
 ```
 

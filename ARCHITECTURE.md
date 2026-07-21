@@ -16,12 +16,12 @@ Scene (RGB-D, K) ──┘            TargetEncoder ──┴─ PoseSolver ─ 
 | Stage | Protocol | Reference implementation |
 |-------|----------|--------------------------|
 | Segmentation | `Segmentor` | `segmentor_detections.BOPDetectionsSegmentor` (evaluated; single file or a named-source union — see below); `segmentor_cnos.CNOSSegmentor` / `.DinoWindowSegmentor`; `segmentor.SAMSegmentor` / `.DepthSegmentor`; `adapters.PrecomputedSegmentor` |
-| Query features | `QueryEncoder` | `adapters.FreeZeQueryEncoder` (DINOv2 + GeDi) |
-| Target features | `TargetEncoder` | `adapters.FreeZeTargetEncoder` |
-| Fusion | `FeatureFusion` | `fusion.DinoGeDiFusion` |
+| Query features | `QueryEncoder` | `freeze.adapters.FreeZeQueryEncoder` (DINOv2 + GeDi) |
+| Target features | `TargetEncoder` | `freeze.adapters.FreeZeTargetEncoder` |
+| Fusion | `FeatureFusion` | `freeze.fusion.DinoGeDiFusion` |
 | Pose solve | `PoseSolver` | `adapters.RansacSolver`; `solvers.Open3DFeatureRansacSolver` (default); `solvers.GPURansacSolver` (ported batched RANSAC, geometric or Eq.5 feature fitness); `solvers.TeaserSolver` (TEASER++ certifiable registration, needs `teaserpp_python`) |
 | Refine | `PoseRefiner` | `adapters.ICPRefiner` |
-| Score | `PoseScorer` | `adapters.FreeZeScorer` |
+| Score | `PoseScorer` | `freeze.adapters.FreeZeScorer`; `scoring.ChampionScorer` (evaluated) |
 | Select | `Selector` | `adapters.BestScoreSelector` |
 | Metrics | `Metric` | `metrics.vsd`, `metrics.ar` |
 
@@ -151,7 +151,7 @@ as TEASER's noise bound. Needs `teaserpp_python`, built from source
 no PyPI wheel); the import is deferred to `.solve`, so construction is
 dep-light.
 
-Select with `recipes.stages_for_object(solver=...)` or `bop_eval --solver
+Select with `freeze.recipes.stages_for_object(solver=...)` or `bop_eval --solver
 o3d|gpu|gpu-feat|teaser`. The default stays `o3d`, so the evaluated mainline is
 unperturbed; the non-default solvers are reported as independent configurations.
 
@@ -192,7 +192,8 @@ uncompressed RLE — see the module docstring.
 ## Verification
 
 - **Adapter fidelity** — [examples/pipeline_selfcheck.py](examples/pipeline_selfcheck.py):
-  the adapter chain reproduces the inline `FreeZeV2.estimate_pose` body to ~1e-15
+  the adapter chain reproduces the inline `FreeZeV2.estimate_pose` body
+  (`examples/freezev2_monolith.py`) to ~1e-15
   on identical arrays (fixed RANSAC seed + deterministic ICP).
 - **Fusion byte-identity & Protocol wiring** — [tests/](tests/), GPU-free
   (numpy + scikit-learn), run with `pytest`.

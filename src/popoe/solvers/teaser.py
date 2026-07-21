@@ -99,7 +99,7 @@ class TeaserSolver:
     def solve(self, query: PointFeatures, target: PointFeatures,
               frame: CanonFrame) -> list[PoseHypothesis]:
         tpp = _import_teaser()
-        from popoe.pose_estimator import feature_aware_score
+        from popoe.registration import feature_aware_score
 
         # w=1 canonical features (A-layer lesson: absolute feature scores are
         # only comparable at w=1); fall back to .feats when meta is absent.

@@ -159,7 +159,7 @@ def test_best_segmentor_arg_exclusivity():
     """recipes.best_segmentor enforces the same one-of rule as the constructor,
     so `best_segmentor("old.json", sources=...)` cannot silently ignore the
     positional file and evaluate against the wrong detections."""
-    from popoe.recipes import best_segmentor
+    from popoe.freeze.recipes import best_segmentor
     with pytest.raises(ValueError, match="exactly one"):
         best_segmentor("old.json", sources={"nids": "new.json"})
     with pytest.raises(ValueError, match="exactly one"):

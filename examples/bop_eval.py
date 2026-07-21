@@ -45,7 +45,7 @@ from popoe.adapters import (BestScoreSelector, resolve_resume,
                             select_top_instances)
 from popoe.cache import StageCache, file_fingerprint, fingerprint
 from popoe.interfaces import ObjectModel, PointFeatures, PoseHypothesis, Scene
-from popoe.recipes import (WEIGHTS, YCBV_MERGE_LABELS, best_encoders,
+from popoe.freeze.recipes import (WEIGHTS, YCBV_MERGE_LABELS, best_encoders,
                            best_segmentor, scale_vis, stages_for_object)
 
 IDN = " ".join(f"{v:.6f}" for v in np.eye(3).flatten())

@@ -12,11 +12,12 @@ This isolates adapter fidelity from GPU re-extraction non-determinism.
 import argparse
 import numpy as np
 
-from popoe.pose_estimator import (
-    FreeZeV2, ransac_pose_estimation, icp_refinement, feature_aware_score, final_score,
+from freezev2_monolith import FreeZeV2   # sibling module (run from examples/)
+from popoe.registration import (
+    ransac_pose_estimation, icp_refinement, feature_aware_score, final_score,
 )
 from popoe import Scene, ObjectModel, Detection, PointFeatures
-from popoe.adapters import make_freeze_encoders
+from popoe.freeze.adapters import make_freeze_encoders
 from popoe.datasets.bop import find_instances, load_inputs
 
 
@@ -42,7 +43,8 @@ def main():
     frame = q.meta["canon_frame"]
     obj = ObjectModel(obj_id=args.obj, mesh_path=mesh_path, diameter=1.0 / frame.scale)
 
-    from popoe.adapters import RansacSolver, ICPRefiner, FreeZeScorer, BestScoreSelector
+    from popoe.adapters import RansacSolver, ICPRefiner, BestScoreSelector
+    from popoe.freeze.adapters import FreeZeScorer
     solver = RansacSolver(n_ransac=fz.n_ransac, tau_inlier=fz.tau_inlier, k=fz.k_corr)
     refiner, scorer, selector = ICPRefiner(fz.tau_icp), FreeZeScorer(fz.tau_inlier), BestScoreSelector()
 

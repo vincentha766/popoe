@@ -54,7 +54,7 @@ class Open3DFeatureRansacSolver:
     def solve(self, query: PointFeatures, target: PointFeatures,
               frame: CanonFrame) -> list[PoseHypothesis]:
         import open3d as o3d
-        from popoe.pose_estimator import feature_aware_score
+        from popoe.registration import feature_aware_score
 
         N_q, N_t = len(query.pts), len(target.pts)
         if N_t < self.ransac_n or N_q < self.ransac_n:

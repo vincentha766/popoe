@@ -4,7 +4,7 @@ popoe.interfaces — the stage contracts.
 This file is the *specification* layer: the data objects that flow between
 stages, and the Protocol each swappable stage must satisfy. Nothing here does
 heavy work; the reference implementations live in popoe.adapters,
-popoe.feature_extractor, popoe.pose_estimator, popoe.solvers, ... and are wired
+popoe.freeze.feature_extractor, popoe.registration, popoe.solvers, ... and are wired
 by `Pipeline` (see ARCHITECTURE.md).
 
 Design goal: every stage below can be re-implemented independently (a new
@@ -76,7 +76,7 @@ class CanonFrame:
     same registration space: pts_canon = (pts - center) * scale.
 
     IMPORTANT — this must match the live convention in
-    popoe/feature_extractor.py exactly, or GeDi sees a different scale and
+    popoe/freeze/feature_extractor.py exactly, or GeDi sees a different scale and
     poses change:
       * center = 0  (the current code does NOT centre — it applies pure scaling
         `pts * scale`; centring is kept in the contract for generality but is
@@ -152,7 +152,7 @@ class Segmentor(Protocol):
 @runtime_checkable
 class FeatureFusion(Protocol):
     """Combine per-point visual and geometric features into one descriptor.
-    Reference impl: popoe.fusion.DinoGeDiFusion. Swap for concat-only,
+    Reference impl: popoe.freeze.fusion.DinoGeDiFusion. Swap for concat-only,
     learned fusion, single-modality ablations, etc."""
     def fuse(self, vis_feats: np.ndarray, geo_feats: np.ndarray,
              apply_skip_vis: bool = False) -> np.ndarray: ...

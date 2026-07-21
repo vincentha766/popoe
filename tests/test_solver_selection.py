@@ -4,7 +4,7 @@ Solver CONSTRUCTION is dep-light (torch/open3d/teaserpp import lazily inside
 """
 import pytest
 
-from popoe.recipes import stages_for_object
+from popoe.freeze.recipes import stages_for_object
 from popoe.solvers import GPURansacSolver, Open3DFeatureRansacSolver, TeaserSolver
 
 
@@ -35,6 +35,6 @@ def test_unknown_solver_raises():
 
 def test_solver_gets_object_scaled_tau():
     # tau = TAU_FRAC * extent; the gpu solver receives it as tau_inlier
-    from popoe.recipes import TAU_FRAC
+    from popoe.freeze.recipes import TAU_FRAC
     solver, _, _ = stages_for_object(0.2, solver="gpu")
     assert solver.tau_inlier == pytest.approx(TAU_FRAC * 0.2)

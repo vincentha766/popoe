@@ -53,7 +53,7 @@ class ChampionScorer:
     never a silent skip. With BOTH off the scorer is byte-identical to before
     (``s_icp * s_feat_1 * metric_fit``). S_coarse HELPS YCB-V (+2.5 in replay)
     but HURTS LM-O (-1.9): the 26-rule ablation shows rules do not transfer, so
-    this is a per-DATASET switch (recipes.stages_for_object / bop_eval), not a
+    this is a per-DATASET switch (freeze.recipes.stages_for_object / bop_eval), not a
     hard-coded default — the first formal carrier of a per-dataset rule."""
 
     def __init__(self, tau_inlier_frac: float = 0.03, size_thr: float = 0.0075,
@@ -67,7 +67,7 @@ class ChampionScorer:
 
     def score(self, pose: PoseHypothesis,
               query: PointFeatures, target: PointFeatures) -> PoseHypothesis:
-        from popoe.pose_estimator import feature_aware_score
+        from popoe.registration import feature_aware_score
 
         fq = query.meta.get("feats_w1", query.feats)
         ft = target.meta.get("feats_w1", target.feats)

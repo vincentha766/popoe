@@ -120,7 +120,7 @@ def test_s_coarse_on_without_coarse_pose_raises():
 
 
 def test_stages_for_object_wires_score_coarse_flag():
-    from popoe.recipes import stages_for_object
+    from popoe.freeze.recipes import stages_for_object
     _, refiner_off, scorer_off = stages_for_object(0.1)
     assert refiner_off.keep_coarse is False and scorer_off.compute_s_coarse is False
     assert scorer_off.use_s_coarse is False
