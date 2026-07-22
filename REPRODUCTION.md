@@ -71,8 +71,10 @@ Full gap report: `../gedi/EXPERIMENTS.md` Appendix B. Known candidates:
 - Full BOP RGB-D + CAD models for YCB-V / LM-O — **not** complete in the
   local archive (`../gedi/ycbv_local_data/bop_data/` is GT-meta + partial
   RGB for offline metrics). Full image trees live on the pod volume
-  (`/workspace/bop_data/{ycbv,lmo}`). GPU parity runs cannot start without
-  mounting / re-downloading that tree.
+  (`/workspace/bop_data/{ycbv,lmo}`). **Confirmed by Vincent 2026-07-22:
+  the network volume (8rf4r42sf1) retains the full data tree and envs —
+  mounting it is sufficient, no re-download needed. This gap is closed for
+  pod runs.**
 
 ## Run plan (offline prep, 2026-07-22)
 
