@@ -11,6 +11,17 @@ the authoritative (historical) figure.
 if the run is seeded). Record the popoe commit hash for every reproduced
 number.
 
+## Context: the popoe promotion line already exists
+
+popoe's own union2 + S_coarse campaign (2026-07-17 full-set run, 07-21 grasp
+follow-up) already produced a popoe-native formal line: YCB-V full BOP AR
+**0.8201**, LM-O **0.6896**, grasp ADD(-S)@0.1d 0.8616 / 0.7816. Artifacts:
+`../gedi/ycbv_local_data/union_scoring_20260716/`. That line needs no parity
+run — it was born on popoe. The ledger below is about re-producing the **gedi
+script line** (the dissertation's reproduction headline) through popoe
+entrypoints, under the dual-disclosure discipline of `../gedi/EXPERIMENTS.md`
+§0: the reproduction headline is never rewritten by the popoe line.
+
 ## Headline ledger
 
 | # | Experiment | Archive number (source) | popoe entrypoint | Reproduced | popoe commit / pod / date | Status |
@@ -46,7 +57,7 @@ number.
 
 ## Gap list (archive capabilities popoe does not have yet)
 
-To be filled from the gedi `EXPERIMENTS.md` gap report. Known candidates:
+Full gap report: `../gedi/EXPERIMENTS.md` Appendix B. Known candidates:
 
 - Grasp-axis evaluation (ADD(-S)@0.1d) — currently only in gedi
   `scripts/freezev2_grasp_eval.py`.
