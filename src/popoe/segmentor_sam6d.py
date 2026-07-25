@@ -202,10 +202,15 @@ def _parse_scalar(x, *, name: str) -> float:
     s = str(x).strip()
     if not s:
         raise ValueError(f"{name} is empty")
-    vals = np.fromstring(s.replace("[", " ").replace("]", " "), sep=" ")
-    if vals.size == 1:
-        return float(vals[0])
-    return float(s)
+    # Avoid np.fromstring for scalar fields: on non-numeric headers it emits a
+    # DeprecationWarning before raising. BOP CSV headers should be skipped
+    # cleanly by the caller's ValueError path.
+    if s.startswith("[") and s.endswith("]"):
+        s = s[1:-1].strip()
+    try:
+        return float(s)
+    except ValueError as e:
+        raise ValueError(f"{name} must be a float, got {x!r}") from e
 
 
 def _parse_int(x, *, name: str) -> int:

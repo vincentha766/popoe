@@ -1,4 +1,5 @@
 import json
+import warnings
 
 import numpy as np
 
@@ -101,7 +102,10 @@ def test_sam6d_pem_csv_loader_and_coarse_estimator(tmp_path):
         "0,42,9,0.75,0 -1 0 1 0 0 0 0 1,10 20 30,0.25\n"
     )
 
-    preds = load_sam6d_pem_csv(str(csv_path))
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        preds = load_sam6d_pem_csv(str(csv_path))
+    assert caught == []
     assert len(preds) == 2
     assert np.allclose(preds[1].hypothesis.t, [0.01, 0.02, 0.03])
 
