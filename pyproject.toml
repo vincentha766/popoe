@@ -29,5 +29,10 @@ dev = ["pytest", "pandas"]   # pandas: examples/rule_replay.py offline rule swee
 [project.urls]
 Documentation = "https://github.com/vincentha766/popoe/blob/main/ARCHITECTURE.md"
 
+[project.scripts]
+popoe-cnos = "popoe.segmentor_cnos_official:_main"
+popoe-nids-adapt = "popoe.segmentor_nids:_main"
+popoe-sam6d = "popoe.segmentor_sam6d:_main"
+
 [tool.setuptools.packages.find]
 where = ["src"]

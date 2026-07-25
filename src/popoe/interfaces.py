@@ -61,6 +61,35 @@ class Scene:
 
 
 @dataclass(frozen=True)
+class FrameManifest:
+    """File-level description of one RGB-D frame.
+
+    This is an I/O boundary, not a segmentation result: `detections_path`
+    points to 2D masks/scores, while `depth_path` carries the depth image.
+    Loaders must convert raw depth to metres before constructing `Scene`.
+    """
+    rgb_path: str
+    depth_path: str
+    K: np.ndarray
+    depth_scale: float = 1.0             # metres per raw depth unit
+    scene_id: int = -1
+    im_id: int = -1
+    detections_path: Optional[str] = None
+    meta: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        K = np.asarray(self.K, dtype=np.float64)
+        if K.shape != (3, 3):
+            if K.size != 9:
+                raise ValueError(f"K must be 3x3 or flat length-9, got {K.shape}")
+            K = K.reshape(3, 3)
+        object.__setattr__(self, "K", K)
+        object.__setattr__(self, "depth_scale", float(self.depth_scale))
+        object.__setattr__(self, "scene_id", int(self.scene_id))
+        object.__setattr__(self, "im_id", int(self.im_id))
+
+
+@dataclass(frozen=True)
 class ObjectModel:
     """A target object: CAD mesh + BOP metadata. The single source of truth for
     diameter and symmetry, so downstream stages never re-guess them."""
@@ -181,6 +210,21 @@ class PoseSolver(Protocol):
     consistency-graph are drop-in alternatives (the identified accuracy gap)."""
     def solve(self, query: PointFeatures, target: PointFeatures,
               frame: CanonFrame) -> list[PoseHypothesis]: ...
+
+
+@runtime_checkable
+class CoarseEstimator(Protocol):
+    """External/direct coarse pose producer.
+
+    This is for methods such as SAM-6D PEM or MegaPose-style services that
+    consume an RGB-D scene, a CAD object, and optionally a 2D detection, then
+    directly emit pose hypotheses. It intentionally sits next to `PoseSolver`
+    rather than replacing it: the FreeZe pipeline still solves from encoded
+    query/target features, while external full-pipeline producers can be
+    adapted without pretending they share that internal feature contract.
+    """
+    def estimate(self, scene: Scene, obj: ObjectModel,
+                 det: Optional[Detection] = None) -> list[PoseHypothesis]: ...
 
 
 @runtime_checkable

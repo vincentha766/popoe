@@ -15,11 +15,12 @@ Scene (RGB-D, K) ──┘            TargetEncoder ──┴─ PoseSolver ─ 
 
 | Stage | Protocol | Reference implementation |
 |-------|----------|--------------------------|
-| Segmentation | `Segmentor` | `segmentor_detections.BOPDetectionsSegmentor` (evaluated; single file or a named-source union — see below); `segmentor_cnos.CNOSSegmentor` / `.DinoWindowSegmentor`; `segmentor.SAMSegmentor` / `.DepthSegmentor`; `adapters.PrecomputedSegmentor` |
+| Segmentation | `Segmentor` | `segmentor_detections.BOPDetectionsSegmentor` (evaluated; single file or a named-source union — see below); `segmentor_cnos_official.CNOSDetectionsSegmentor` (`source='cnos'`); `segmentor_cnos_v3.CNOSv3Segmentor` (`source='cnos-v3'`); `segmentor_cnos.CNOSSegmentor` (`source='cnos-live'`) / `.DinoWindowSegmentor`; `segmentor.SAMSegmentor` / `.DepthSegmentor`; `adapters.PrecomputedSegmentor` |
 | Query features | `QueryEncoder` | `freeze.adapters.FreeZeQueryEncoder` (DINOv2 + GeDi) |
 | Target features | `TargetEncoder` | `freeze.adapters.FreeZeTargetEncoder` |
 | Fusion | `FeatureFusion` | `freeze.fusion.DinoGeDiFusion` |
 | Pose solve | `PoseSolver` | `adapters.RansacSolver`; `solvers.Open3DFeatureRansacSolver` (default); `solvers.GPURansacSolver` (ported batched RANSAC, geometric or Eq.5 feature fitness); `solvers.TeaserSolver` (TEASER++ certifiable registration, needs `teaserpp_python`) |
+| External coarse pose | `CoarseEstimator` | `segmentor_sam6d.SAM6DPemResultsCoarseEstimator` over already-written PEM results |
 | Refine | `PoseRefiner` | `adapters.ICPRefiner` |
 | Score | `PoseScorer` | `freeze.adapters.FreeZeScorer`; `scoring.ChampionScorer` (evaluated) |
 | Select | `Selector` | `adapters.BestScoreSelector` |
@@ -158,11 +159,17 @@ unperturbed; the non-default solvers are reported as independent configurations.
 ## File-based detection backends (CNOS / SAM-6D / NIDS)
 
 CNOS-FastSAM, SAM-6D ISM and NIDS-Net all publish the same artefact — a
-BOP-format detections JSON — so they are not separate code paths, only
-different files under different names. `segmentor_detections.DetectionSource`
-`(name, path)` is the config handle: select a backend BY NAME and compose
-several into one `BOPDetectionsSegmentor` to reproduce FreeZe-style multi-source
-segmentation.
+detections JSON — so they are not separate pose-backend code paths, only
+different named producers. Official CNOS, NIDS-Net and SAM-6D are pinned under
+`external/` for source provenance but still run in separate
+environments/services; `segmentor_cnos_official.CNOSDetectionsSegmentor`,
+`segmentor_nids.NIDSNetDetectionsSegmentor`,
+`segmentor_nids.adapt_nidsnet_json`, and
+`segmentor_sam6d.SAM6DIsmDetectionsSegmentor` are the popoe-side adapters.
+Underneath,
+`segmentor_detections.DetectionSource` `(name, path)` is the config handle:
+select a backend BY NAME and compose several into one `BOPDetectionsSegmentor`
+to reproduce FreeZe-style multi-source segmentation.
 
 ```python
 from popoe.segmentor_detections import BOPDetectionsSegmentor
@@ -176,6 +183,14 @@ dets = seg.segment(scene, obj)
 dets[0].source        # -> 'cnos' | 'sam6d' | 'nids' — which backend produced it
 ```
 
+CNOS source names are reserved:
+
+| Source | Meaning |
+|--------|---------|
+| `cnos` | official CNOS/CNOS-FastSAM producer or public BOP default detections |
+| `cnos-v3` | local depth-size-gated foreground-patch recipe (`segmentor_cnos_v3`) |
+| `cnos-live` | older live SAM2+DINOv2 approximation (`segmentor_cnos.CNOSSegmentor`) |
+
 `topk` is applied per `(source, label)` bucket, so a top-M union keeps M
 candidates **per source** (no source crowds out another before scoring), and
 every mask carries its origin in `Detection.source` — the same provenance
@@ -188,6 +203,11 @@ drops its own near-duplicates. The single-file form
 `bop-detections` tag). The loader (`load_bop_detections`) coerces the
 fully-stringified NIDS WA_Sappe variant and decodes both compressed and
 uncompressed RLE — see the module docstring.
+
+SAM-6D PEM is different: it is an external full pose producer, not a detections
+source. `segmentor_sam6d.SAM6DPemResultsCoarseEstimator` adapts its BOP CSV or
+custom JSON outputs to `PoseHypothesis` through the separate `CoarseEstimator`
+contract, keeping it out of the FreeZe feature-solver contract.
 
 ## Verification
 

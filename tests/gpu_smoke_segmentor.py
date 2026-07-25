@@ -206,7 +206,7 @@ def main():
         def cnos_ok():
             dets = cnos.segment(scene, obj)
             assert dets, "no detections"
-            assert dets[0].source == "cnos", dets[0].source
+            assert dets[0].source == "cnos-live", dets[0].source
             assert -1.0 <= dets[0].score <= 1.0, f"score {dets[0].score} not a cosine"
             assert dets[0].descriptor is not None and dets[0].descriptor.shape == (768,)
             assert dets == sorted(dets, key=lambda d: -d.score), "not sorted"
@@ -230,8 +230,8 @@ def main():
         def chain_prefers_cnos():
             chain = FirstAvailableSegmentor([cnos, win, DepthSegmentor()])
             dets = chain.segment(scene, obj)
-            assert chain.last_used == "cnos", chain.last_used
-            assert all(d.source == "cnos" for d in dets)
+            assert chain.last_used == "cnos-live", chain.last_used
+            assert all(d.source == "cnos-live" for d in dets)
         check("chain prefers CNOS when SAM2 IS available", chain_prefers_cnos)
     else:
         print("  SKIP  CNOS / SAM paths — no SAM2 checkpoint", flush=True)

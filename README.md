@@ -46,9 +46,18 @@ these separately and point popoe at them via env vars:
 | SAM 2 checkpoints | `POPOE_SAM2_CKPT` (default `/workspace/sam2_checkpoints`) | segmentation |
 | bop_toolkit | `POPOE_BOP_TOOLKIT` (default `/workspace/bop_toolkit`) | metrics (VSD/MSSD/MSPD) |
 | nvdiffrast | — | optional, falls back to trimesh CPU rendering |
+| Official CNOS producer | `POPOE_CNOS_PATH` or `external/cnos` submodule | optional detections source |
+| NIDS-Net producer | `external/NIDS-Net` submodule | optional detections source |
+| SAM-6D producer | `POPOE_SAM6D_PATH` or `external/SAM-6D` submodule | optional ISM detections / PEM pose source |
 
 DINOv2 is pulled via `torch.hub`. See [NOTICE](NOTICE) for upstream licenses —
 **each keeps its own license; verify before use.**
+
+For pinned producer source checkouts:
+
+```bash
+git submodule update --init --recursive external/cnos external/NIDS-Net external/SAM-6D
+```
 
 ## Quickstart — the stages
 
@@ -111,12 +120,12 @@ from popoe.segmentor import DepthSegmentor, FirstAvailableSegmentor
 from popoe.segmentor_cnos import CNOSSegmentor, DepthBoxMasker, DinoWindowSegmentor
 
 seg = FirstAvailableSegmentor([
-    CNOSSegmentor(renderer),                                   # SAM2 + DINOv2
+    CNOSSegmentor(renderer),                                   # SAM2 + DINOv2, source=cnos-live
     DinoWindowSegmentor(renderer, masker=DepthBoxMasker()),    # no SAM2 needed
     DepthSegmentor(),                                          # no deps at all
 ])
 dets = seg.segment(scene, obj)
-seg.last_used      # -> 'cnos' | 'dino-window' | 'depth-cc'
+seg.last_used      # -> 'cnos-live' | 'dino-window' | 'depth-cc'
 dets[0].source     # per detection; the window segmentor appends its masker,
                    # e.g. 'dino-window+depth-box' — survives into the CSV
 ```
@@ -155,10 +164,34 @@ dets = seg.segment(scene, obj)                  # dets[i].source -> 'cnos'|'nids
 | **NIDS-Net** | WA_Sappe variant BOP predictions | UT Dallas Box, linked from [`IRVLUTD/NIDS-Net`](https://github.com/IRVLUTD/NIDS-Net) README → "Inference on BOP datasets"; saved as `nids_wa_sappe_{ycbv,lmo}.json` |
 | **SAM-6D ISM** | Instance Segmentation Model masks | No public per-dataset file — run [`JiehongLin/SAM-6D`](https://github.com/JiehongLin/SAM-6D) ISM on the BOP test images (GPU); optional |
 
+Official CNOS, NIDS-Net and SAM-6D are intentionally **external producers**,
+not popoe dependencies. Their official stacks use heavy and version-pinned
+segmentation, foundation-model and pose-estimation packages. The source
+checkouts are pinned under `external/`, but runtime should still happen in
+separate `uv`/conda projects or services. Export predictions, then consume
+them here as named files or through the provenance-specific wrappers
+`popoe.segmentor_cnos_official.CNOSDetectionsSegmentor`,
+`popoe.segmentor_nids.NIDSNetDetectionsSegmentor`, and
+`popoe.segmentor_sam6d.SAM6DIsmDetectionsSegmentor`.
+That keeps `popoe`'s pose backend independent of segmentation-model dependency
+conflicts while preserving per-detection source provenance through scoring.
+See [CNOS.md](CNOS.md), [NIDS_NET.md](NIDS_NET.md), and [SAM6D.md](SAM6D.md) for
+deployment notes and the adapter CLIs.
+
+CNOS naming is deliberately split:
+
+| Source | Meaning |
+|--------|---------|
+| `cnos` | Official CNOS/CNOS-FastSAM predictions, public BOP files, or `external/cnos` output |
+| `cnos-v3` | Local lab recipe: proposal masks -> depth size gate -> DINOv2 foreground-patch rank |
+| `cnos-live` | Existing simplified live CNOS-style segmentor (`CNOSSegmentor`), not an official result |
+
 **Format notes.** A detections file is a JSON list of records
 `{scene_id, image_id, category_id, score, segmentation}` where `segmentation`
-is a COCO RLE. The loader (`load_bop_detections`) handles the format variance
-seen across these releases without special-casing at the call site:
+is a COCO RLE. Real-capture files may use a `mask` or `mask_path` alias instead;
+these are still 2D masks, never depth. The loader (`load_bop_detections`, alias
+`load_detections`) handles the format variance seen across these releases
+without special-casing at the call site:
 
 - **Fully-stringified records** — the NIDS WA_Sappe Box release ships every
   field as a string (`"scene_id": "48"`, `"score": "0.74…"`, bbox as a
@@ -174,6 +207,49 @@ no-GPU end-to-end check over whatever files you have:
 
 ```bash
 python examples/union_smoke.py --dataset ycbv    # load -> decode -> union -> select
+```
+
+For real RGB-D captures, keep the same boundary: detections are still **2D**
+masks/scores only, and depth stays with the frame. A frame manifest points to
+the RGB/depth files, intrinsics, scale, and the per-frame detections file:
+
+```json
+{
+  "scene_id": 0,
+  "image_id": 42,
+  "rgb_path": "frames/000042_rgb.png",
+  "depth_path": "frames/000042_depth.png",
+  "depth_scale": 0.001,
+  "K": [[fx, 0, cx], [0, fy, cy], [0, 0, 1]],
+  "detections_path": "detections/000042.json"
+}
+```
+
+The matching detections file can use BOP's `segmentation` field or the local
+`mask` alias:
+
+```json
+[
+  {
+    "scene_id": 0,
+    "image_id": 42,
+    "category_id": 9,
+    "score": 0.96,
+    "bbox": [120, 80, 230, 210],
+    "mask": {"format": "rle", "size": [480, 640], "counts": "..."}
+  }
+]
+```
+
+Load it into the same pipeline types:
+
+```python
+from popoe.datasets.frames import load_frame_manifest, load_scene_from_manifest
+from popoe.segmentor_detections import BOPDetectionsSegmentor
+
+frame = load_frame_manifest("capture/frame_000042.json")
+scene = load_scene_from_manifest(frame)     # depth is now metres
+seg = BOPDetectionsSegmentor(frame.detections_path, source="local-cnos")
 ```
 
 ## Layout

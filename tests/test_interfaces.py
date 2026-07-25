@@ -40,6 +40,11 @@ class _Solver:
         return [PoseHypothesis(np.eye(3), np.zeros(3), 0.8, breakdown={"s_coarse": 0.8})]
 
 
+class _Coarse:
+    def estimate(self, scene, obj, det=None):
+        return [PoseHypothesis(np.eye(3), np.zeros(3), 0.7, breakdown={"source": "mock"})]
+
+
 class _RefinerGeom:
     def refine(self, pose, scene, obj, q, t):
         assert q is not None  # refiner gets query (ICP geometry)
@@ -65,6 +70,7 @@ def _mocks_satisfy_protocols():
     assert isinstance(_QEnc(), popoe.QueryEncoder)
     assert isinstance(_TEnc(), popoe.TargetEncoder)
     assert isinstance(_Solver(), popoe.PoseSolver)
+    assert isinstance(_Coarse(), popoe.CoarseEstimator)
     assert isinstance(_RefinerGeom(), popoe.PoseRefiner)
     assert isinstance(_Scorer(), popoe.PoseScorer)
     assert isinstance(_Selector(), popoe.Selector)
