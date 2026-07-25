@@ -351,6 +351,11 @@ def load_sam6d_pem_results(path: str,
             translation_scale=translation_scale,
             source=source,
         )
+    if scene_id is not None or image_id is not None or obj_id is not None:
+        raise ValueError(
+            "scene_id/image_id/obj_id overrides are only supported for SAM-6D "
+            "PEM JSON outputs; CSV results must carry authoritative BOP ids"
+        )
     return load_sam6d_pem_csv(
         path,
         translation_scale=translation_scale,

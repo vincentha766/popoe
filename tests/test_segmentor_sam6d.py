@@ -2,6 +2,7 @@ import json
 import warnings
 
 import numpy as np
+import pytest
 
 from popoe.interfaces import ObjectModel, Scene
 from popoe.segmentor_sam6d import (
@@ -114,6 +115,17 @@ def test_sam6d_pem_csv_loader_and_coarse_estimator(tmp_path):
     assert len(hyps) == 1
     assert hyps[0].score == 0.75
     assert hyps[0].breakdown["source"] == "sam6d-pem"
+
+
+def test_sam6d_pem_csv_rejects_id_overrides(tmp_path):
+    csv_path = tmp_path / "result_lmo.csv"
+    csv_path.write_text(
+        "scene_id,im_id,obj_id,score,R,t,time\n"
+        "0,42,9,0.25,1 0 0 0 1 0 0 0 1,100 200 300,0.50\n"
+    )
+
+    with pytest.raises(ValueError, match="overrides are only supported"):
+        SAM6DPemResultsCoarseEstimator(str(csv_path), scene_id=1)
 
 
 def test_sam6d_pem_json_loader_supports_custom_demo_output(tmp_path):
