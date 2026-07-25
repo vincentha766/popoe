@@ -125,8 +125,17 @@ OUTPUT_DIR/cnos_results/detection.json
 OUTPUT_DIR/cnos_results/vis.png
 ```
 
-Official custom output uses placeholder BOP ids. Stamp it to the frame/object
-you are going to evaluate before using `CNOSDetectionsSegmentor`:
+Official custom output uses placeholder BOP ids. Upstream
+`inference_custom.py` writes `object_ids = 0` and
+`save_to_file(..., "custom")` stores `category_id = object_ids + 1`, so the
+raw JSON is typically:
+
+```text
+scene_id=0, image_id=0, category_id=1
+```
+
+Stamp it to the frame/object you are going to evaluate before using
+`CNOSDetectionsSegmentor` (single-CAD path — preferred):
 
 ```bash
 popoe-cnos adapt-custom \
@@ -137,8 +146,20 @@ popoe-cnos adapt-custom \
   --category-id 9
 ```
 
-For multi-object output, use `--category-map 0:9,1:10` instead of
-`--category-id`. The adapted JSON keeps `source="cnos"` and can be consumed by
+For multi-object output where the JSON already encodes distinct category ids,
+use `--category-map` with the **JSON keys as written** (for official custom
+that is `1`, not `0`):
+
+```bash
+popoe-cnos adapt-custom \
+  --input /tmp/cnos_custom/cnos_results/detection.json \
+  --output data/detections/cnos/custom_scene0_im42.json \
+  --scene-id 0 \
+  --image-id 42 \
+  --category-map 1:9
+```
+
+The adapted JSON keeps `source="cnos"` and can be consumed by
 `CNOSDetectionsSegmentor`. If you run the local v3 recipe, write it under a
 separate path such as `data/detections/cnos_v3/` and keep
 `source="cnos-v3"`.

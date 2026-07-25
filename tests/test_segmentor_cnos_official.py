@@ -46,10 +46,11 @@ def test_cnos_adapt_custom_stamps_placeholder_ids(tmp_path):
     mask[2:6, 1:5] = 1
     np.save(tmp_path / "mask.npy", mask)
     raw = tmp_path / "detection.json"
+    # Official custom: object_ids=0 -> category_id = object_ids + 1 = 1
     raw.write_text(json.dumps([{
         "scene_id": 0,
         "image_id": 0,
-        "category_id": 0,
+        "category_id": 1,
         "score": 0.91,
         "bbox": [1, 2, 4, 4],
         "mask_path": "mask.npy",
@@ -70,6 +71,33 @@ def test_cnos_adapt_custom_stamps_placeholder_ids(tmp_path):
     assert records[0]["source"] == "cnos"
     assert len(dets) == 1
     assert np.array_equal(dets[0].mask, mask.astype(bool))
+
+
+def test_cnos_adapt_custom_category_map_uses_json_keys(tmp_path):
+    mask = np.zeros((8, 8), np.uint8)
+    mask[2:6, 1:5] = 1
+    np.save(tmp_path / "mask.npy", mask)
+    raw = tmp_path / "detection.json"
+    raw.write_text(json.dumps([{
+        "scene_id": 0,
+        "image_id": 0,
+        "category_id": 1,
+        "score": 0.91,
+        "bbox": [1, 2, 4, 4],
+        "mask_path": "mask.npy",
+    }]))
+    out = tmp_path / "adapted.json"
+
+    records = adapt_cnos_json(
+        str(raw), str(out), scene_id=0, image_id=42,
+        category_id_map={1: 9})
+    assert records[0]["category_id"] == 9
+
+    # Mapping from 0 (wrong key for official custom) leaves category_id=1
+    records_noop = adapt_cnos_json(
+        str(raw), str(tmp_path / "noop.json"), scene_id=0, image_id=42,
+        category_id_map={0: 9})
+    assert records_noop[0]["category_id"] == 1
 
 
 def test_cnos_bop_command_builder():

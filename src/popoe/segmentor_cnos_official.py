@@ -343,7 +343,9 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
     adapt.add_argument("--category-id", type=int, default=None,
                        help="force one object id for a single-CAD custom output")
     adapt.add_argument("--category-map", default=None,
-                       help="optional id map, e.g. '0:9,1:10'")
+                       help="optional id map using JSON category_id keys as "
+                            "written by the producer; official custom uses "
+                            "object_ids+1 so single-CAD is usually '1:9'")
     adapt.add_argument("--source", default=CNOS_SOURCE,
                        help="Detection.source provenance tag")
 
@@ -386,6 +388,12 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
         print(cmd.shell_line())
         return 0
     if args.command == "adapt-custom":
+        if (args.scene_id is None and args.image_id is None
+                and args.category_id is None and not args.category_map):
+            raise SystemExit(
+                "adapt-custom requires at least one of "
+                "--scene-id / --image-id / --category-id / --category-map "
+                "(official custom leaves scene_id=0, image_id=0, category_id=1)")
         records = adapt_cnos_json(
             args.input,
             args.output,
