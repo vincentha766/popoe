@@ -209,6 +209,23 @@ no-GPU end-to-end check over whatever files you have:
 python examples/union_smoke.py --dataset ycbv    # load -> decode -> union -> select
 ```
 
+To score a segmentation source directly, use COCO mask AP over BOP visible
+masks. This evaluates only the 2D proposals, not 6-DoF pose:
+
+```bash
+python examples/bop_seg_eval.py \
+  --bop /path/to/ycbv \
+  --detections data/detections/cnos/cnos-fastsam_ycbv-test.json \
+  --targets /path/to/ycbv/test_targets_bop19.json \
+  --out-dir outputs/ycbv_cnos_seg_ap
+```
+
+The command builds a merged `gt_coco.json` from `mask_visib`, converts the BOP
+detections into `pred_coco.json`, then runs `pycocotools` in `segm` mode and
+writes `summary.json`. It needs a complete BOP split with GT masks; sparse local
+subsets that only include RGB/depth/poses are useful for pose debugging but
+cannot produce segmentation AP.
+
 For real RGB-D captures, keep the same boundary: detections are still **2D**
 masks/scores only, and depth stays with the frame. A frame manifest points to
 the RGB/depth files, intrinsics, scale, and the per-frame detections file:

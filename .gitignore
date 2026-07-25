@@ -21,3 +21,10 @@ data/detections/
 bop_data/
 models/
 outputs/
+# Local RealSense / CAD review dumps (never commit)
+realsense_*_review_*/
+11oz-Mug/
+*.obj
+*.stl
+*.fbx
+*.blend
