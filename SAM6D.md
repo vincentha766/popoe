@@ -130,7 +130,9 @@ Consume `detection_ism.json` with `SAM6DIsmDetectionsSegmentor` if the records
 have `scene_id`, `image_id`, `category_id`, `score` and a mask field. Consume
 `detection_pem.json` with `SAM6DPemResultsCoarseEstimator` when each record has
 `R` and `t`; pass `scene_id`, `image_id` or `obj_id` to the estimator if the
-custom output uses placeholder ids:
+custom output uses missing or placeholder ids (`-1`/`0`). These arguments
+stamp ids onto records; they are not filters. If a JSON record already has a
+different non-placeholder id, popoe raises instead of silently collapsing it:
 
 ```python
 est = SAM6DPemResultsCoarseEstimator(

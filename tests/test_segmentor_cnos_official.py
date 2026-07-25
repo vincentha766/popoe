@@ -5,6 +5,7 @@ import numpy as np
 from popoe.interfaces import ObjectModel, Scene
 from popoe.segmentor_cnos_official import (
     CNOSDetectionsSegmentor,
+    adapt_cnos_json,
     build_cnos_bop_command,
     build_cnos_custom_infer_command,
     build_cnos_custom_render_command,
@@ -37,6 +38,37 @@ def test_cnos_detections_segmentor_stamps_official_source(tmp_path):
     assert len(dets) == 1
     assert dets[0].source == "cnos"
     assert dets[0].bbox == (1.0, 2.0, 5.0, 6.0)
+    assert np.array_equal(dets[0].mask, mask.astype(bool))
+
+
+def test_cnos_adapt_custom_stamps_placeholder_ids(tmp_path):
+    mask = np.zeros((8, 8), np.uint8)
+    mask[2:6, 1:5] = 1
+    np.save(tmp_path / "mask.npy", mask)
+    raw = tmp_path / "detection.json"
+    raw.write_text(json.dumps([{
+        "scene_id": 0,
+        "image_id": 0,
+        "category_id": 0,
+        "score": 0.91,
+        "bbox": [1, 2, 4, 4],
+        "mask_path": "mask.npy",
+    }]))
+    out = tmp_path / "adapted.json"
+
+    records = adapt_cnos_json(
+        str(raw), str(out), scene_id=3, image_id=42, category_id=9)
+    seg = CNOSDetectionsSegmentor(str(out), topk=1, min_pixels=1)
+    scene = Scene(rgb=np.zeros((8, 8, 3), np.uint8),
+                  depth=np.zeros((8, 8), np.float32),
+                  K=np.eye(3), scene_id=3, im_id=42)
+    dets = seg.segment(scene, ObjectModel(obj_id=9, mesh_path="x", diameter=0.1))
+
+    assert records[0]["scene_id"] == 3
+    assert records[0]["image_id"] == 42
+    assert records[0]["category_id"] == 9
+    assert records[0]["source"] == "cnos"
+    assert len(dets) == 1
     assert np.array_equal(dets[0].mask, mask.astype(bool))
 
 

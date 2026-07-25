@@ -323,6 +323,11 @@ class CNOSv3Segmentor:
                  conf_threshold: float = -1.0):
         self.proposer = proposer
         self.template_bank = template_bank
+        if scorer is None and template_bank is not None:
+            scorer = getattr(template_bank, "scorer", None)
+            extractor = getattr(template_bank, "extractor", None)
+            if scorer is None and extractor is not None:
+                scorer = PatchForegroundScorer(extractor=extractor)
         self.scorer = scorer or PatchForegroundScorer()
         self.size_gate = size_gate or DepthSizeGate()
         self.n_masks = int(n_masks)

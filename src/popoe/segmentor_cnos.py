@@ -283,8 +283,10 @@ class DepthBoxMasker:
 # ── Segmentors ──────────────────────────────────────────────────────────
 
 class CNOSSegmentor:
-    """Proper CNOS: SAM2 AMG proposes instances, DINOv2 re-ranks each crop
-    against the CAD templates. `score` is a cosine similarity in [-1, 1].
+    """Live CNOS-style segmentor: SAM2 AMG proposes instances, DINOv2
+    re-ranks each crop against CAD templates.
+
+    `score` is a cosine similarity in [-1, 1].
 
     Requires sam2 + checkpoint; raises SegmentorUnavailable without them — it
     does NOT quietly degrade. Put DinoWindowSegmentor after it in a

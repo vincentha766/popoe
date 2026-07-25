@@ -228,6 +228,28 @@ def test_real_scene_mask_field_accepts_rle_alias(tmp_path):
     assert np.array_equal(dets[0].mask, mask)
 
 
+def test_loader_accepts_dict_payload_with_detections_key(tmp_path):
+    mask = np.zeros((16, 20), bool)
+    mask[2:14, 2:18] = True
+    un = _uncompress(mask)
+    p = tmp_path / "wrapped.json"
+    p.write_text(json.dumps({
+        "detections": [{
+            "scene_id": 0, "image_id": 3, "category_id": 9,
+            "score": 0.96, "bbox": [2, 2, 16, 12],
+            "segmentation": {"size": un["size"], "counts": un["counts"]},
+        }]
+    }))
+
+    recs = load_bop_detections(str(p))
+
+    assert len(recs) == 1
+    assert recs[0]["scene_id"] == 0
+    assert recs[0]["image_id"] == 3
+    assert recs[0]["category_id"] == 9
+    assert np.array_equal(decode_detection_mask(recs[0]["segmentation"]), mask)
+
+
 def test_source_tagging_from_argument_and_record():
     """load_bop_detections stamps `source` from the arg (union origin), else
     from the record, else leaves it absent (bucketed under '_')."""

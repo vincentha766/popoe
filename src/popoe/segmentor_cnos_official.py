@@ -10,40 +10,17 @@ small command builders for running the official repo in its own environment.
 from __future__ import annotations
 
 import argparse
+import json
 import os
-import shlex
 import subprocess
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping, Optional, Sequence
 
+from popoe.external_cmd import ExternalCommand
 from popoe.segmentor_detections import BOPDetectionsSegmentor, load_detections
 
 
 CNOS_SOURCE = "cnos"
-
-
-@dataclass(frozen=True)
-class ExternalCommand:
-    """A subprocess command plus the cwd/env needed by the official repo."""
-
-    argv: tuple[str, ...]
-    cwd: str
-    env: Mapping[str, str] = field(default_factory=dict)
-
-    def as_subprocess_kwargs(self) -> dict:
-        env = os.environ.copy()
-        env.update(dict(self.env))
-        return {"args": list(self.argv), "cwd": self.cwd, "env": env}
-
-    def shell_line(self) -> str:
-        env_prefix = " ".join(
-            f"{k}={shlex.quote(v)}" for k, v in sorted(self.env.items())
-        )
-        if env_prefix:
-            env_prefix += " "
-        argv = " ".join(shlex.quote(a) for a in self.argv)
-        return f"cd {shlex.quote(self.cwd)} && {env_prefix}{argv}"
 
 
 def _repo_root() -> Path:
@@ -164,6 +141,137 @@ def run_external_command(command: ExternalCommand, **kwargs) -> subprocess.Compl
     return subprocess.run(**popen_kwargs)
 
 
+def _records_from_payload(payload):
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        for key in ("detections", "annotations", "instances", "results"):
+            if isinstance(payload.get(key), list):
+                return payload[key]
+    raise TypeError("CNOS output must be a JSON list or a dict with detections")
+
+
+def _parse_id_map(spec: Optional[str]) -> dict:
+    if not spec:
+        return {}
+    out = {}
+    for part in spec.split(","):
+        if not part.strip():
+            continue
+        left, right = part.split(":", 1)
+        out[int(left.strip())] = int(right.strip())
+    return out
+
+
+def _map_category(category_id, category_id_map: Optional[Mapping]) -> int:
+    cid = int(float(category_id))
+    if not category_id_map:
+        return cid
+    if cid in category_id_map:
+        return int(category_id_map[cid])
+    key = str(cid)
+    if key in category_id_map:
+        return int(category_id_map[key])
+    return cid
+
+
+def _has_mask_record(rec: dict) -> bool:
+    return any(k in rec for k in ("segmentation", "mask", "mask_path"))
+
+
+def _resolve_path(path: str, base_dir: Optional[str]) -> str:
+    if base_dir is None or os.path.isabs(path):
+        return path
+    return os.path.normpath(os.path.join(base_dir, path))
+
+
+def _resolve_mask_paths(rec: dict, base_dir: Optional[str]) -> dict:
+    if "mask_path" in rec and isinstance(rec["mask_path"], str):
+        rec["mask_path"] = _resolve_path(rec["mask_path"], base_dir)
+    mask = rec.get("mask")
+    if isinstance(mask, str):
+        rec["mask"] = _resolve_path(mask, base_dir)
+    elif isinstance(mask, dict) and "path" in mask and isinstance(mask["path"], str):
+        rec["mask"] = dict(mask)
+        rec["mask"]["path"] = _resolve_path(mask["path"], base_dir)
+    return rec
+
+
+def adapt_cnos_records(records,
+                       *,
+                       scene_id: Optional[int] = None,
+                       image_id: Optional[int] = None,
+                       category_id: Optional[int] = None,
+                       category_id_map: Optional[Mapping] = None,
+                       source: str = CNOS_SOURCE,
+                       base_dir: Optional[str] = None) -> list[dict]:
+    """Stamp/remap official CNOS detections for popoe consumption.
+
+    Official BOP outputs already carry authoritative ids. The custom CAD/RGB
+    script writes placeholder ids, so single-frame custom output must be
+    stamped with the target frame/object ids before using `CNOSDetectionsSegmentor`.
+    """
+
+    out = []
+    for i, raw in enumerate(_records_from_payload(records)):
+        rec = dict(raw)
+        if not _has_mask_record(rec):
+            raise ValueError(f"CNOS record {i} has no mask")
+
+        if scene_id is not None:
+            rec["scene_id"] = int(scene_id)
+        elif "scene_id" not in rec:
+            rec["scene_id"] = -1
+
+        if image_id is not None:
+            rec["image_id"] = int(image_id)
+        elif "image_id" not in rec:
+            rec["image_id"] = rec.get("im_id", -1)
+
+        if category_id is not None:
+            rec["category_id"] = int(category_id)
+        elif "category_id" in rec:
+            rec["category_id"] = _map_category(rec["category_id"], category_id_map)
+        else:
+            raise KeyError(f"CNOS record {i} has no category_id")
+
+        rec["score"] = float(rec.get("score", 1.0))
+        if source:
+            rec["source"] = source
+        out.append(_resolve_mask_paths(rec, base_dir))
+    return out
+
+
+def adapt_cnos_json(input_json: str,
+                    output_json: str,
+                    *,
+                    scene_id: Optional[int] = None,
+                    image_id: Optional[int] = None,
+                    category_id: Optional[int] = None,
+                    category_id_map: Optional[Mapping] = None,
+                    source: str = CNOS_SOURCE) -> list[dict]:
+    """Read official CNOS output, write popoe-compatible detections JSON."""
+
+    with open(input_json) as f:
+        payload = json.load(f)
+    base_dir = os.path.dirname(os.path.abspath(input_json))
+    records = adapt_cnos_records(
+        payload,
+        scene_id=scene_id,
+        image_id=image_id,
+        category_id=category_id,
+        category_id_map=category_id_map,
+        source=source,
+        base_dir=base_dir,
+    )
+    out_dir = os.path.dirname(os.path.abspath(output_json))
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+    with open(output_json, "w") as f:
+        json.dump(records, f)
+    return records
+
+
 class CNOSDetectionsSegmentor(BOPDetectionsSegmentor):
     """File-backed Segmentor for official CNOS/CNOS-FastSAM predictions."""
 
@@ -224,6 +332,21 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
     custom.add_argument("--conf-threshold", type=float, default=0.5)
     custom.add_argument("--stability-score-thresh", type=float, default=0.5)
 
+    adapt = sub.add_parser("adapt-custom",
+                           help="stamp/remap official CNOS custom detections")
+    adapt.add_argument("--input", required=True, help="official CNOS detection.json")
+    adapt.add_argument("--output", required=True, help="popoe detections JSON")
+    adapt.add_argument("--scene-id", type=int, default=None,
+                       help="force scene_id for a single-frame custom output")
+    adapt.add_argument("--image-id", type=int, default=None,
+                       help="force image_id for a single-frame custom output")
+    adapt.add_argument("--category-id", type=int, default=None,
+                       help="force one object id for a single-CAD custom output")
+    adapt.add_argument("--category-map", default=None,
+                       help="optional id map, e.g. '0:9,1:10'")
+    adapt.add_argument("--source", default=CNOS_SOURCE,
+                       help="Detection.source provenance tag")
+
     check = sub.add_parser("check", help="load a CNOS detections JSON")
     check.add_argument("--input", required=True)
 
@@ -262,6 +385,19 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
         )
         print(cmd.shell_line())
         return 0
+    if args.command == "adapt-custom":
+        records = adapt_cnos_json(
+            args.input,
+            args.output,
+            scene_id=args.scene_id,
+            image_id=args.image_id,
+            category_id=args.category_id,
+            category_id_map=_parse_id_map(args.category_map),
+            source=args.source,
+        )
+        load_detections(args.output, source=args.source)
+        print(f"wrote {len(records)} CNOS detections -> {args.output}")
+        return 0
 
     records = load_detections(args.input, source=CNOS_SOURCE)
     print(f"loaded {len(records)} CNOS detections from {args.input}")
@@ -275,6 +411,8 @@ if __name__ == "__main__":
 __all__ = [
     "CNOSDetectionsSegmentor",
     "ExternalCommand",
+    "adapt_cnos_json",
+    "adapt_cnos_records",
     "build_cnos_bop_command",
     "build_cnos_custom_infer_command",
     "build_cnos_custom_render_command",

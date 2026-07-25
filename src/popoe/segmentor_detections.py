@@ -149,6 +149,19 @@ def _normalize_detection_mask(d: dict, base_dir: str | None):
     raise KeyError("detection record needs `segmentation`, `mask`, or `mask_path`")
 
 
+def _records_from_payload(payload):
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        for key in ("detections", "annotations", "instances", "results"):
+            if isinstance(payload.get(key), list):
+                return payload[key]
+    raise TypeError(
+        "detections JSON must be a list, or a dict with one of: "
+        "detections, annotations, instances, results"
+    )
+
+
 def load_bop_detections(path: str, source: str | None = None) -> list[dict]:
     """Load a detections JSON into normalised, numerically-typed
     records, robust to the fully-stringified WA_Sappe (NIDS) variant.
@@ -169,7 +182,7 @@ def load_bop_detections(path: str, source: str | None = None) -> list[dict]:
     with open(path) as f:
         raw = json.load(f)
     records = []
-    for d in raw:
+    for d in _records_from_payload(raw):
         rec = dict(d)                        # keep unknown fields (time, ...)
         rec["scene_id"] = _to_int(d["scene_id"])
         rec["image_id"] = _to_int(d["image_id"])

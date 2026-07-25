@@ -62,6 +62,8 @@ class _Proposer:
 
 
 class _Bank:
+    scorer = None
+
     def patches_for(self, obj):
         return np.array([[1.0, 0.0]])
 
@@ -93,6 +95,23 @@ def test_cnos_v3_segmentor_sorts_and_stamps_source():
     assert dets[0].source == "cnos-v3"
     assert dets[0].score == pytest.approx(float(large.sum()))
     assert dets[0].bbox == (10.0, 10.0, 30.0, 30.0)
+
+
+def test_cnos_v3_reuses_template_bank_scorer_when_not_explicit():
+    class BankWithScorer(_Bank):
+        scorer = _Scorer()
+
+    large = _mask(10, 30, 10, 30)
+    seg = CNOSv3Segmentor(
+        proposer=_Proposer([large]),
+        template_bank=BankWithScorer(),
+        size_gate=_Gate(),
+    )
+
+    dets = seg.segment(_scene(), ObjectModel(9, "x", diameter=0.25))
+
+    assert len(dets) == 1
+    assert dets[0].score == pytest.approx(float(large.sum()))
 
 
 def test_cnos_v3_requires_explicit_heavy_components():

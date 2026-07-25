@@ -72,7 +72,7 @@ from popoe.segmentor_detections import BOPDetectionsSegmentor
 
 seg = BOPDetectionsSegmentor(sources={
     "cnos": "data/detections/cnos/cnos-fastsam_lmo-test.json",
-    "sam6d": "data/detections/sam6d_ism_lmo.json",
+    "sam6d": "data/detections/sam6d/sam6d_ism_lmo.json",
     "nids": "data/detections/nids/nids_wa_sappe_lmo.json",
 }, topk=2)
 ```
@@ -125,9 +125,23 @@ OUTPUT_DIR/cnos_results/detection.json
 OUTPUT_DIR/cnos_results/vis.png
 ```
 
-If you consume `detection.json` in popoe as official CNOS, use
-`source="cnos"`. If you run the local v3 recipe, write it under a separate path
-such as `data/detections/cnos_v3/` and keep `source="cnos-v3"`.
+Official custom output uses placeholder BOP ids. Stamp it to the frame/object
+you are going to evaluate before using `CNOSDetectionsSegmentor`:
+
+```bash
+popoe-cnos adapt-custom \
+  --input /tmp/cnos_custom/cnos_results/detection.json \
+  --output data/detections/cnos/custom_scene0_im42_obj9.json \
+  --scene-id 0 \
+  --image-id 42 \
+  --category-id 9
+```
+
+For multi-object output, use `--category-map 0:9,1:10` instead of
+`--category-id`. The adapted JSON keeps `source="cnos"` and can be consumed by
+`CNOSDetectionsSegmentor`. If you run the local v3 recipe, write it under a
+separate path such as `data/detections/cnos_v3/` and keep
+`source="cnos-v3"`.
 
 ## Local CNOS-v3
 

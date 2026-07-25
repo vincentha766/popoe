@@ -17,43 +17,20 @@ import argparse
 import csv
 import json
 import os
-import shlex
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Optional, Sequence
+from typing import Optional, Sequence
 
 import numpy as np
 
+from popoe.external_cmd import ExternalCommand
 from popoe.interfaces import Detection, ObjectModel, PoseHypothesis, Scene
 from popoe.segmentor_detections import BOPDetectionsSegmentor
 
 
 SAM6D_SOURCE = "sam6d"
 SAM6D_PEM_SOURCE = "sam6d-pem"
-
-
-@dataclass(frozen=True)
-class ExternalCommand:
-    """A subprocess command plus the cwd/env needed by the official repo."""
-
-    argv: tuple[str, ...]
-    cwd: str
-    env: Mapping[str, str] = field(default_factory=dict)
-
-    def as_subprocess_kwargs(self) -> dict:
-        env = os.environ.copy()
-        env.update(dict(self.env))
-        return {"args": list(self.argv), "cwd": self.cwd, "env": env}
-
-    def shell_line(self) -> str:
-        env_prefix = " ".join(
-            f"{k}={shlex.quote(v)}" for k, v in sorted(self.env.items())
-        )
-        if env_prefix:
-            env_prefix += " "
-        argv = " ".join(shlex.quote(a) for a in self.argv)
-        return f"cd {shlex.quote(self.cwd)} && {env_prefix}{argv}"
 
 
 def _repo_root() -> Path:
@@ -297,6 +274,26 @@ def _records_from_json_payload(payload):
     raise TypeError("SAM-6D PEM JSON must be a list or dict carrying records")
 
 
+def _json_id(rec: dict, keys: Sequence[str], override: Optional[int],
+             *, name: str, record_index: int):
+    raw = None
+    for key in keys:
+        if key in rec:
+            raw = rec[key]
+            break
+    if override is None:
+        return -1 if raw is None else raw
+    if raw is None:
+        return int(override)
+    raw_id = _parse_int(raw, name=name)
+    if raw_id in (-1, 0) or raw_id == int(override):
+        return int(override)
+    raise ValueError(
+        f"SAM-6D PEM JSON record {record_index} has non-placeholder "
+        f"{name}={raw_id}; refusing to stamp override {override}"
+    )
+
+
 def load_sam6d_pem_json(path: str,
                         *,
                         scene_id: Optional[int] = None,
@@ -304,7 +301,12 @@ def load_sam6d_pem_json(path: str,
                         obj_id: Optional[int] = None,
                         translation_scale: float = 0.001,
                         source: str = SAM6D_PEM_SOURCE) -> list[SAM6DPemPrediction]:
-    """Load SAM-6D custom PEM JSON output with `R` and `t` fields."""
+    """Load SAM-6D custom PEM JSON output with `R` and `t` fields.
+
+    `scene_id`, `image_id`, and `obj_id` stamp missing/placeholder ids
+    (`-1`/`0`) from single-frame custom demos. They are not filters; a
+    conflicting non-placeholder record id raises instead of being collapsed.
+    """
 
     with open(path) as f:
         payload = json.load(f)
@@ -312,13 +314,12 @@ def load_sam6d_pem_json(path: str,
     for i, rec in enumerate(_records_from_json_payload(payload)):
         if "R" not in rec or "t" not in rec:
             raise KeyError(f"SAM-6D PEM JSON record {i} needs R and t")
-        sid = scene_id if scene_id is not None else rec.get("scene_id", -1)
-        iid = image_id if image_id is not None else rec.get(
-            "image_id", rec.get("im_id", -1)
-        )
-        oid = obj_id if obj_id is not None else rec.get(
-            "obj_id", rec.get("category_id", -1)
-        )
+        sid = _json_id(rec, ("scene_id",), scene_id,
+                       name="scene_id", record_index=i)
+        iid = _json_id(rec, ("image_id", "im_id"), image_id,
+                       name="image_id", record_index=i)
+        oid = _json_id(rec, ("obj_id", "category_id"), obj_id,
+                       name="obj_id", record_index=i)
         out.append(_pose_prediction(
             sid,
             iid,

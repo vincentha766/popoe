@@ -131,8 +131,8 @@ def test_sam6d_pem_csv_rejects_id_overrides(tmp_path):
 def test_sam6d_pem_json_loader_supports_custom_demo_output(tmp_path):
     json_path = tmp_path / "detection_pem.json"
     json_path.write_text(json.dumps([{
-        "scene_id": 999,
-        "image_id": 999,
+        "scene_id": 0,
+        "image_id": 0,
         "category_id": 0,
         "score": 0.8,
         "R": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
@@ -145,3 +145,18 @@ def test_sam6d_pem_json_loader_supports_custom_demo_output(tmp_path):
     assert (preds[0].scene_id, preds[0].im_id) == (0, 42)
     assert preds[0].obj_id == 9
     assert np.allclose(preds[0].hypothesis.t, [0.001, 0.002, 0.003])
+
+
+def test_sam6d_pem_json_rejects_overriding_real_ids(tmp_path):
+    json_path = tmp_path / "detection_pem.json"
+    json_path.write_text(json.dumps([{
+        "scene_id": 1,
+        "image_id": 42,
+        "category_id": 9,
+        "score": 0.8,
+        "R": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+        "t": [1, 2, 3],
+    }]))
+
+    with pytest.raises(ValueError, match="non-placeholder scene_id"):
+        load_sam6d_pem_json(str(json_path), scene_id=2)
