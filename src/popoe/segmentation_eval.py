@@ -63,17 +63,49 @@ def _read_mask(path: Path) -> np.ndarray:
 
 def _mask_path(scene_dir: Path, im_id: int, gt_idx: int,
                kind: str = "mask_visib") -> Path:
+    """Resolve a BOP GT mask path for the requested ``kind`` only.
+
+    No silent ``mask_visib`` ↔ ``mask`` fallback: reporting visible-mask AP
+    from amodal masks (or the reverse) would bias IoU under occlusion.
+    """
+
     name = f"{int(im_id):06d}_{int(gt_idx):06d}.png"
     preferred = scene_dir / kind / name
     if preferred.exists():
         return preferred
-    fallback_kind = "mask" if kind == "mask_visib" else "mask_visib"
-    fallback = scene_dir / fallback_kind / name
-    if fallback.exists():
-        return fallback
     raise FileNotFoundError(
         f"missing BOP GT mask for scene={scene_dir.name} im={im_id} "
-        f"gt_idx={gt_idx}: tried {preferred} and {fallback}"
+        f"gt_idx={gt_idx}: expected {preferred} (mask_kind={kind})"
+    )
+
+
+def _image_hw(
+    scene_dir: Path,
+    im_id: int,
+    objs: Sequence[Mapping],
+    mask_kind: str,
+) -> tuple[int, int]:
+    """Return ``(height, width)`` for a BOP image without requiring a category hit.
+
+    Prefers any existing mask under the requested ``mask_kind``; falls back to
+    the RGB file. Used to register negative images when filtering by category.
+    """
+
+    for gt_idx in range(len(objs)):
+        path = scene_dir / mask_kind / f"{int(im_id):06d}_{int(gt_idx):06d}.png"
+        if path.exists():
+            mask = _read_mask(path)
+            return int(mask.shape[0]), int(mask.shape[1])
+    rgb_path = scene_dir / "rgb" / f"{int(im_id):06d}.png"
+    if rgb_path.exists():
+        from PIL import Image
+
+        with Image.open(rgb_path) as im:
+            width, height = im.size
+        return int(height), int(width)
+    raise FileNotFoundError(
+        f"cannot determine image size for scene={scene_dir.name} im={im_id}: "
+        f"no {mask_kind}/ mask and no rgb/{int(im_id):06d}.png"
     )
 
 
@@ -111,10 +143,15 @@ def build_coco_gt_from_bop(
 ) -> dict:
     """Build a COCO instance-segmentation GT dict from a BOP dataset split.
 
-    Requires BOP visible-mask files such as
-    ``test/000048/mask_visib/000001_000000.png``. If a local dataset only has
-    sparse RGB + poses, this function fails loudly rather than reporting fake
-    AP.
+    Requires BOP mask files under the requested ``mask_kind`` (default
+    ``mask_visib``), e.g. ``test/000048/mask_visib/000001_000000.png``. If a
+    local dataset only has sparse RGB + poses, this function fails loudly
+    rather than reporting fake AP.
+
+    When ``category_ids`` is set and ``targets`` is not, every image present
+    in ``scene_gt`` is kept even if it has no annotation for the selected
+    categories. That preserves negative images so detector false positives
+    on those frames still affect precision.
     """
 
     bop_root = Path(bop_root)
@@ -124,6 +161,18 @@ def build_coco_gt_from_bop(
     seen_category_ids: set[int] = set()
     ann_id = 1
 
+    def _register_image(image_id: int, scene_id: int, im_id: int,
+                        height: int, width: int) -> None:
+        if image_id not in images:
+            images[image_id] = {
+                "id": image_id,
+                "scene_id": scene_id,
+                "bop_image_id": im_id,
+                "file_name": f"{split}/{scene_id:06d}/rgb/{im_id:06d}.png",
+                "width": int(width),
+                "height": int(height),
+            }
+
     for scene_dir in _scene_dirs(bop_root, split):
         scene_id = int(scene_dir.name)
         gt_path = scene_dir / "scene_gt.json"
@@ -132,6 +181,7 @@ def build_coco_gt_from_bop(
         scene_gt = _read_json(gt_path)
         for im_key, objs in scene_gt.items():
             im_id = int(im_key)
+            image_id = bop_image_id(scene_id, im_id, image_id_factor)
             for gt_idx, obj in enumerate(objs):
                 obj_id = int(obj["obj_id"])
                 if targets is not None and (scene_id, im_id, obj_id) not in targets:
@@ -141,16 +191,10 @@ def build_coco_gt_from_bop(
                 mask = _read_mask(_mask_path(scene_dir, im_id, gt_idx, mask_kind))
                 if not mask.any():
                     continue
-                image_id = bop_image_id(scene_id, im_id, image_id_factor)
-                if image_id not in images:
-                    images[image_id] = {
-                        "id": image_id,
-                        "scene_id": scene_id,
-                        "bop_image_id": im_id,
-                        "file_name": f"{split}/{scene_id:06d}/rgb/{im_id:06d}.png",
-                        "width": int(mask.shape[1]),
-                        "height": int(mask.shape[0]),
-                    }
+                _register_image(
+                    image_id, scene_id, im_id,
+                    height=int(mask.shape[0]), width=int(mask.shape[1]),
+                )
                 rle = _encode_coco_rle(mask)
                 bbox = _bbox_from_mask(mask)
                 annotations.append({
@@ -165,12 +209,24 @@ def build_coco_gt_from_bop(
                 ann_id += 1
                 seen_category_ids.add(obj_id)
 
+            # Category-only filters must keep negative images so FPs on frames
+            # without the selected object still affect COCO precision.
+            if (targets is None and category_filter is not None
+                    and image_id not in images and objs):
+                height, width = _image_hw(scene_dir, im_id, objs, mask_kind)
+                _register_image(image_id, scene_id, im_id, height, width)
+
     categories = [
         {"id": int(cid), "name": f"obj_{int(cid):06d}"}
         for cid in sorted(seen_category_ids)
     ]
+    kind_label = "visible" if mask_kind == "mask_visib" else mask_kind
     return {
-        "info": {"description": f"BOP {bop_root.name} {split} visible masks"},
+        "info": {
+            "description": (
+                f"BOP {bop_root.name} {split} {kind_label} masks"
+            ),
+        },
         "licenses": [],
         "images": [images[k] for k in sorted(images)],
         "annotations": annotations,
@@ -201,6 +257,9 @@ def filter_coco_gt(
 
     When ``targets`` is set, every image must carry ``scene_id`` and
     ``bop_image_id`` (as written by ``build_coco_gt_from_bop``).
+
+    Category-only filtering (``category_ids`` set, ``targets`` unset) keeps
+    all original images so negative frames remain available for FP scoring.
     """
 
     if targets is None and not category_ids:
@@ -240,10 +299,15 @@ def filter_coco_gt(
                 continue
         annotations.append(dict(ann))
 
-    kept_image_ids = {int(a["image_id"]) for a in annotations}
     kept_cat_ids = {int(a["category_id"]) for a in annotations}
-    images = [dict(im) for im in coco_gt.get("images", [])
-              if int(im["id"]) in kept_image_ids]
+    # Category-only: keep every original image (negatives for FP). With targets,
+    # keep only images that still have a surviving annotation.
+    if targets is None and category_filter is not None:
+        images = [dict(im) for im in coco_gt.get("images", [])]
+    else:
+        kept_image_ids = {int(a["image_id"]) for a in annotations}
+        images = [dict(im) for im in coco_gt.get("images", [])
+                  if int(im["id"]) in kept_image_ids]
     categories = [dict(c) for c in coco_gt.get("categories", [])
                   if int(c["id"]) in kept_cat_ids]
     have = {int(c["id"]) for c in categories}

@@ -164,6 +164,50 @@ def test_category_filter_gt_and_predictions(tmp_path):
     assert [rec["category_id"] for rec in pred] == [9]
 
 
+def test_category_filter_keeps_negative_images(tmp_path):
+    """Images without the selected object stay in GT so FPs still count."""
+
+    mask5 = _mask(y0=4, x0=5)
+    mask9 = _mask(y0=15, x0=20)
+    scene = _write_bop_scene(tmp_path, mask5, obj_id=5)
+    Image.fromarray((mask9.astype(np.uint8) * 255)).save(
+        scene / "mask_visib" / "000008_000000.png")
+    Image.fromarray(np.zeros((*mask9.shape, 3), dtype=np.uint8)).save(
+        scene / "rgb" / "000008.png")
+    (scene / "scene_gt.json").write_text(json.dumps({
+        "7": [{"obj_id": 5}],
+        "8": [{"obj_id": 9}],
+    }))
+    det_path = tmp_path / "detections.json"
+    # Hallucinated cat-9 proposal on the negative frame (im 7 has only obj 5).
+    det_path.write_text(json.dumps([
+        {
+            "scene_id": 1,
+            "image_id": 7,
+            "category_id": 9,
+            "score": 0.95,
+            "segmentation": _rle(mask5),
+        },
+        {
+            "scene_id": 1,
+            "image_id": 8,
+            "category_id": 9,
+            "score": 0.9,
+            "segmentation": _rle(mask9),
+        },
+    ]))
+
+    coco_gt = build_coco_gt_from_bop(tmp_path, category_ids={9})
+    pred = detections_to_coco_results(det_path, coco_gt, category_ids={9})
+
+    image_ids = {im["id"] for im in coco_gt["images"]}
+    assert image_ids == {bop_image_id(1, 7), bop_image_id(1, 8)}
+    assert [ann["category_id"] for ann in coco_gt["annotations"]] == [9]
+    assert sorted(rec["image_id"] for rec in pred) == [
+        bop_image_id(1, 7), bop_image_id(1, 8),
+    ]
+
+
 def test_missing_visible_mask_is_loud(tmp_path):
     scene = tmp_path / "test" / "000001"
     scene.mkdir(parents=True)
@@ -173,6 +217,28 @@ def test_missing_visible_mask_is_loud(tmp_path):
 
     with pytest.raises(FileNotFoundError, match="missing BOP GT mask"):
         build_coco_gt_from_bop(tmp_path)
+
+
+def test_mask_kind_does_not_silently_fall_back(tmp_path):
+    """Only the requested mask directory is used — no mask_visib ↔ mask swap."""
+
+    gt_mask = _mask()
+    scene = tmp_path / "test" / "000001"
+    (scene / "mask").mkdir(parents=True)
+    (scene / "rgb").mkdir()
+    Image.fromarray(np.zeros((*gt_mask.shape, 3), dtype=np.uint8)).save(
+        scene / "rgb" / "000007.png")
+    Image.fromarray((gt_mask.astype(np.uint8) * 255)).save(
+        scene / "mask" / "000007_000000.png")
+    (scene / "scene_gt.json").write_text(json.dumps({
+        "7": [{"obj_id": 5}]
+    }))
+
+    with pytest.raises(FileNotFoundError, match="mask_kind=mask_visib"):
+        build_coco_gt_from_bop(tmp_path, mask_kind="mask_visib")
+
+    coco_gt = build_coco_gt_from_bop(tmp_path, mask_kind="mask")
+    assert len(coco_gt["annotations"]) == 1
 
 
 def test_filter_coco_gt_by_targets_and_categories(tmp_path):
@@ -196,6 +262,27 @@ def test_filter_coco_gt_by_targets_and_categories(tmp_path):
     assert [ann["category_id"] for ann in filtered["annotations"]] == [5]
     assert [im["id"] for im in filtered["images"]] == [bop_image_id(1, 7)]
     assert [cat["id"] for cat in filtered["categories"]] == [5]
+
+
+def test_filter_coco_gt_category_only_keeps_negative_images(tmp_path):
+    mask5 = _mask(y0=4, x0=5)
+    mask9 = _mask(y0=15, x0=20)
+    scene = _write_bop_scene(tmp_path, mask5, obj_id=5)
+    Image.fromarray((mask9.astype(np.uint8) * 255)).save(
+        scene / "mask_visib" / "000008_000000.png")
+    Image.fromarray(np.zeros((*mask9.shape, 3), dtype=np.uint8)).save(
+        scene / "rgb" / "000008.png")
+    (scene / "scene_gt.json").write_text(json.dumps({
+        "7": [{"obj_id": 5}],
+        "8": [{"obj_id": 9}],
+    }))
+
+    full_gt = build_coco_gt_from_bop(tmp_path)
+    filtered = filter_coco_gt(full_gt, category_ids={9})
+    assert [ann["category_id"] for ann in filtered["annotations"]] == [9]
+    assert {im["id"] for im in filtered["images"]} == {
+        bop_image_id(1, 7), bop_image_id(1, 8),
+    }
 
 
 def test_filter_coco_gt_targets_requires_bop_fields():
