@@ -5,6 +5,17 @@ environment or service and write a detections JSON; popoe then consumes that
 file through `popoe.segmentor_nids.NIDSNetDetectionsSegmentor` or the generic
 multi-source union.
 
+The official source is pinned as a submodule at `external/NIDS-Net`:
+
+```bash
+git submodule update --init --recursive external/NIDS-Net
+git -C external/NIDS-Net rev-parse HEAD
+# c7685a442157a1f28f2d7771e10dd9c7afdd7154
+```
+
+Use the submodule for source provenance and local deployment notes; keep the
+runtime environment separate from popoe.
+
 ## Boundary
 
 Keep the dependency boundary strict:
@@ -47,11 +58,11 @@ seg = BOPDetectionsSegmentor(sources={
 }, topk=2)
 ```
 
-If you need to regenerate NIDS predictions, use the official
-`IRVLUTD/NIDS-Net` repository in its own environment. Its README documents the
-BOP path as `python run_inference.py dataset_name=<dataset>` after downloading
-template embeddings and adapter weights. Once a prediction JSON exists, verify
-it through popoe's loader:
+If you need to regenerate NIDS predictions, use the pinned `external/NIDS-Net`
+checkout in its own environment. Its README documents the BOP path as
+`python run_inference.py dataset_name=<dataset>` after downloading template
+embeddings and adapter weights. Once a prediction JSON exists, verify it
+through popoe's loader:
 
 ```bash
 python - <<'PY'

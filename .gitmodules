@@ -1,0 +1,6 @@
+[submodule "external/NIDS-Net"]
+	path = external/NIDS-Net
+	url = https://github.com/IRVLUTD/NIDS-Net.git
+[submodule "external/SAM-6D"]
+	path = external/SAM-6D
+	url = https://github.com/JiehongLin/SAM-6D.git

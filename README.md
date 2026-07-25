@@ -46,9 +46,17 @@ these separately and point popoe at them via env vars:
 | SAM 2 checkpoints | `POPOE_SAM2_CKPT` (default `/workspace/sam2_checkpoints`) | segmentation |
 | bop_toolkit | `POPOE_BOP_TOOLKIT` (default `/workspace/bop_toolkit`) | metrics (VSD/MSSD/MSPD) |
 | nvdiffrast | — | optional, falls back to trimesh CPU rendering |
+| NIDS-Net producer | `external/NIDS-Net` submodule | optional detections source |
+| SAM-6D producer | `POPOE_SAM6D_PATH` or `external/SAM-6D` submodule | optional ISM detections / PEM pose source |
 
 DINOv2 is pulled via `torch.hub`. See [NOTICE](NOTICE) for upstream licenses —
 **each keeps its own license; verify before use.**
+
+For pinned producer source checkouts:
+
+```bash
+git submodule update --init --recursive external/NIDS-Net external/SAM-6D
+```
 
 ## Quickstart — the stages
 
@@ -155,15 +163,18 @@ dets = seg.segment(scene, obj)                  # dets[i].source -> 'cnos'|'nids
 | **NIDS-Net** | WA_Sappe variant BOP predictions | UT Dallas Box, linked from [`IRVLUTD/NIDS-Net`](https://github.com/IRVLUTD/NIDS-Net) README → "Inference on BOP datasets"; saved as `nids_wa_sappe_{ycbv,lmo}.json` |
 | **SAM-6D ISM** | Instance Segmentation Model masks | No public per-dataset file — run [`JiehongLin/SAM-6D`](https://github.com/JiehongLin/SAM-6D) ISM on the BOP test images (GPU); optional |
 
-NIDS-Net is intentionally an **external producer**, not a popoe dependency:
-its official stack uses GroundingDINO + SAM proposals and DINOv2 foreground
-feature matching/adapters, with Detectron2 and other heavy packages in its own
-environment. Run the official repo in a separate `uv`/conda project, export its
-predictions, then consume them here as `sources={"nids": "/path/pred.json"}` or
-`popoe.segmentor_nids.NIDSNetDetectionsSegmentor`.
+NIDS-Net and SAM-6D are intentionally **external producers**, not popoe
+dependencies. Their official stacks use heavy and version-pinned segmentation,
+foundation-model and pose-estimation packages. The source checkouts are pinned
+under `external/`, but runtime should still happen in separate `uv`/conda
+projects or services. Export predictions, then consume them here as named files
+or through the provenance-specific wrappers
+`popoe.segmentor_nids.NIDSNetDetectionsSegmentor` and
+`popoe.segmentor_sam6d.SAM6DIsmDetectionsSegmentor`.
 That keeps `popoe`'s pose backend independent of segmentation-model dependency
-conflicts while preserving `Detection.source == "nids"` through scoring.
-See [NIDS_NET.md](NIDS_NET.md) for deployment notes and the adapter CLI.
+conflicts while preserving per-detection source provenance through scoring.
+See [NIDS_NET.md](NIDS_NET.md) and [SAM6D.md](SAM6D.md) for deployment notes and
+the adapter CLIs.
 
 **Format notes.** A detections file is a JSON list of records
 `{scene_id, image_id, category_id, score, segmentation}` where `segmentation`

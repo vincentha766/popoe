@@ -18,7 +18,7 @@ explicitly, e.g. `from popoe.freeze.recipes import best_encoders`.
 from popoe.interfaces import (
     Scene, FrameManifest, ObjectModel, CanonFrame, Detection, PointFeatures,
     PoseHypothesis, Pipeline, Segmentor, FeatureFusion, QueryEncoder, TargetEncoder,
-    PoseSolver, PoseRefiner, PoseScorer, Selector, Metric,
+    PoseSolver, CoarseEstimator, PoseRefiner, PoseScorer, Selector, Metric,
 )
 from popoe.freeze.fusion import DinoGeDiFusion
 
@@ -28,6 +28,6 @@ __all__ = [
     "Scene", "FrameManifest", "ObjectModel", "CanonFrame", "Detection",
     "PointFeatures", "PoseHypothesis", "Pipeline", "Segmentor",
     "FeatureFusion", "QueryEncoder", "TargetEncoder", "PoseSolver",
-    "PoseRefiner", "PoseScorer", "Selector", "Metric", "DinoGeDiFusion",
-    "__version__",
+    "CoarseEstimator", "PoseRefiner", "PoseScorer", "Selector", "Metric",
+    "DinoGeDiFusion", "__version__",
 ]

@@ -20,6 +20,7 @@ Scene (RGB-D, K) ──┘            TargetEncoder ──┴─ PoseSolver ─ 
 | Target features | `TargetEncoder` | `freeze.adapters.FreeZeTargetEncoder` |
 | Fusion | `FeatureFusion` | `freeze.fusion.DinoGeDiFusion` |
 | Pose solve | `PoseSolver` | `adapters.RansacSolver`; `solvers.Open3DFeatureRansacSolver` (default); `solvers.GPURansacSolver` (ported batched RANSAC, geometric or Eq.5 feature fitness); `solvers.TeaserSolver` (TEASER++ certifiable registration, needs `teaserpp_python`) |
+| External coarse pose | `CoarseEstimator` | `segmentor_sam6d.SAM6DPemResultsCoarseEstimator` over already-written PEM results |
 | Refine | `PoseRefiner` | `adapters.ICPRefiner` |
 | Score | `PoseScorer` | `freeze.adapters.FreeZeScorer`; `scoring.ChampionScorer` (evaluated) |
 | Select | `Selector` | `adapters.BestScoreSelector` |
@@ -159,9 +160,12 @@ unperturbed; the non-default solvers are reported as independent configurations.
 
 CNOS-FastSAM, SAM-6D ISM and NIDS-Net all publish the same artefact — a
 detections JSON — so they are not separate pose-backend code paths, only
-different named producers. NIDS-Net may run in a separate environment/service;
-`segmentor_nids.NIDSNetDetectionsSegmentor` and
-`segmentor_nids.adapt_nidsnet_json` are the popoe-side adapter. Underneath,
+different named producers. NIDS-Net and SAM-6D are pinned under `external/` for
+source provenance but still run in separate environments/services;
+`segmentor_nids.NIDSNetDetectionsSegmentor`,
+`segmentor_nids.adapt_nidsnet_json`, and
+`segmentor_sam6d.SAM6DIsmDetectionsSegmentor` are the popoe-side adapters.
+Underneath,
 `segmentor_detections.DetectionSource` `(name, path)` is the config handle:
 select a backend BY NAME and compose several into one `BOPDetectionsSegmentor`
 to reproduce FreeZe-style multi-source segmentation.
@@ -190,6 +194,11 @@ drops its own near-duplicates. The single-file form
 `bop-detections` tag). The loader (`load_bop_detections`) coerces the
 fully-stringified NIDS WA_Sappe variant and decodes both compressed and
 uncompressed RLE — see the module docstring.
+
+SAM-6D PEM is different: it is an external full pose producer, not a detections
+source. `segmentor_sam6d.SAM6DPemResultsCoarseEstimator` adapts its BOP CSV or
+custom JSON outputs to `PoseHypothesis` through the separate `CoarseEstimator`
+contract, keeping it out of the FreeZe feature-solver contract.
 
 ## Verification
 

@@ -213,6 +213,21 @@ class PoseSolver(Protocol):
 
 
 @runtime_checkable
+class CoarseEstimator(Protocol):
+    """External/direct coarse pose producer.
+
+    This is for methods such as SAM-6D PEM or MegaPose-style services that
+    consume an RGB-D scene, a CAD object, and optionally a 2D detection, then
+    directly emit pose hypotheses. It intentionally sits next to `PoseSolver`
+    rather than replacing it: the FreeZe pipeline still solves from encoded
+    query/target features, while external full-pipeline producers can be
+    adapted without pretending they share that internal feature contract.
+    """
+    def estimate(self, scene: Scene, obj: ObjectModel,
+                 det: Optional[Detection] = None) -> list[PoseHypothesis]: ...
+
+
+@runtime_checkable
 class PoseRefiner(Protocol):
     """Stage 3. Move a hypothesis' geometry (and report a geometric fitness in
     breakdown), NOTHING about feature scoring. ICP and symmetry-refine are both
