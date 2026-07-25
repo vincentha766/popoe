@@ -203,6 +203,31 @@ def test_stringified_variant_coerces_and_matches(tmp_path):
     assert dets[0].mask.sum() == mask.sum()
 
 
+def test_real_scene_mask_field_accepts_rle_alias(tmp_path):
+    """Real-scene detections may name the 2D mask `mask` instead of BOP's
+    `segmentation`; it still decodes to the same binary mask and carries bbox
+    into the Detection contract."""
+    mask = np.zeros((16, 20), bool)
+    mask[2:14, 2:18] = True
+    un = _uncompress(mask)
+    p = tmp_path / "real.json"
+    p.write_text(json.dumps([{
+        "scene_id": 0, "image_id": 3, "category_id": 9,
+        "score": 0.96, "bbox": [2, 2, 16, 12],
+        "mask": {"format": "rle", "size": un["size"], "counts": un["counts"]},
+    }]))
+    seg = BOPDetectionsSegmentor(str(p), source="local", topk=1, min_pixels=1)
+    scene = Scene(rgb=np.zeros((16, 20, 3), np.uint8),
+                  depth=np.zeros((16, 20), np.float32),
+                  K=np.eye(3), scene_id=0, im_id=3)
+    dets = seg.segment(scene, ObjectModel(obj_id=9, mesh_path="x",
+                                          diameter=0.1))
+    assert len(dets) == 1
+    assert dets[0].source == "local"
+    assert dets[0].bbox == (2.0, 2.0, 18.0, 14.0)
+    assert np.array_equal(dets[0].mask, mask)
+
+
 def test_source_tagging_from_argument_and_record():
     """load_bop_detections stamps `source` from the arg (union origin), else
     from the record, else leaves it absent (bucketed under '_')."""

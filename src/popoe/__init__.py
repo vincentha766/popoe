@@ -16,8 +16,8 @@ registration, renderer, segmentor, ...) import torch / open3d and are imported
 explicitly, e.g. `from popoe.freeze.recipes import best_encoders`.
 """
 from popoe.interfaces import (
-    Scene, ObjectModel, CanonFrame, Detection, PointFeatures, PoseHypothesis,
-    Pipeline, Segmentor, FeatureFusion, QueryEncoder, TargetEncoder,
+    Scene, FrameManifest, ObjectModel, CanonFrame, Detection, PointFeatures,
+    PoseHypothesis, Pipeline, Segmentor, FeatureFusion, QueryEncoder, TargetEncoder,
     PoseSolver, PoseRefiner, PoseScorer, Selector, Metric,
 )
 from popoe.freeze.fusion import DinoGeDiFusion
@@ -25,8 +25,9 @@ from popoe.freeze.fusion import DinoGeDiFusion
 __version__ = "0.1.0"
 
 __all__ = [
-    "Scene", "ObjectModel", "CanonFrame", "Detection", "PointFeatures",
-    "PoseHypothesis", "Pipeline", "Segmentor", "FeatureFusion", "QueryEncoder",
-    "TargetEncoder", "PoseSolver", "PoseRefiner", "PoseScorer", "Selector",
-    "Metric", "DinoGeDiFusion", "__version__",
+    "Scene", "FrameManifest", "ObjectModel", "CanonFrame", "Detection",
+    "PointFeatures", "PoseHypothesis", "Pipeline", "Segmentor",
+    "FeatureFusion", "QueryEncoder", "TargetEncoder", "PoseSolver",
+    "PoseRefiner", "PoseScorer", "Selector", "Metric", "DinoGeDiFusion",
+    "__version__",
 ]

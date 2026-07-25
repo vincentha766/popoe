@@ -158,11 +158,13 @@ unperturbed; the non-default solvers are reported as independent configurations.
 ## File-based detection backends (CNOS / SAM-6D / NIDS)
 
 CNOS-FastSAM, SAM-6D ISM and NIDS-Net all publish the same artefact — a
-BOP-format detections JSON — so they are not separate code paths, only
-different files under different names. `segmentor_detections.DetectionSource`
-`(name, path)` is the config handle: select a backend BY NAME and compose
-several into one `BOPDetectionsSegmentor` to reproduce FreeZe-style multi-source
-segmentation.
+detections JSON — so they are not separate pose-backend code paths, only
+different named producers. NIDS-Net may run in a separate environment/service;
+`segmentor_nids.NIDSNetDetectionsSegmentor` and
+`segmentor_nids.adapt_nidsnet_json` are the popoe-side adapter. Underneath,
+`segmentor_detections.DetectionSource` `(name, path)` is the config handle:
+select a backend BY NAME and compose several into one `BOPDetectionsSegmentor`
+to reproduce FreeZe-style multi-source segmentation.
 
 ```python
 from popoe.segmentor_detections import BOPDetectionsSegmentor

@@ -18,7 +18,9 @@ Pure numpy + pycocotools; no GPU.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -68,6 +70,15 @@ def _coerce_bbox(b):
     return [float(v) for v in b]
 
 
+def _bbox_xywh_to_xyxy(b):
+    if b is None:
+        return None
+    if len(b) != 4:
+        raise ValueError(f"bbox must be [x, y, w, h], got {b!r}")
+    x, y, w, h = [float(v) for v in b]
+    return (x, y, x + w, y + h)
+
+
 def _normalize_segmentation(seg):
     """Return an RLE dict with a numeric `size` and `counts` that is either a
     list of ints (uncompressed) or a str/bytes (compressed COCO RLE).
@@ -101,18 +112,60 @@ def _normalize_segmentation(seg):
     return {"counts": counts, "size": size}
 
 
+def _normalize_mask_path(path, base_dir: str | None):
+    p = os.fspath(path)
+    if base_dir is not None and not os.path.isabs(p):
+        p = os.path.normpath(os.path.join(base_dir, p))
+    return {"format": "path", "path": p}
+
+
+def _normalize_detection_mask(d: dict, base_dir: str | None):
+    """Normalise the mask field from either BOP or real-scene schema.
+
+    BOP files use `segmentation` for COCO RLE. Real-scene files may use either
+    the same field or `mask`:
+      * {"format": "rle", "size": [H, W], "counts": ...}
+      * {"size": [H, W], "counts": ...}
+      * "relative/or/absolute/mask.png" / "mask.npy"
+      * {"format": "path", "path": "mask.png"}
+    """
+    if "segmentation" in d:
+        return _normalize_segmentation(d["segmentation"])
+    if "mask" in d:
+        mask = d["mask"]
+        if isinstance(mask, str):
+            return _normalize_mask_path(mask, base_dir)
+        if isinstance(mask, dict):
+            if "counts" in mask and "size" in mask:
+                return _normalize_segmentation(mask)
+            if mask.get("format") == "rle":
+                payload = mask.get("rle", mask)
+                return _normalize_segmentation(payload)
+            if "path" in mask:
+                return _normalize_mask_path(mask["path"], base_dir)
+        raise ValueError(f"unsupported detection mask schema: {mask!r}")
+    if "mask_path" in d:
+        return _normalize_mask_path(d["mask_path"], base_dir)
+    raise KeyError("detection record needs `segmentation`, `mask`, or `mask_path`")
+
+
 def load_bop_detections(path: str, source: str | None = None) -> list[dict]:
-    """Load a BOP-format detections JSON into normalised, numerically-typed
+    """Load a detections JSON into normalised, numerically-typed
     records, robust to the fully-stringified WA_Sappe (NIDS) variant.
 
-    Each returned record has int scene_id/image_id/category_id, float score,
-    and a `segmentation` RLE dict normalised by `_normalize_segmentation`.
-    `bbox` (if present) is coerced to a float list. Any OTHER fields on the
+    The primary input is BOP format
+    `{scene_id, image_id, category_id, score, segmentation}`. For real RGB-D
+    captures, the same loader also accepts `mask` / `mask_path` as a 2D mask
+    field. In all cases, each returned record has int scene_id/image_id/
+    category_id, float score, and a normalised `segmentation` entry that
+    `decode_detection_mask` can turn into a bool mask. `bbox` (if present) is
+    coerced to a float list. Any OTHER fields on the
     record (e.g. BOP's per-detection `time`) are carried through untouched, so
     the loader can also normalise-and-rewrite without dropping metadata.
     `source` is set from the argument when given (it stamps the origin for
     multi-source union), else from the record's own "source" field when
     present, else left absent (the segmentor buckets those under "_")."""
+    base_dir = os.path.dirname(os.path.abspath(path))
     with open(path) as f:
         raw = json.load(f)
     records = []
@@ -122,13 +175,40 @@ def load_bop_detections(path: str, source: str | None = None) -> list[dict]:
         rec["image_id"] = _to_int(d["image_id"])
         rec["category_id"] = _to_int(d["category_id"])
         rec["score"] = _to_float(d["score"])
-        rec["segmentation"] = _normalize_segmentation(d["segmentation"])
+        rec["segmentation"] = _normalize_detection_mask(d, base_dir)
         if "bbox" in d:
             rec["bbox"] = _coerce_bbox(d["bbox"])
         if source is not None:
             rec["source"] = source
         records.append(rec)
     return records
+
+
+def _read_mask_image(path: str) -> np.ndarray:
+    suffix = Path(path).suffix.lower()
+    if suffix == ".npy":
+        arr = np.load(path)
+    else:
+        try:
+            import cv2
+        except ImportError:
+            cv2 = None
+        if cv2 is not None:
+            arr = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+            if arr is None:
+                raise FileNotFoundError(path)
+        else:
+            try:
+                from PIL import Image
+            except ImportError as e:
+                raise ImportError(
+                    f"reading mask image files needs opencv-python or Pillow; "
+                    f"cannot load {path!r}"
+                ) from e
+            arr = np.asarray(Image.open(path))
+    if arr.ndim == 3:
+        arr = np.any(arr > 0, axis=2)
+    return arr.astype(bool)
 
 
 def decode_detection_mask(seg: dict) -> np.ndarray:
@@ -143,6 +223,8 @@ def decode_detection_mask(seg: dict) -> np.ndarray:
     The dict-vs-string distinction is exactly the "counts gotcha": a list
     `counts` is an uncompressed RLE and MUST go through `frPyObjects` (passing
     it to `decode` treats it as already-compressed and returns garbage)."""
+    if seg.get("format") == "path":
+        return _read_mask_image(seg["path"])
     from pycocotools import mask as coco_mask
     h, w = int(seg["size"][0]), int(seg["size"][1])
     counts = seg["counts"]
@@ -156,13 +238,13 @@ def decode_detection_mask(seg: dict) -> np.ndarray:
 # ── Pluggable file-based detection backends ──────────────────────────────
 #
 # CNOS-FastSAM, SAM-6D ISM and NIDS-Net all publish the SAME artefact: a
-# BOP-format detections JSON. They are not different *code* paths, only
-# different files under different NAMES. So a "segmentation backend" here is
-# just a named file source; the swap-and-compose seam is the existing
-# `Segmentor` Protocol (interfaces.py), and `BOPDetectionsSegmentor` is the one
-# implementation that serves one OR several such sources. Naming each source
-# keeps provenance on every mask (`Detection.source`), exactly as the fallback
-# chain does (segmentor.FirstAvailableSegmentor) — see ARCHITECTURE.md.
+# detections JSON. They are not different *code* paths here, only different
+# files under different NAMES. So a "segmentation backend" at this layer is just
+# a named file source; the actual producer may live in its own environment
+# (NIDS-Net's GroundingDINO/SAM/DINOv2 stack, a CNOS-style script, a manual
+# SAM-prompt tool). Naming each source keeps provenance on every mask
+# (`Detection.source`), exactly as the fallback chain does
+# (segmentor.FirstAvailableSegmentor) — see ARCHITECTURE.md.
 
 @dataclass(frozen=True)
 class DetectionSource:
@@ -288,5 +370,13 @@ class BOPDetectionsSegmentor:
             if any(_mask_iou(m, prev) > self.iou_dedupe for prev in kept):
                 continue
             kept.append(m)
-            dets.append(Detection(mask=m, score=float(d["score"]), source=src))
+            dets.append(Detection(mask=m, score=float(d["score"]),
+                                  bbox=_bbox_xywh_to_xyxy(d.get("bbox")),
+                                  source=src))
         return dets
+
+
+# Generic alias for real-scene code. Keep the historical BOP names above because
+# all evaluated runs and tests import them.
+load_detections = load_bop_detections
+DetectionsFileSegmentor = BOPDetectionsSegmentor

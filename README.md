@@ -155,10 +155,22 @@ dets = seg.segment(scene, obj)                  # dets[i].source -> 'cnos'|'nids
 | **NIDS-Net** | WA_Sappe variant BOP predictions | UT Dallas Box, linked from [`IRVLUTD/NIDS-Net`](https://github.com/IRVLUTD/NIDS-Net) README → "Inference on BOP datasets"; saved as `nids_wa_sappe_{ycbv,lmo}.json` |
 | **SAM-6D ISM** | Instance Segmentation Model masks | No public per-dataset file — run [`JiehongLin/SAM-6D`](https://github.com/JiehongLin/SAM-6D) ISM on the BOP test images (GPU); optional |
 
+NIDS-Net is intentionally an **external producer**, not a popoe dependency:
+its official stack uses GroundingDINO + SAM proposals and DINOv2 foreground
+feature matching/adapters, with Detectron2 and other heavy packages in its own
+environment. Run the official repo in a separate `uv`/conda project, export its
+predictions, then consume them here as `sources={"nids": "/path/pred.json"}` or
+`popoe.segmentor_nids.NIDSNetDetectionsSegmentor`.
+That keeps `popoe`'s pose backend independent of segmentation-model dependency
+conflicts while preserving `Detection.source == "nids"` through scoring.
+See [NIDS_NET.md](NIDS_NET.md) for deployment notes and the adapter CLI.
+
 **Format notes.** A detections file is a JSON list of records
 `{scene_id, image_id, category_id, score, segmentation}` where `segmentation`
-is a COCO RLE. The loader (`load_bop_detections`) handles the format variance
-seen across these releases without special-casing at the call site:
+is a COCO RLE. Real-capture files may use a `mask` or `mask_path` alias instead;
+these are still 2D masks, never depth. The loader (`load_bop_detections`, alias
+`load_detections`) handles the format variance seen across these releases
+without special-casing at the call site:
 
 - **Fully-stringified records** — the NIDS WA_Sappe Box release ships every
   field as a string (`"scene_id": "48"`, `"score": "0.74…"`, bbox as a
@@ -174,6 +186,49 @@ no-GPU end-to-end check over whatever files you have:
 
 ```bash
 python examples/union_smoke.py --dataset ycbv    # load -> decode -> union -> select
+```
+
+For real RGB-D captures, keep the same boundary: detections are still **2D**
+masks/scores only, and depth stays with the frame. A frame manifest points to
+the RGB/depth files, intrinsics, scale, and the per-frame detections file:
+
+```json
+{
+  "scene_id": 0,
+  "image_id": 42,
+  "rgb_path": "frames/000042_rgb.png",
+  "depth_path": "frames/000042_depth.png",
+  "depth_scale": 0.001,
+  "K": [[fx, 0, cx], [0, fy, cy], [0, 0, 1]],
+  "detections_path": "detections/000042.json"
+}
+```
+
+The matching detections file can use BOP's `segmentation` field or the local
+`mask` alias:
+
+```json
+[
+  {
+    "scene_id": 0,
+    "image_id": 42,
+    "category_id": 9,
+    "score": 0.96,
+    "bbox": [120, 80, 230, 210],
+    "mask": {"format": "rle", "size": [480, 640], "counts": "..."}
+  }
+]
+```
+
+Load it into the same pipeline types:
+
+```python
+from popoe.datasets.frames import load_frame_manifest, load_scene_from_manifest
+from popoe.segmentor_detections import BOPDetectionsSegmentor
+
+frame = load_frame_manifest("capture/frame_000042.json")
+scene = load_scene_from_manifest(frame)     # depth is now metres
+seg = BOPDetectionsSegmentor(frame.detections_path, source="local-cnos")
 ```
 
 ## Layout
