@@ -9,6 +9,8 @@ module adds the thin COCOeval bridge needed to score the masks themselves.
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext, redirect_stdout
+from io import StringIO
 from pathlib import Path
 from typing import Mapping, Sequence
 
@@ -210,9 +212,10 @@ def build_coco_gt_from_bop(
                 seen_category_ids.add(obj_id)
 
             # Category-only filters must keep negative images so FPs on frames
-            # without the selected object still affect COCO precision.
+            # without the selected object (including empty scene_gt rows [])
+            # still affect COCO precision.
             if (targets is None and category_filter is not None
-                    and image_id not in images and objs):
+                    and image_id not in images):
                 height, width = _image_hw(scene_dir, im_id, objs, mask_kind)
                 _register_image(image_id, scene_id, im_id, height, width)
 
@@ -386,23 +389,86 @@ def evaluate_coco_segm(
     *,
     image_ids: Sequence[int] | None = None,
     category_ids: Sequence[int] | None = None,
+    quiet: bool = False,
 ) -> dict:
     """Run COCOeval in ``segm`` mode and return named summary stats."""
 
     from pycocotools.coco import COCO
     from pycocotools.cocoeval import COCOeval
 
-    coco_gt = COCO(str(coco_gt_json))
-    coco_dt = coco_gt.loadRes(str(coco_results_json))
-    ev = COCOeval(coco_gt, coco_dt, "segm")
-    if image_ids is not None:
-        ev.params.imgIds = [int(x) for x in image_ids]
-    if category_ids is not None:
-        ev.params.catIds = [int(x) for x in category_ids]
-    ev.evaluate()
-    ev.accumulate()
-    ev.summarize()
+    sink = StringIO()
+    ctx = redirect_stdout(sink) if quiet else nullcontext()
+    with ctx:
+        coco_gt = COCO(str(coco_gt_json))
+        coco_dt = coco_gt.loadRes(str(coco_results_json))
+        ev = COCOeval(coco_gt, coco_dt, "segm")
+        if image_ids is not None:
+            ev.params.imgIds = [int(x) for x in image_ids]
+        if category_ids is not None:
+            ev.params.catIds = [int(x) for x in category_ids]
+        ev.evaluate()
+        ev.accumulate()
+        ev.summarize()
     return {name: float(value) for name, value in zip(COCO_STATS, ev.stats)}
+
+
+def evaluate_coco_segm_per_category(
+    coco_gt_json: str | Path,
+    coco_results_json: str | Path,
+    *,
+    image_ids: Sequence[int] | None = None,
+    category_ids: Sequence[int] | None = None,
+) -> list[dict]:
+    """Run COCO ``segm`` AP for each category in a single-source result file."""
+
+    coco_gt = _read_json(coco_gt_json)
+    coco_results = _read_json(coco_results_json)
+    allowed = {int(cid) for cid in category_ids} if category_ids else None
+    categories = [
+        c for c in coco_gt.get("categories", [])
+        if allowed is None or int(c["id"]) in allowed
+    ]
+    categories.sort(key=lambda c: int(c["id"]))
+
+    gt_ann_count: dict[int, int] = {}
+    gt_image_ids: dict[int, set[int]] = {}
+    for ann in coco_gt.get("annotations", []):
+        cid = int(ann["category_id"])
+        if allowed is not None and cid not in allowed:
+            continue
+        gt_ann_count[cid] = gt_ann_count.get(cid, 0) + 1
+        gt_image_ids.setdefault(cid, set()).add(int(ann["image_id"]))
+
+    pred_count: dict[int, int] = {}
+    pred_image_ids: dict[int, set[int]] = {}
+    for rec in coco_results:
+        cid = int(rec["category_id"])
+        if allowed is not None and cid not in allowed:
+            continue
+        pred_count[cid] = pred_count.get(cid, 0) + 1
+        pred_image_ids.setdefault(cid, set()).add(int(rec["image_id"]))
+
+    rows = []
+    for cat in categories:
+        cid = int(cat["id"])
+        stats = evaluate_coco_segm(
+            coco_gt_json,
+            coco_results_json,
+            image_ids=image_ids,
+            category_ids=[cid],
+            quiet=True,
+        )
+        row = {
+            "category_id": cid,
+            "name": cat.get("name", f"obj_{cid:06d}"),
+            "gt_annotations": int(gt_ann_count.get(cid, 0)),
+            "gt_images": int(len(gt_image_ids.get(cid, set()))),
+            "predictions": int(pred_count.get(cid, 0)),
+            "pred_images": int(len(pred_image_ids.get(cid, set()))),
+        }
+        row.update(stats)
+        rows.append(row)
+    return rows
 
 
 def write_json(path: str | Path, payload) -> None:

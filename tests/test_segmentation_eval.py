@@ -15,6 +15,7 @@ from popoe.segmentation_eval import (
     build_coco_gt_from_bop,
     detections_to_coco_results,
     evaluate_coco_segm,
+    evaluate_coco_segm_per_category,
     filter_coco_gt,
     load_bop_targets,
     write_json,
@@ -164,6 +165,47 @@ def test_category_filter_gt_and_predictions(tmp_path):
     assert [rec["category_id"] for rec in pred] == [9]
 
 
+def test_evaluate_per_category_reports_each_object(tmp_path):
+    mask5 = _mask(y0=4, x0=5)
+    mask9 = _mask(y0=15, x0=20)
+    scene = _write_bop_scene(tmp_path, mask5, obj_id=5)
+    Image.fromarray((mask9.astype(np.uint8) * 255)).save(
+        scene / "mask_visib" / "000007_000001.png")
+    (scene / "scene_gt.json").write_text(json.dumps({
+        "7": [{"obj_id": 5}, {"obj_id": 9}]
+    }))
+    det_path = tmp_path / "detections.json"
+    det_path.write_text(json.dumps([
+        {
+            "scene_id": 1,
+            "image_id": 7,
+            "category_id": 5,
+            "score": 0.9,
+            "segmentation": _rle(mask5),
+        },
+        {
+            "scene_id": 1,
+            "image_id": 7,
+            "category_id": 9,
+            "score": 0.8,
+            "segmentation": _rle(mask9),
+        },
+    ]))
+    coco_gt = build_coco_gt_from_bop(tmp_path)
+    pred = detections_to_coco_results(det_path, coco_gt)
+    gt_json = tmp_path / "gt_coco.json"
+    pred_json = tmp_path / "pred_coco.json"
+    write_json(gt_json, coco_gt)
+    write_json(pred_json, pred)
+
+    rows = evaluate_coco_segm_per_category(gt_json, pred_json)
+
+    assert [r["category_id"] for r in rows] == [5, 9]
+    assert [r["gt_annotations"] for r in rows] == [1, 1]
+    assert [r["predictions"] for r in rows] == [1, 1]
+    assert [r["AP"] for r in rows] == [pytest.approx(1.0), pytest.approx(1.0)]
+
+
 def test_category_filter_keeps_negative_images(tmp_path):
     """Images without the selected object stay in GT so FPs still count."""
 
@@ -174,12 +216,16 @@ def test_category_filter_keeps_negative_images(tmp_path):
         scene / "mask_visib" / "000008_000000.png")
     Image.fromarray(np.zeros((*mask9.shape, 3), dtype=np.uint8)).save(
         scene / "rgb" / "000008.png")
+    # Empty scene_gt row [] is also a valid negative frame (size from RGB).
+    Image.fromarray(np.zeros((*mask9.shape, 3), dtype=np.uint8)).save(
+        scene / "rgb" / "000009.png")
     (scene / "scene_gt.json").write_text(json.dumps({
         "7": [{"obj_id": 5}],
         "8": [{"obj_id": 9}],
+        "9": [],
     }))
     det_path = tmp_path / "detections.json"
-    # Hallucinated cat-9 proposal on the negative frame (im 7 has only obj 5).
+    # Hallucinated cat-9 proposals on negative frames (im 7 / empty im 9).
     det_path.write_text(json.dumps([
         {
             "scene_id": 1,
@@ -195,16 +241,25 @@ def test_category_filter_keeps_negative_images(tmp_path):
             "score": 0.9,
             "segmentation": _rle(mask9),
         },
+        {
+            "scene_id": 1,
+            "image_id": 9,
+            "category_id": 9,
+            "score": 0.85,
+            "segmentation": _rle(mask9),
+        },
     ]))
 
     coco_gt = build_coco_gt_from_bop(tmp_path, category_ids={9})
     pred = detections_to_coco_results(det_path, coco_gt, category_ids={9})
 
     image_ids = {im["id"] for im in coco_gt["images"]}
-    assert image_ids == {bop_image_id(1, 7), bop_image_id(1, 8)}
+    assert image_ids == {
+        bop_image_id(1, 7), bop_image_id(1, 8), bop_image_id(1, 9),
+    }
     assert [ann["category_id"] for ann in coco_gt["annotations"]] == [9]
     assert sorted(rec["image_id"] for rec in pred) == [
-        bop_image_id(1, 7), bop_image_id(1, 8),
+        bop_image_id(1, 7), bop_image_id(1, 8), bop_image_id(1, 9),
     ]
 
 
@@ -322,14 +377,19 @@ def test_bop_seg_eval_cli_writes_summary(tmp_path):
         "--detections", str(det_path),
         "--targets", str(targets_path),
         "--out-dir", str(out_dir),
+        "--per-object",
     ])
 
     summary = json.loads((out_dir / "summary.json").read_text())
+    per_object = json.loads((out_dir / "per_object.json").read_text())
     assert rc == 0
     assert summary["gt_images"] == 1
     assert summary["gt_annotations"] == 1
     assert summary["predictions"] == 1
     assert summary["stats"]["AP"] == pytest.approx(1.0)
+    assert summary["per_object_json"].endswith("per_object.json")
+    assert per_object[0]["category_id"] == 5
+    assert per_object[0]["AP"] == pytest.approx(1.0)
 
 
 def test_bop_seg_eval_cli_gt_coco_filters_targets(tmp_path):
