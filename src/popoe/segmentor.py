@@ -32,7 +32,7 @@ outcome:
         DepthSegmentor(),             # no deps; always available
     ])
     dets = seg.segment(scene, obj)
-    print(seg.last_used)              # -> "cnos" or "depth-cc"
+    print(seg.last_used)              # -> "cnos-live" or "depth-cc"
 
 Only `SegmentorUnavailable` (missing package / missing checkpoint) advances the
 chain. A runtime failure — CUDA OOM, a corrupt image — propagates: masking real

@@ -15,7 +15,7 @@ Scene (RGB-D, K) ──┘            TargetEncoder ──┴─ PoseSolver ─ 
 
 | Stage | Protocol | Reference implementation |
 |-------|----------|--------------------------|
-| Segmentation | `Segmentor` | `segmentor_detections.BOPDetectionsSegmentor` (evaluated; single file or a named-source union — see below); `segmentor_cnos.CNOSSegmentor` / `.DinoWindowSegmentor`; `segmentor.SAMSegmentor` / `.DepthSegmentor`; `adapters.PrecomputedSegmentor` |
+| Segmentation | `Segmentor` | `segmentor_detections.BOPDetectionsSegmentor` (evaluated; single file or a named-source union — see below); `segmentor_cnos_official.CNOSDetectionsSegmentor` (`source='cnos'`); `segmentor_cnos_v3.CNOSv3Segmentor` (`source='cnos-v3'`); `segmentor_cnos.CNOSSegmentor` (`source='cnos-live'`) / `.DinoWindowSegmentor`; `segmentor.SAMSegmentor` / `.DepthSegmentor`; `adapters.PrecomputedSegmentor` |
 | Query features | `QueryEncoder` | `freeze.adapters.FreeZeQueryEncoder` (DINOv2 + GeDi) |
 | Target features | `TargetEncoder` | `freeze.adapters.FreeZeTargetEncoder` |
 | Fusion | `FeatureFusion` | `freeze.fusion.DinoGeDiFusion` |
@@ -160,8 +160,9 @@ unperturbed; the non-default solvers are reported as independent configurations.
 
 CNOS-FastSAM, SAM-6D ISM and NIDS-Net all publish the same artefact — a
 detections JSON — so they are not separate pose-backend code paths, only
-different named producers. NIDS-Net and SAM-6D are pinned under `external/` for
-source provenance but still run in separate environments/services;
+different named producers. Official CNOS, NIDS-Net and SAM-6D are pinned under
+`external/` for source provenance but still run in separate
+environments/services; `segmentor_cnos_official.CNOSDetectionsSegmentor`,
 `segmentor_nids.NIDSNetDetectionsSegmentor`,
 `segmentor_nids.adapt_nidsnet_json`, and
 `segmentor_sam6d.SAM6DIsmDetectionsSegmentor` are the popoe-side adapters.
@@ -181,6 +182,14 @@ seg = BOPDetectionsSegmentor(sources={           # or [("nids", p), ...] / "name
 dets = seg.segment(scene, obj)
 dets[0].source        # -> 'cnos' | 'sam6d' | 'nids' — which backend produced it
 ```
+
+CNOS source names are reserved:
+
+| Source | Meaning |
+|--------|---------|
+| `cnos` | official CNOS/CNOS-FastSAM producer or public BOP default detections |
+| `cnos-v3` | local depth-size-gated foreground-patch recipe (`segmentor_cnos_v3`) |
+| `cnos-live` | older live SAM2+DINOv2 approximation (`segmentor_cnos.CNOSSegmentor`) |
 
 `topk` is applied per `(source, label)` bucket, so a top-M union keeps M
 candidates **per source** (no source crowds out another before scoring), and

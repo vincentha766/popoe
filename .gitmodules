@@ -4,3 +4,6 @@
 [submodule "external/SAM-6D"]
 	path = external/SAM-6D
 	url = https://github.com/JiehongLin/SAM-6D.git
+[submodule "external/cnos"]
+	path = external/cnos
+	url = https://github.com/nv-nguyen/cnos.git

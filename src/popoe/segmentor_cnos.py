@@ -11,7 +11,7 @@ result quality enough that you must know which one ran.
 
   CNOSSegmentor        SAM2 AMG proposes every instance in the scene, DINOv2
                        re-ranks each against the templates. This is the paper's
-                       pipeline. Needs sam2 + a checkpoint.
+                       live approximation. Needs sam2 + a checkpoint.
   DinoWindowSegmentor  No SAM2 needed for proposals: slide multi-scale windows
                        over the DINOv2 patch-feature grid and keep the
                        best-matching boxes, then turn each box into a mask with
@@ -290,7 +290,7 @@ class CNOSSegmentor:
     does NOT quietly degrade. Put DinoWindowSegmentor after it in a
     FirstAvailableSegmentor chain if you want a SAM2-free fallback."""
 
-    source = 'cnos'
+    source = 'cnos-live'
 
     def __init__(self, renderer, device: str = 'cuda', n_templates: int = 42,
                  sam_model_size: str = 'small', n_masks: int = 5,
