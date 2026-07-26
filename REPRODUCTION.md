@@ -350,3 +350,66 @@ CLI flags from code, light CPU tests. GPU parity numbers still ☐.
 | `uv run python examples/rule_replay.py …/popoe_ycbv_formal_A_cands.csv --rule "s_icp*s_feat_1" --rule "s_icp*s_feat_1*metric_fit" --rule "s_icp*s_feat_1*metric_fit*s_coarse" --out-dir …` | <1 min | **OK** — 21 800 hyps / 1 669 targets; ×metric_fit flips 44.0% vs formal baseline; +s_coarse flips 0.2% (formal baseline is itself s_coarse-arbitrated — consistency check ✓). Original plan referenced `popoe_ycbv_union2_cands.csv` which does not exist; corrected to `popoe_ycbv_formal_A_cands.csv`. |
 | `uv run python examples/pipeline_selfcheck.py …` | needs GPU | **skipped** (no local GPU) |
 | full `bop_eval` parity | 15–22 h GPU | **not run** (zero-GPU prep) |
+
+## Segmentation AP ledger (draft — 2026-07-26)
+
+> **Status**: offline measurements from `outputs/seg_ap_20260725T223014Z/`.  
+> **Not** a formal parity row for pose. Pose headline #1/#2 still ☐.  
+> **Gate**: do not re-score or promote new official numbers until popoe PRs
+> #3 / #4 / #5 are merged into `main` and this file is re-run at a frozen
+> commit (PR #5 changes evaluator semantics; PR #3 enables `muse-repro`
+> full-split production; PR #4 affects pose fallback/OOM behaviour).
+
+### Official single-source mask AP (YCB-V / LM-O)
+
+Local evaluator: popoe `examples/bop_seg_eval.py` + PyPI `pycocotools 2.0.11`,
+except where noted. Public rows from BOP segmentation-unseen leaderboards.
+Detail: `outputs/seg_ap_20260725T223014Z/LEADERBOARD_ALIGNMENT.md`.
+
+| Dataset | Source tag | Local AP | Public AP | Δ AP | Verdict |
+|---|---|---:|---:|---:|---|
+| YCB-V | `cnos` (CNOS-FastSAM JSON) | 0.5986 | 0.5987 | −0.0001 | **aligned** |
+| YCB-V | `nids` (NIDS-Net WA_Sappe) | 0.6499 | 0.6500 | −0.0001 | **aligned** |
+| YCB-V | `sam6d` (local ISM file) | 0.6112 | (see note) | — | file-aligned; not identical to every BOP SAM6D row |
+| YCB-V | `muse` (official BOP sub 29113) | 0.6901 | 0.6900 | +0.0001 | **aligned** (official artefact) |
+| LM-O | `cnos` | 0.3921 | 0.3969 | −0.0048 | **bracketed** by pycocotools vs BOP COCO fork (~±0.005) |
+| LM-O | `nids` | 0.4345 | 0.4393 | −0.0048 | same evaluator residual |
+| LM-O | `sam6d` (local ISM) | 0.4411 | — | — | local file |
+| LM-O | `muse` (official BOP sub 29108) | 0.4713 | 0.4770 | −0.0057 | same residual class |
+
+With BOP toolkit's declared COCO fork, YCB-V CNOS/NIDS match public AP to
+machine precision; LM-O sits ~0.006 **above** public (ignore-threshold
+sensitivity — see `LEADERBOARD_ALIGNMENT.md` ignore sweep).
+
+### Naming (do not mix)
+
+| `Detection.source` | Meaning |
+|---|---|
+| `cnos` / `sam6d` / `nids` / `muse` | Official or precomputed JSON. **Nothing in popoe writes `muse`.** |
+| `muse-repro` | `popoe.segmentor_muse` / `popoe-bop-muse` reimplementation |
+| `cnos-v3` / `cnos-live` | Self-built CNOS tracks (lab / live) — not paper headline |
+
+### Still open (after PR merge)
+
+| Item | Depends on | Notes |
+|---|---|---|
+| Full-split `muse-repro` JSON + seg-AP vs `muse` | PR #3 | Expect gap (depth gate + GeM/Tanimoto vs paper vMF); attribute, do not relabel |
+| Re-run ledger under merged evaluator | PR #5 | Optional confirmation |
+| Pose parity #1/#2 | PR #4 recommended; GPU 4090 | ~3–5 h LM-O, ~15–22 h YCB-V |
+| Human review panels | `scripts/export_bop_seg_review.py` | CPU; works on existing JSONs |
+
+### Human review exporter
+
+```bash
+uv run python scripts/export_bop_seg_review.py \
+  --bop bop_data/ycbv \
+  --source cnos=data/detections/cnos/cnos-fastsam_ycbv-test.json \
+  --source nids=data/detections/nids/nids_wa_sappe_ycbv.json \
+  --source sam6d=data/detections/sam6d/sam6d_ism_ycbv.json \
+  --source muse=outputs/seg_ap_20260725T223014Z/official_submissions/muse-full_ycbv-test_official.json \
+  --out-dir outputs/pipeline_verify_seg_vis/ycbv \
+  --per-source 8 --worst-per-obj 1 --topk 1 --seed 0
+```
+
+Produces per-source `*_overlay.png` / `*_mask.png` / `*_crop.png` plus
+`INDEX.md` (IoU vs `mask_visib` when GT is on disk).
