@@ -513,6 +513,12 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     ap.add_argument("--tau", type=float, default=DEFAULT_TAU)
     ap.add_argument("--gamma", type=float, default=DEFAULT_GAMMA)
     ap.add_argument("--min-pixels", type=int, default=DEFAULT_MIN_PIXELS)
+    ap.add_argument("--no-size-gate", action="store_true",
+                    help="disable depth 3D-extent gate (G1 paper-mode A/B)")
+    ap.add_argument("--size-gate-min-ratio", type=float, default=0.25,
+                    help="min extent/diameter when size gate is on")
+    ap.add_argument("--size-gate-max-ratio", type=float, default=1.1,
+                    help="max extent/diameter when size gate is on")
     ap.add_argument("--allow-single-class", action="store_true")
     return ap.parse_args(argv)
 
@@ -576,6 +582,9 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
         sam_ckpt_dir=args.sam_ckpt_dir,
         dinov2_model=args.dinov2_model,
         min_pixels=args.min_pixels,
+        size_gate_enabled=not args.no_size_gate,
+        min_extent_ratio=args.size_gate_min_ratio,
+        max_extent_ratio=args.size_gate_max_ratio,
         alpha=args.alpha,
         beta=args.beta,
         tau=args.tau,
@@ -584,9 +593,11 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
         allow_single_class=args.allow_single_class,
     )
 
+    gate_tag = "off" if args.no_size_gate else (
+        f"on[{args.size_gate_min_ratio:g},{args.size_gate_max_ratio:g}]")
     print(
         f"MUSE {MUSE_SOURCE}: {len(target_images)} images, "
-        f"{len(classes)} classes -> {args.out}",
+        f"{len(classes)} classes size_gate={gate_tag} -> {args.out}",
         flush=True,
     )
     records = generate_bop_muse_detections(

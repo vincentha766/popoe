@@ -658,6 +658,14 @@ class MuseSegmentor:
         proposals plausible for NO class.
         """
         gate = self.size_gate
+        if int(mask.sum()) == 0:
+            return False, None
+        # G1 paper-mode: no depth band / min_pixels kill (MUSE BOP is RGB-first).
+        if not getattr(gate, "enabled", True):
+            extent = None
+            if scene.depth is not None and scene.K is not None:
+                extent = gate.extent_3d(mask, scene.depth, scene.K)
+            return True, float(extent) if extent is not None else 0.0
         if scene.depth is None or scene.K is None:
             return False, None
         if int(mask.sum()) < gate.min_pixels:
@@ -781,10 +789,17 @@ def build_muse_segmentor(classes: Sequence[MuseClass],
                          sam_ckpt_dir: Optional[str] = None,
                          dinov2_model: str = "dinov2_vitg14_reg",
                          min_pixels: int = DEFAULT_MIN_PIXELS,
+                         size_gate_enabled: bool = True,
+                         min_extent_ratio: float = 0.25,
+                         max_extent_ratio: float = 1.1,
                          **kwargs) -> MuseSegmentor:
     """Wire the real GPU components. Construction stays lazy — nothing loads
     until the first ``segment``, so an unavailable backend surfaces at the call
-    that needed it, not at import."""
+    that needed it, not at import.
+
+    ``size_gate_enabled=False`` keeps every non-empty SAM mask (paper / BOP RGB
+    proposal regime). Relaxed ratios only apply when the gate is enabled.
+    """
     embedder = DinoV2ClsGemEmbedder(device=device, model_name=dinov2_model)
     return MuseSegmentor(
         classes,
@@ -794,7 +809,12 @@ def build_muse_segmentor(classes: Sequence[MuseClass],
         embedder=embedder,
         template_bank=MuseTemplateBank({c.obj.obj_id: c.template_dir
                                         for c in classes}, embedder),
-        size_gate=DepthSizeGate(min_pixels=min_pixels),
+        size_gate=DepthSizeGate(
+            min_pixels=min_pixels,
+            min_extent_ratio=min_extent_ratio,
+            max_extent_ratio=max_extent_ratio,
+            enabled=size_gate_enabled,
+        ),
         **kwargs,
     )
 
@@ -957,6 +977,12 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--tau", type=float, default=DEFAULT_TAU)
     ap.add_argument("--gamma", type=float, default=DEFAULT_GAMMA)
     ap.add_argument("--min-pixels", type=int, default=DEFAULT_MIN_PIXELS)
+    ap.add_argument("--no-size-gate", action="store_true",
+                    help="disable depth 3D-extent gate (G1 paper-mode A/B)")
+    ap.add_argument("--size-gate-min-ratio", type=float, default=0.25,
+                    help="min extent/diameter when size gate is on")
+    ap.add_argument("--size-gate-max-ratio", type=float, default=1.1,
+                    help="max extent/diameter when size gate is on")
     ap.add_argument("--allow-single-class", action="store_true")
     args = ap.parse_args(argv)
 
@@ -971,6 +997,9 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
         box_threshold=args.box_threshold, text_threshold=args.text_threshold,
         sam2_size=args.sam2_size, sam_ckpt_dir=args.sam_ckpt_dir,
         min_pixels=args.min_pixels,
+        size_gate_enabled=not args.no_size_gate,
+        min_extent_ratio=args.size_gate_min_ratio,
+        max_extent_ratio=args.size_gate_max_ratio,
         alpha=args.alpha, beta=args.beta, tau=args.tau, gamma=args.gamma,
         n_masks=args.topk, allow_single_class=args.allow_single_class)
 

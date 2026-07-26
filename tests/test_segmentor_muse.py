@@ -374,6 +374,29 @@ def test_size_gate_union_is_not_the_hull_of_the_class_intervals():
     assert seg.scene_result(scene).n_proposals == 0
 
 
+def test_size_gate_disabled_keeps_masks_outside_all_class_bands():
+    """G1 paper-mode: enabled=False must not drop proposals the band would kill."""
+    scene = _scene()
+    gate = DepthSizeGate(min_pixels=10, min_points=10, enabled=False)
+    tiny = _mask(10, 15, 10, 15)
+    extent = DepthSizeGate(min_pixels=10, min_points=10).extent_3d(
+        tiny, scene.depth, scene.K)
+    # diameters far from extent — band gate would reject both classes
+    far = extent * 50
+    seg = _segmentor(
+        classes=[MuseClass(_obj(9, far), "/tpl/9"),
+                 MuseClass(_obj(14, far), "/tpl/14")],
+        proposer=_Proposer(n=1), refiner=_Refiner(masks=[tiny]),
+        size_gate=gate,
+    )
+    assert seg.scene_result(scene).n_proposals == 1
+    assert gate.enabled is False
+    # config identity must include the switch so shards don't alias on/off
+    on = DepthSizeGate(min_pixels=10, min_points=10, enabled=True)
+    assert _segmentor(size_gate=on).config()["size_gate"] != (
+        _segmentor(size_gate=gate).config()["size_gate"])
+
+
 # ── the producer half: dumped masks reload as an ordinary source ─────────
 
 def test_records_round_trip_through_the_production_detections_loader(tmp_path):

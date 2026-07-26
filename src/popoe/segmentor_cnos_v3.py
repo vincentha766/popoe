@@ -92,6 +92,9 @@ class DepthSizeGate:
     The extent is the percentile 3D bbox diagonal of mask pixels with valid
     depth, after dropping depth values outside a band around the mask median.
     The accepted interval is expressed as a fraction of `ObjectModel.diameter`.
+
+    Set ``enabled=False`` to disable the band (and min-pixel) filter while still
+    exposing ``extent_3d`` for diagnostics / descriptors (G1 paper-mode A/B).
     """
 
     min_extent_ratio: float = 0.25
@@ -101,6 +104,7 @@ class DepthSizeGate:
     min_points: int = 50
     min_pixels: int = 8000
     percentiles: tuple[float, float] = (2.0, 98.0)
+    enabled: bool = True
 
     def extent_3d(self, mask: np.ndarray, depth_m: np.ndarray, K) -> Optional[float]:
         K = _as_K(K)
@@ -123,6 +127,13 @@ class DepthSizeGate:
 
     def accepts(self, scene: Scene, obj: ObjectModel,
                 mask: np.ndarray) -> tuple[bool, Optional[float]]:
+        if int(mask.sum()) == 0:
+            return False, None
+        if not self.enabled:
+            extent = None
+            if scene.depth is not None and scene.K is not None:
+                extent = self.extent_3d(mask, scene.depth, scene.K)
+            return True, extent
         if scene.depth is None or scene.K is None:
             return False, None
         if int(mask.sum()) < self.min_pixels:
