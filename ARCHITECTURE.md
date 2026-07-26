@@ -15,12 +15,12 @@ Scene (RGB-D, K) ──┴──────────────────
 
 | Stage | Protocol | Reference implementation |
 |-------|----------|--------------------------|
-| Segmentation | `Segmentor` | `segmentor_detections.BOPDetectionsSegmentor` (evaluated; single file or a named-source union — see below); `segmentor_cnos_official.CNOSDetectionsSegmentor` (`source='cnos'`); `segmentor_cnos_v3.CNOSv3Segmentor` (`source='cnos-v3'`); `segmentor_muse.MuseSegmentor` (`source='muse-repro'`, live + producer — see below); `segmentor_cnos.CNOSSegmentor` (`source='cnos-live'`) / `.DinoWindowSegmentor`; `segmentor.SAMSegmentor` / `.DepthSegmentor`; `adapters.PrecomputedSegmentor` |
+| Segmentation | `Segmentor` | `segmentor_detections.BOPDetectionsSegmentor` (evaluated) — 12 more in [§Segmentation backends](#segmentation-backends) |
 | Query features | `QueryEncoder` | `freeze.adapters.FreeZeQueryEncoder` (DINOv2 visual + `PointDescriptor` geometric branch) |
 | Target features | `TargetEncoder` | `freeze.adapters.FreeZeTargetEncoder` |
 | Geometric descriptors | `PointDescriptor` | GeDi default via `freeze.feature_extractor.load_gedi`; `descriptors.FPFHDescriptor`; dGeDi via `POPOE_GEOM_BACKBONE` |
 | Fusion | `FeatureFusion` | `freeze.fusion.DinoGeDiFusion` |
-| Pose solve | `PoseSolver` | `adapters.RansacSolver`; `solvers.Open3DFeatureRansacSolver` (default); `solvers.GPURansacSolver` (ported batched RANSAC, geometric or Eq.5 feature fitness); `solvers.TeaserSolver` (TEASER++ certifiable registration, needs `teaserpp_python`) |
+| Pose solve | `PoseSolver` | `solvers.Open3DFeatureRansacSolver` (default) — 3 more in [§Pluggability proven](#pluggability-proven--the-posesolver-stage) |
 | External coarse pose | `CoarseEstimator` | `segmentor_sam6d.SAM6DPemResultsCoarseEstimator` over already-written PEM results |
 | Refine | `PoseRefiner` | `adapters.ICPRefiner` |
 | Score | `PoseScorer` | `freeze.adapters.FreeZeScorer`; `scoring.ChampionScorer` (evaluated) |
@@ -191,7 +191,29 @@ of its rules are load-bearing for reproducible benchmark runs:
   the formal path; `--size-select` and `--dual-assign` are score-affecting lab
   paths and require fresh output files.
 
-## File-based detection backends (CNOS / SAM-6D / NIDS)
+## Segmentation backends
+
+Every entry satisfies the same `Segmentor` protocol and stamps its origin into
+`Detection.source`. **File** backends replay an artefact another process wrote;
+**live** backends run the models themselves.
+
+| Implementation | `source` | Kind |
+|----------------|----------|------|
+| `segmentor_detections.BOPDetectionsSegmentor` | `bop-detections`, or per-source in a union | file — **evaluated**; one JSON or a named-source union |
+| `segmentor_cnos_official.CNOSDetectionsSegmentor` | `cnos` | file — official CNOS / CNOS-FastSAM producer, or public BOP default detections |
+| `segmentor_sam6d.SAM6DIsmDetectionsSegmentor` | `sam6d` | file — SAM-6D ISM artefacts |
+| `segmentor_nids.NIDSNetDetectionsSegmentor` | `nids` | file — NIDS-Net artefacts |
+| `segmentor_muse.MuseDetectionsSegmentor` | `muse-repro` | file — replay of dumped MUSE masks |
+| `segmentor_muse.MuseSegmentor` | `muse-repro` | live — GroundingDINO→SAM2→DINOv2; also its own producer |
+| `segmentor_cnos_v3.CNOSv3Segmentor` | `cnos-v3` | live — depth-size-gated foreground-patch CNOS |
+| `segmentor_cnos.CNOSSegmentor` | `cnos-live` | live — SAM2 AMG proposes, DINOv2 matches |
+| `segmentor_cnos.DinoWindowSegmentor` | `dino-window` | live — DINOv2 multi-scale sliding-window matching |
+| `segmentor.SAMSegmentor` | `sam2-amg` | live — SAM2.1 automatic mask generator, class-agnostic |
+| `segmentor.DepthSegmentor` | `depth-cc` | live — depth connected components; no model, no GPU |
+| `segmentor.FirstAvailableSegmentor` | delegates | explicit fallback chain — see the availability contract |
+| `adapters.PrecomputedSegmentor` | as supplied | inject fixed masks (tests, ablations) |
+
+### File backends (CNOS / SAM-6D / NIDS)
 
 CNOS-FastSAM, SAM-6D ISM and NIDS-Net all publish the same artefact — a
 detections JSON — so they are not separate pose-backend code paths, only
@@ -218,13 +240,9 @@ dets = seg.segment(scene, obj)
 dets[0].source        # -> 'cnos' | 'sam6d' | 'nids' — which backend produced it
 ```
 
-CNOS source names are reserved:
-
-| Source | Meaning |
-|--------|---------|
-| `cnos` | official CNOS/CNOS-FastSAM producer or public BOP default detections |
-| `cnos-v3` | local depth-size-gated foreground-patch recipe (`segmentor_cnos_v3`) |
-| `cnos-live` | older live SAM2+DINOv2 approximation (`segmentor_cnos.CNOSSegmentor`) |
+The three CNOS source names (`cnos`, `cnos-v3`, `cnos-live` — see the inventory
+above) are **reserved**: only the official producer's artefacts may be filed
+under `cnos`, for the same reason `muse` is reserved below.
 
 `topk` is applied per `(source, label)` bucket, so a top-M union keeps M
 candidates **per source** (no source crowds out another before scoring), and

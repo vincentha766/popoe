@@ -19,7 +19,7 @@ number produced here wearing the official name would quietly refute an argument
 we are making on purpose.
 
 Two halves, because MUSE has to be both kinds of segmentor at once
-(see ARCHITECTURE.md, "File-based detection backends"):
+(see ARCHITECTURE.md, "Segmentation backends"):
 
 * **live** — ``MuseSegmentor`` computes masks from pixels, like
   ``CNOSv3Segmentor``. This is what runs on a freshly captured frame.
