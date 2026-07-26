@@ -63,9 +63,13 @@ boundary:
   comparable. Role-aware descriptors go through `descriptors.describe(...,
   role="query"|"target")`; role-blind descriptors keep the two-argument form.
 - **Scoring is a stage, not baked into the refiner.** `PoseScorer` owns the whole
-  feature-scoring concern (fine re-score + the `s_coarse·s_fine·s_icp`
-  combination). `ICPRefiner` only moves geometry and reports `s_icp`. So a new
-  solver or refiner never re-implements the scoring rule. (Note: the RANSAC-internal
+  feature-scoring concern: the fine re-score at the refined pose, and how the
+  evidence combines. The combination rule belongs to the implementation, not to
+  the pipeline — `FreeZeScorer` reproduces the paper's `s_coarse·s_fine·s_icp`,
+  while the evaluated `ChampionScorer` uses `s_icp · s_feat_1 · metric_fit`, with
+  `s_coarse` an opt-in per-dataset factor (helps YCB-V, hurts LM-O).
+  `ICPRefiner` only moves geometry and reports `s_icp`. So a new solver or
+  refiner never re-implements the scoring rule. (Note: the RANSAC-internal
   inlier score stays inside the solver — that's hypothesis ranking, not final
   scoring.)
 - **A solver only PROPOSES; the scorer DISPOSES.** See below.
@@ -83,7 +87,7 @@ fraction** mixed in among DINO **cosine similarities** — a blob covering 40% o
 the frame outranked a real template match at 0.35. `SAMSegmentor` and
 `get_renderer` did the same thing more quietly.
 
-Two things that costs:
+That costs two things:
 
 1. **The result becomes unattributable.** A run on a box without the SAM2
    checkpoint produced depth-blob masks while every log line and config still
@@ -130,8 +134,8 @@ One-shot Open3D ranks by geometric inlier fitness and flips on symmetric geometr
 the visual features would disambiguate. Emitting several candidates
 (`n_restarts=8`) and letting the EXISTING feature-aware `PoseScorer` + `Selector`
 pick the feature-best — **no new scoring code** — recovers parity. "Geometry
-proposes, features dispose." A robust backend (TEASER++, MAC) would slot in the
-same way.
+proposes, features dispose." A robust backend (TEASER++, MAC) slots in the same
+way — TEASER++ since has, two headings below.
 
 ### A third solver — feature-aware fitness INSIDE selection (the B layer)
 
@@ -168,28 +172,6 @@ dep-light.
 Select with `freeze.recipes.stages_for_object(solver=...)` or `bop_eval --solver
 o3d|gpu|gpu-feat|teaser`. The default stays `o3d`, so the evaluated mainline is
 unperturbed; the non-default solvers are reported as independent configurations.
-
-## BOP runner invariants
-
-`examples/bop_eval.py` is a composition runner, not a new stage, but several
-of its rules are load-bearing for reproducible benchmark runs:
-
-- **One query encode per object.** Queries and fitted visual PCA are cached up
-  front. The target cache key includes the query key because target visual
-  features live in the query PCA basis.
-- **Feature extraction is pinned at w=1.** The visual-weight sweep reweights
-  cached `[vis|geo]` features at selection time, and `ChampionScorer`'s
-  `s_feat_1` really is a w=1 re-score.
-- **Completed targets emit exactly `inst_count` rows.** Champions are written
-  first and zero rows pad any missing instances. Resume is therefore a row-count
-  invariant: fewer rows means a partial target and those stale rows are dropped
-  before re-run.
-- **Candidate dumps are the offline interface.** `--cand-csv` records every
-  mask x visual-weight hypothesis with its score breakdown and solver name, so
-  selection rules can be replayed without re-running DINO/GeDi/FPFH.
-- **Confusable-object arbitration is explicit.** YCB-V clamp label pooling is
-  the formal path; `--size-select` and `--dual-assign` are score-affecting lab
-  paths and require fresh output files.
 
 ## Segmentation backends
 
@@ -291,10 +273,35 @@ independently, and neither is optional:
   `scene_id`/`im_id` (real captures leave those at -1) — the same content-addressing
   invariant the cache follows.
 
-SAM-6D PEM is different: it is an external full pose producer, not a detections
-source. `segmentor_sam6d.SAM6DPemResultsCoarseEstimator` adapts its BOP CSV or
-custom JSON outputs to `PoseHypothesis` through the separate `CoarseEstimator`
+### SAM-6D PEM is not one of these
+
+SAM-6D's ISM half is a detections producer like the others above. Its PEM half
+is an external **full pose** producer, so it is not a `Segmentor` at all:
+`segmentor_sam6d.SAM6DPemResultsCoarseEstimator` adapts PEM's BOP CSV or custom
+JSON outputs to `PoseHypothesis` through the separate `CoarseEstimator`
 contract, keeping it out of the FreeZe feature-solver contract.
+
+## BOP runner invariants
+
+`examples/bop_eval.py` is a composition runner, not a new stage, but several
+of its rules are load-bearing for reproducible benchmark runs:
+
+- **One query encode per object.** Queries and fitted visual PCA are cached up
+  front. The target cache key includes the query key because target visual
+  features live in the query PCA basis.
+- **Feature extraction is pinned at w=1.** The visual-weight sweep reweights
+  cached `[vis|geo]` features at selection time, and `ChampionScorer`'s
+  `s_feat_1` really is a w=1 re-score.
+- **Completed targets emit exactly `inst_count` rows.** Champions are written
+  first and zero rows pad any missing instances. Resume is therefore a row-count
+  invariant: fewer rows means a partial target and those stale rows are dropped
+  before re-run.
+- **Candidate dumps are the offline interface.** `--cand-csv` records every
+  mask x visual-weight hypothesis with its score breakdown and solver name, so
+  selection rules can be replayed without re-running DINO/GeDi/FPFH.
+- **Confusable-object arbitration is explicit.** YCB-V clamp label pooling is
+  the formal path; `--size-select` and `--dual-assign` are score-affecting lab
+  paths and require fresh output files.
 
 ## Verification
 
@@ -317,7 +324,7 @@ Measured payoff (reproduction study): reruns skip GeDi+DINO entirely
 via the candidate dump, and whole diagnostic investigations run offline
 against cached features.
 
-Two invariants, both learned from real incidents (see ISSUES.md):
+Three invariants, all learned from real incidents (see ISSUES.md):
 
 1. **Fitted state is part of the key.** The target-feature key includes the
    QUERY key, because the query's fitted visual PCA defines the basis the
