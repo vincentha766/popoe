@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+import popoe.bop_muse as bop_muse
 from popoe.bop_muse import (
     BOPTargetImage,
     _main,
@@ -14,6 +15,7 @@ from popoe.bop_muse import (
     default_targets_path,
     generate_bop_muse_detections,
     load_bop_target_images,
+    target_object_ids_from_targets,
 )
 from popoe.interfaces import Detection, ObjectModel, Scene
 from popoe.segmentor_muse import MUSE_SOURCE, MuseClass
@@ -107,6 +109,16 @@ def test_load_bop_target_images_uses_row_count_when_inst_count_is_missing(tmp_pa
     ]
 
 
+def test_target_object_ids_from_targets_ignores_image_limit_semantics(tmp_path):
+    targets = _write_json(tmp_path / "test_targets_bop19.json", [
+        {"scene_id": 2, "im_id": 3, "obj_id": 14},
+        {"scene_id": 1, "im_id": 8, "obj_id": 9},
+    ])
+
+    assert target_object_ids_from_targets(targets) == (9, 14)
+    assert target_object_ids_from_targets(targets, obj_ids={14}) == (14,)
+
+
 def test_default_targets_path_falls_back_for_bop_test_sensor_splits(tmp_path):
     fallback = tmp_path / "test_targets_bop19.json"
     fallback.write_text("[]")
@@ -139,6 +151,35 @@ def test_bop_frame_manifest_converts_depth_scale_to_metres(tmp_path):
     assert manifest.rgb_path.endswith("test/000002/rgb/000003.png")
     assert manifest.depth_path.endswith("test/000002/depth/000003.png")
     assert manifest.K.shape == (3, 3)
+
+
+def test_bop_frame_manifest_caches_scene_camera_per_scene(tmp_path, monkeypatch):
+    _write_json(tmp_path / "test" / "000002" / "scene_camera.json", {
+        "3": {
+            "cam_K": [100.0, 0.0, 3.0, 0.0, 101.0, 2.0, 0.0, 0.0, 1.0],
+            "depth_scale": 1.0,
+        },
+        "4": {
+            "cam_K": [100.0, 0.0, 3.0, 0.0, 101.0, 2.0, 0.0, 0.0, 1.0],
+            "depth_scale": 1.0,
+        },
+    })
+    bop_muse._scene_camera.cache_clear()
+    real_read_json = bop_muse._read_json
+    reads = []
+
+    def counting_read_json(path):
+        if str(path).endswith("scene_camera.json"):
+            reads.append(Path(path))
+        return real_read_json(path)
+
+    monkeypatch.setattr(bop_muse, "_read_json", counting_read_json)
+
+    bop_frame_manifest(tmp_path, "test", scene_id=2, im_id=3)
+    bop_frame_manifest(tmp_path, "test", scene_id=2, im_id=4)
+
+    assert len(reads) == 1
+    bop_muse._scene_camera.cache_clear()
 
 
 def test_build_muse_classes_from_bop_metadata_and_template_root(tmp_path):
@@ -313,7 +354,7 @@ def test_generate_bop_muse_detections_shard_key_depends_on_bop_split(tmp_path):
     assert seg.calls == [(1, 1, 9, 1), (1, 1, 14, 1)]
 
 
-def test_generate_bop_muse_detections_floors_n_masks_to_inst_count():
+def test_generate_bop_muse_detections_floors_n_masks_per_class_to_inst_count():
     pytest.importorskip("pycocotools")
     seg = _FakeMuseSegmentor()
     targets = [
@@ -334,7 +375,7 @@ def test_generate_bop_muse_detections_floors_n_masks_to_inst_count():
         scene_loader=lambda _root, _split, sid, iid: _scene(sid, iid),
     )
 
-    assert seg.calls == [(1, 1, 9, 3), (1, 1, 14, 3)]
+    assert seg.calls == [(1, 1, 9, 3), (1, 1, 14, 1)]
 
 
 def test_resume_requires_shard_dir_and_no_time_strips_resumed_time(tmp_path):
@@ -462,6 +503,43 @@ def test_resume_reports_corrupt_shard_path(tmp_path):
         )
 
 
+@pytest.mark.parametrize("bad_payload", [
+    None,
+    {"category_id": 9},
+    ["not-a-record"],
+    [{"scene_id": 1, "image_id": 1}],
+    [{"scene_id": 99, "image_id": 1, "category_id": 9}],
+])
+def test_resume_rejects_wrong_shape_shards(tmp_path, bad_payload):
+    pytest.importorskip("pycocotools")
+    targets = [BOPTargetImage(scene_id=1, im_id=1, obj_ids=(9,))]
+    shard_dir = tmp_path / "shards"
+
+    generate_bop_muse_detections(
+        bop_root="/unused",
+        split="test",
+        targets=targets,
+        segmentor=_FakeMuseSegmentor(),
+        n_masks=1,
+        shard_dir=shard_dir,
+        scene_loader=lambda _root, _split, sid, iid: _scene(sid, iid),
+    )
+    shard = next(shard_dir.glob("*.json"))
+    shard.write_text(json.dumps(bad_payload))
+
+    with pytest.raises(ValueError, match=f"corrupt shard {shard}"):
+        generate_bop_muse_detections(
+            bop_root="/unused",
+            split="test",
+            targets=targets,
+            segmentor=_FakeMuseSegmentor(),
+            n_masks=1,
+            shard_dir=shard_dir,
+            resume=True,
+            scene_loader=lambda *_args: pytest.fail("resume should read shard"),
+        )
+
+
 def test_generate_bop_muse_detections_rejects_zero_masks():
     with pytest.raises(ValueError, match="n_masks"):
         generate_bop_muse_detections(
@@ -487,3 +565,49 @@ def test_cli_rejects_invalid_resume_limit_topk_and_specs():
         _main(base + ["--objs", "not-an-int"])
     with pytest.raises(SystemExit, match="obj_id must be an integer"):
         _main(base + ["--classes", "x=/tpl"])
+
+
+def test_cli_limit_images_does_not_shrink_registered_class_set(tmp_path, monkeypatch):
+    _write_json(tmp_path / "test_targets_bop19.json", [
+        {"scene_id": 1, "im_id": 1, "obj_id": 9},
+        {"scene_id": 1, "im_id": 2, "obj_id": 14},
+    ])
+    _write_json(tmp_path / "models" / "models_info.json", {
+        "9": {"diameter": 130.0},
+        "14": {"diameter": 125.0},
+    })
+    (tmp_path / "templates" / "obj_000009").mkdir(parents=True)
+    (tmp_path / "templates" / "obj_000014").mkdir(parents=True)
+    seen = {}
+
+    def fake_build_muse_segmentor(classes, **_kwargs):
+        seen["class_ids"] = [c.obj.obj_id for c in classes]
+        return _FakeMuseSegmentor(seen["class_ids"])
+
+    def fake_generate_bop_muse_detections(**kwargs):
+        seen["target_images"] = list(kwargs["targets"])
+        return []
+
+    monkeypatch.setattr(bop_muse, "build_muse_segmentor", fake_build_muse_segmentor)
+    monkeypatch.setattr(
+        bop_muse,
+        "generate_bop_muse_detections",
+        fake_generate_bop_muse_detections,
+    )
+    monkeypatch.setattr(
+        bop_muse,
+        "_write_muse_detections_atomic",
+        lambda records, output_json, **_kwargs: Path(output_json).write_text("[]"),
+    )
+
+    assert _main([
+        "--bop-root", str(tmp_path),
+        "--template-root", str(tmp_path / "templates"),
+        "--limit-images", "1",
+        "--out", str(tmp_path / "out.json"),
+    ]) == 0
+
+    assert seen["class_ids"] == [9, 14]
+    assert seen["target_images"] == [
+        BOPTargetImage(scene_id=1, im_id=1, obj_ids=(9,), inst_counts=((9, 1),))
+    ]

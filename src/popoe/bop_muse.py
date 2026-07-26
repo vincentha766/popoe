@@ -14,6 +14,7 @@ import tempfile
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
@@ -156,6 +157,22 @@ def load_bop_target_images(
     return out
 
 
+def target_object_ids_from_targets(
+    targets_json: str | os.PathLike,
+    *,
+    obj_ids: set[int] | Sequence[int] | None = None,
+) -> tuple[int, ...]:
+    """Return target object ids without applying an image limit."""
+
+    keep = None if obj_ids is None else {int(x) for x in obj_ids}
+    out: set[int] = set()
+    for rec in _read_json(targets_json):
+        obj_id = int(rec["obj_id"])
+        if keep is None or obj_id in keep:
+            out.add(obj_id)
+    return tuple(sorted(out))
+
+
 def load_models_info(models_info: str | os.PathLike | Mapping) -> dict:
     """Load BOP ``models_info.json`` or normalise an already-loaded mapping."""
 
@@ -236,8 +253,9 @@ def bop_frame_manifest(
     depth unit. ``FrameManifest`` expects metres per raw unit, so divide by 1000.
     """
 
-    scene_dir = Path(bop_root) / split / f"{int(scene_id):06d}"
-    cameras = _read_json(scene_dir / "scene_camera.json")
+    root = str(Path(bop_root).expanduser())
+    scene_dir = Path(root) / split / f"{int(scene_id):06d}"
+    cameras = _scene_camera(root, split, int(scene_id))
     cam = cameras[str(int(im_id))]
     return FrameManifest(
         rgb_path=str(scene_dir / "rgb" / f"{int(im_id):06d}.png"),
@@ -247,6 +265,12 @@ def bop_frame_manifest(
         scene_id=int(scene_id),
         im_id=int(im_id),
     )
+
+
+@lru_cache(maxsize=256)
+def _scene_camera(bop_root: str, split: str, scene_id: int) -> dict:
+    scene_dir = Path(bop_root) / split / f"{int(scene_id):06d}"
+    return _read_json(scene_dir / "scene_camera.json")
 
 
 def load_bop_scene(
@@ -269,15 +293,32 @@ def _segmentor_config(segmentor) -> dict:
     raise ValueError("sharded MUSE runs require segmentor.config() for cache identity")
 
 
-def _effective_n_masks(n_masks: int | None, segmentor, target: BOPTargetImage) -> int | None:
-    floor = target.max_inst_count
+def _target_inst_counts(target: BOPTargetImage) -> dict[int, int]:
+    return {int(obj_id): int(count) for obj_id, count in target.inst_counts}
+
+
+def _effective_n_masks(
+    n_masks: int | None,
+    segmentor,
+    target: BOPTargetImage,
+) -> int | dict[int, int] | None:
     if n_masks is None:
         base = getattr(segmentor, "n_masks", None)
-        return max(int(base), floor) if base is not None else None
-    n = int(n_masks)
-    if n < 1:
+        if base is None:
+            return None
+        base_n = int(base)
+    else:
+        base_n = int(n_masks)
+    if base_n < 1:
         raise ValueError(f"n_masks must be >= 1 for BOP production, got {n_masks}")
-    return max(n, floor)
+    counts = _target_inst_counts(target)
+    per_class = {
+        int(c.obj.obj_id): max(base_n, counts.get(int(c.obj.obj_id), 1))
+        for c in segmentor.classes
+    }
+    if set(per_class.values()) == {base_n}:
+        return base_n
+    return dict(sorted(per_class.items()))
 
 
 def _shard_key(
@@ -348,6 +389,47 @@ def _write_muse_detections_atomic(
             os.unlink(tmp_name)
 
 
+def _read_shard_records(shard: Path, target: BOPTargetImage) -> list[dict]:
+    try:
+        payload = _read_json(shard)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"cannot resume from corrupt shard {shard}: {e}") from e
+    if not isinstance(payload, list):
+        raise ValueError(
+            f"cannot resume from corrupt shard {shard}: root must be a list"
+        )
+    out: list[dict] = []
+    for idx, rec in enumerate(payload):
+        if not isinstance(rec, dict):
+            raise ValueError(
+                f"cannot resume from corrupt shard {shard}: record {idx} "
+                "must be an object"
+            )
+        missing = {"scene_id", "image_id", "category_id"} - set(rec)
+        if missing:
+            raise ValueError(
+                f"cannot resume from corrupt shard {shard}: record {idx} "
+                f"missing {sorted(missing)}"
+            )
+        try:
+            scene_id = int(rec["scene_id"])
+            image_id = int(rec["image_id"])
+            int(rec["category_id"])
+        except (TypeError, ValueError) as e:
+            raise ValueError(
+                f"cannot resume from corrupt shard {shard}: record {idx} "
+                "has non-integer scene_id, image_id or category_id"
+            ) from e
+        if scene_id != int(target.scene_id) or image_id != int(target.im_id):
+            raise ValueError(
+                f"cannot resume from corrupt shard {shard}: record {idx} "
+                f"belongs to scene={scene_id:06d} im={image_id:06d}, "
+                f"expected scene={target.scene_id:06d} im={target.im_id:06d}"
+            )
+        out.append(dict(rec))
+    return out
+
+
 def generate_bop_muse_detections(
     *,
     bop_root: str | os.PathLike,
@@ -389,10 +471,7 @@ def generate_bop_muse_detections(
             shard = _shard_path(shard_dir, target, shard_key)
         resumed = bool(resume and shard is not None and shard.exists())
         if resumed:
-            try:
-                image_records = _read_json(shard)
-            except json.JSONDecodeError as e:
-                raise ValueError(f"cannot resume from corrupt shard {shard}: {e}") from e
+            image_records = _read_shard_records(shard, target)
             elapsed = float(image_records[0].get("time", 0.0)) if image_records else 0.0
         else:
             scene = scene_loader(bop_root, split, target.scene_id, target.im_id)
@@ -522,9 +601,13 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
     if not target_images:
         raise SystemExit(f"no BOP target images after filtering: {targets_path}")
 
-    target_obj_ids = sorted({oid for t in target_images for oid in t.obj_ids})
+    class_obj_ids = sorted(obj_filter) if obj_filter else list(
+        target_object_ids_from_targets(targets_path)
+    )
+    if not class_obj_ids:
+        raise SystemExit(f"no BOP target objects after filtering: {targets_path}")
     classes = build_muse_classes(
-        target_obj_ids,
+        class_obj_ids,
         models_info=models_info,
         models_dir=models_dir,
         template_root=args.template_root or None,
@@ -589,4 +672,5 @@ __all__ = [
     "load_bop_scene",
     "load_bop_target_images",
     "load_models_info",
+    "target_object_ids_from_targets",
 ]
