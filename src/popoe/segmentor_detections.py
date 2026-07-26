@@ -322,6 +322,18 @@ class BOPDetectionsSegmentor:
             returned `Detection.source` says which backend produced it.
         source: provenance tag for the single-file form (default: the class
             tag 'bop-detections', which preserves historical `Detection.source`).
+        size_select: optional mask-stage size arbitration for confusable
+            same-shape pairs (YCB-V clamps). ``None`` (default) keeps detector
+            scores unchanged — formal BOP headline path. ``"soft"`` multiplies
+            appearance by competitive diameter affinity; ``"nearest"`` keeps
+            only masks whose nearest CAD in ``confusable_diameters`` is the
+            query (with appearance fallback if none match, unless
+            ``size_select_fallback=False``). Needs ``scene.depth`` + ``scene.K``.
+            Complementary to registration-stage ``ChampionScorer(size_aware)``.
+        confusable_diameters: ``{obj_id: diameter_m}`` for the confusable set
+            (e.g. ``{19: 0.175, 20: 0.217}``). Required when ``size_select`` set.
+        size_select_fallback: for ``nearest``, fall back to pure appearance
+            ranking when no mask is assigned to the query (default True).
     """
 
     source = "bop-detections"
@@ -329,15 +341,30 @@ class BOPDetectionsSegmentor:
     def __init__(self, detections_json: str | None = None, topk: int = 2,
                  merge_labels: dict | None = None, iou_dedupe: float = 0.9,
                  min_pixels: int = 100, *, sources=None,
-                 source: str | None = None):
+                 source: str | None = None,
+                 size_select: str | None = None,
+                 confusable_diameters: dict | None = None,
+                 size_select_fallback: bool = True):
         if (detections_json is None) == (sources is None):
             raise ValueError("pass exactly one of detections_json or sources")
         if source is not None and not source:
             raise ValueError("source name must be non-empty")
+        if size_select not in (None, "soft", "nearest"):
+            raise ValueError(
+                f"size_select must be None/'soft'/'nearest', got {size_select!r}"
+            )
+        if size_select is not None and not confusable_diameters:
+            raise ValueError("size_select requires confusable_diameters")
         self.topk = topk
         self.merge_labels = merge_labels or {}
         self.iou_dedupe = iou_dedupe
         self.min_pixels = min_pixels
+        self.size_select = size_select
+        self.confusable_diameters = (
+            {int(k): float(v) for k, v in confusable_diameters.items()}
+            if confusable_diameters is not None else None
+        )
+        self.size_select_fallback = bool(size_select_fallback)
         self._by_img: dict = {}
         if sources is not None:
             self.sources = _coerce_sources(sources)
@@ -386,7 +413,88 @@ class BOPDetectionsSegmentor:
             dets.append(Detection(mask=m, score=float(d["score"]),
                                   bbox=_bbox_xywh_to_xyxy(d.get("bbox")),
                                   source=src))
+        if self.size_select is not None:
+            dets = self._apply_size_select(scene, obj, dets)
         return dets
+
+    def _apply_size_select(
+        self, scene: Scene, obj: ObjectModel, dets: list[Detection]
+    ) -> list[Detection]:
+        """Re-score / filter masks by measured 3D extent vs confusable diameters."""
+        if not dets:
+            return dets
+        if scene.depth is None or scene.K is None:
+            return dets
+        if self.confusable_diameters is None:
+            return dets
+        if int(obj.obj_id) not in self.confusable_diameters:
+            # Object not in the confusable set — leave scores alone.
+            return dets
+
+        from popoe.segmentor_cnos_v3 import (
+            DepthSizeGate,
+            DiameterSizeModel,
+            select_by_nearest_diameter,
+            select_by_soft_affinity,
+        )
+
+        gate = DepthSizeGate(min_pixels=1, min_points=50)
+        model = DiameterSizeModel()
+        diams = self.confusable_diameters
+        apps = [float(d.score) for d in dets]
+        exts: list = []
+        for d in dets:
+            if int(d.mask.sum()) < self.min_pixels:
+                exts.append(None)
+            else:
+                exts.append(gate.extent_3d(d.mask, scene.depth, scene.K))
+
+        if self.size_select == "soft":
+            rivals = [diams[k] for k in diams if k != int(obj.obj_id)]
+            # Re-score every candidate; keep all, sorted by size-aware score.
+            rescored = []
+            for d, app, ext in zip(dets, apps, exts):
+                if ext is None:
+                    s = 0.0
+                else:
+                    aff_q = model.affinity(ext, diams[int(obj.obj_id)])
+                    aff_sum = aff_q + sum(model.affinity(ext, r) for r in rivals)
+                    w = aff_q / aff_sum if aff_sum > 0 else 0.0
+                    s = app * w
+                rescored.append(Detection(
+                    mask=d.mask, score=float(s), bbox=d.bbox, source=d.source,
+                    descriptor=d.descriptor,
+                ))
+            rescored.sort(key=lambda x: -x.score)
+            return rescored
+
+        # nearest
+        pick = select_by_nearest_diameter(
+            apps, exts, int(obj.obj_id), diams, model,
+            fallback_appearance=self.size_select_fallback,
+        )
+        if pick is None:
+            return []
+        # Promote the selected mask to the front with its (appearance) score;
+        # demote others so multi-hyp pipelines still see them but ranked lower.
+        ordered = []
+        chosen = dets[pick.index]
+        ordered.append(Detection(
+            mask=chosen.mask, score=float(chosen.score),
+            bbox=chosen.bbox, source=chosen.source,
+            descriptor=chosen.descriptor,
+        ))
+        for i, d in enumerate(dets):
+            if i == pick.index:
+                continue
+            # Keep non-winners only when fallback path retained the full pool
+            # for multi-hypothesis pose; mark them with a tiny score so a
+            # single-mask consumer takes the nearest winner.
+            ordered.append(Detection(
+                mask=d.mask, score=float(d.score) * 1e-3,
+                bbox=d.bbox, source=d.source, descriptor=d.descriptor,
+            ))
+        return ordered
 
 
 # Generic alias for real-scene code. Keep the historical BOP names above because

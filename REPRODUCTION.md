@@ -244,9 +244,36 @@ uv run python examples/bop_eval.py \
   --objs 19,20 --merge none --topk 2 --grid 32 --solver o3d \
   --render-backend nvdiffrast \
   --out "$OUT/ab_clamp_nopool.csv" --cache "$OUT/cache_clamp"
+
+# lab path (NOT headline): mask-stage nearest size_select on top of merge
+# (opt-in; default --size-select none). Needs depth on the BOP Scene.
+uv run python examples/bop_eval.py \
+  --bop "$BOP/ycbv" \
+  --detections "$DET/cnos/cnos-fastsam_ycbv-test.json" \
+  --objs 19,20 --merge ycbv --size-select nearest --topk 2 --grid 32 \
+  --render-backend nvdiffrast \
+  --out "$OUT/ab_clamp_size_select.csv" --cache "$OUT/cache_clamp"
+# equivalent library helper: popoe.freeze.recipes.ycbv_lab_segmentor(...)
 ```
 
-- **Est. GPU**: ~1–2 h (300 targets × 2 configs) on 4090.
+- **Est. GPU**: ~1–2 h (300 targets × 2 configs) on 4090; +1 h for size-select lab run.
+- **Offline (LOCAL-CPU)** dual-CAD / metric_fit selection A/B on an existing
+  cand dump (no re-encode): `scripts/eval_dual_cad_metric_fit_ab.py` — see
+  `outputs/dual_cad_metric_fit_ab/` (2026-07-26: dual assignment lifts scene-48
+  obj20 ADD-S@0.1d 0.373→0.747 vs independent `metric_fit`; **AR(2/3) on
+  obj19+20: dual 0.800 / no_mf 0.777 / with_mf 0.725**).
+- **Live dual-CAD** (GPU, score-affecting, default off):
+
+```bash
+uv run python examples/bop_eval.py \
+  --bop "$BOP/ycbv" --detections "$DET/cnos/cnos-fastsam_ycbv-test.json" \
+  --objs 19,20 --merge ycbv --dual-assign --topk 2 --grid 32 \
+  --render-backend nvdiffrast \
+  --out "$OUT/ab_clamp_dual.csv" --cand-csv "$OUT/ab_clamp_dual_cands.csv" \
+  --cache "$OUT/cache_clamp"
+```
+
+  Library: `popoe.confusable_select`. Mask-stage companion: `--size-select nearest`.
 
 ### C4 — Multi-mask union LM-O (LOCAL-CPU smoke + GPU-POD full)
 

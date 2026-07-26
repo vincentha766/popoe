@@ -75,6 +75,49 @@ def _pf(pts, feats):
     return PointFeatures(pts=pts, feats=feats)
 
 
+def test_size_select_nearest_prefers_matching_extent(tmp_path, masks):
+    """Mask-stage nearest-diameter should flip a high-score wrong-size mask."""
+    from popoe.segmentor_detections import BOPDetectionsSegmentor
+    from popoe.segmentor_cnos_v3 import DepthSizeGate
+
+    # Synthetic depth: constant Z so extent ≈ 3D bbox diagonal of mask.
+    H, W = 48, 64
+    K = np.array([[200.0, 0.0, 32.0],
+                  [0.0, 200.0, 24.0],
+                  [0.0, 0.0, 1.0]])
+    depth = np.full((H, W), 1.0, np.float32)
+    # Small mask (left) vs large mask (right)
+    small = np.zeros((H, W), bool); small[18:30, 10:22] = True
+    large = np.zeros((H, W), bool); large[8:40, 20:55] = True
+    dets = [_det(1, 7, 19, 0.95, large), _det(1, 7, 19, 0.50, small)]
+    p = tmp_path / "d.json"; p.write_text(json.dumps(dets))
+
+    scene = Scene(rgb=np.zeros((H, W, 3), np.uint8), depth=depth, K=K,
+                  scene_id=1, im_id=7)
+    diams = {19: 0.08, 20: 0.20}  # small→19, large→20 by construction
+    # Sanity: extents separate under the two diameters.
+    gate = DepthSizeGate(min_pixels=1, min_points=10)
+    e_s = gate.extent_3d(small, depth, K)
+    e_l = gate.extent_3d(large, depth, K)
+    assert e_s is not None and e_l is not None and e_s < e_l
+
+    plain = BOPDetectionsSegmentor(
+        str(p), topk=2, merge_labels={19: [19, 20]}, min_pixels=1
+    )
+    out_plain = plain.segment(scene, ObjectModel(19, "x", diameter=diams[19]))
+    assert out_plain[0].score == pytest.approx(0.95)  # appearance winner = large
+
+    sized = BOPDetectionsSegmentor(
+        str(p), topk=2, merge_labels={19: [19, 20]}, min_pixels=1,
+        size_select="nearest", confusable_diameters=diams,
+    )
+    out = sized.segment(scene, ObjectModel(19, "x", diameter=diams[19]))
+    assert len(out) >= 1
+    # Winner should be the small mask (appearance 0.50), not the large one.
+    assert out[0].score == pytest.approx(0.50)
+    assert int(out[0].mask.sum()) == int(small.sum())
+
+
 def test_champion_scorer_size_aware_prefers_true_size():
     """Same shape registered perfectly in a scale-blind sense: the size-aware
     term must separate right-size from a 25%-scaled clone of the target."""

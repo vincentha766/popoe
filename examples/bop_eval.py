@@ -45,8 +45,11 @@ from popoe.adapters import (BestScoreSelector, resolve_resume,
                             select_top_instances)
 from popoe.cache import StageCache, file_fingerprint, fingerprint
 from popoe.interfaces import ObjectModel, PointFeatures, PoseHypothesis, Scene
-from popoe.freeze.recipes import (WEIGHTS, YCBV_MERGE_LABELS, best_encoders,
-                           best_segmentor, scale_vis, stages_for_object)
+from popoe.confusable_select import dual_assign_hyps, partner_id
+from popoe.freeze.recipes import (
+    WEIGHTS, YCBV_CLAMP_DIAMETERS_M, YCBV_MERGE_LABELS,
+    best_encoders, best_segmentor, scale_vis, stages_for_object,
+)
 
 IDN = " ".join(f"{v:.6f}" for v in np.eye(3).flatten())
 ZT = "0.0 0.0 0.0"
@@ -86,18 +89,29 @@ def floored_topk(user_topk, max_inst):
     return max(user_topk, max_inst)
 
 
-def resolve_segmentor(detections, sources, topk, merge_labels):
+def resolve_segmentor(detections, sources, topk, merge_labels,
+                      size_select=None, confusable_diameters=None,
+                      size_select_fallback=True):
     """Build the detections segmentor from the mutually-exclusive --detections /
     --sources knobs (exactly one required).
 
     --sources is a comma-separated ``name=path`` list unioned as named backends
     (e.g. ``cnos=/a.json,nids=/b.json``). ``topk`` is the per-(source, label)
-    bucket cap and is passed straight through (already floored by the caller)."""
+    bucket cap and is passed straight through (already floored by the caller).
+
+    ``size_select`` is opt-in (default None = formal path). When set, pass
+    confusable diameters for the merged pair (YCB-V clamps)."""
     validate_source_args(detections, sources)
+    kw = dict(
+        topk=topk,
+        merge_labels=merge_labels,
+        size_select=size_select,
+        confusable_diameters=confusable_diameters,
+        size_select_fallback=size_select_fallback,
+    )
     if sources:
-        return best_segmentor(sources=_parse_sources_arg(sources), topk=topk,
-                              merge_labels=merge_labels)
-    return best_segmentor(detections, topk=topk, merge_labels=merge_labels)
+        return best_segmentor(sources=_parse_sources_arg(sources), **kw)
+    return best_segmentor(detections, **kw)
 
 
 def main():
@@ -152,6 +166,23 @@ def main():
                          "config (as with --use-s-coarse/--merge/--weights).")
     ap.add_argument("--merge", default="ycbv",
                     help="'ycbv' for the clamp pair, 'none', or '19:20,...'")
+    ap.add_argument("--size-select", default="none",
+                    choices=["none", "soft", "nearest"],
+                    help="opt-in mask-stage size arbitration for confusable "
+                         "pairs (YCB-V clamps). 'none' (default) is the formal "
+                         "headline path; 'nearest'/'soft' re-rank pooled masks "
+                         "by depth extent vs CAD diameters (needs scene depth). "
+                         "Score-affecting — use a FRESH --out / --cand-csv.")
+    ap.add_argument("--size-select-no-fallback", action="store_true",
+                    help="with --size-select nearest: do not fall back to pure "
+                         "appearance when no mask matches the query diameter")
+    ap.add_argument("--dual-assign", action="store_true",
+                    help="for confusable merge pairs co-visible in one image, "
+                         "assign each cand index to the CAD with higher "
+                         "metric_fit before writing the champion (multi-object "
+                         "dual-CAD). Requires --merge with a pair (e.g. ycbv). "
+                         "Score-affecting — use a FRESH --out / --cand-csv. "
+                         "YCB-V inst_count==1 only.")
     ap.add_argument("--render-backend", default="nvdiffrast",
                     choices=["nvdiffrast", "trimesh", "auto"],
                     help="CAD renderer for query features. Default demands the "
@@ -180,6 +211,24 @@ def main():
             ids = [int(x) for x in grp.split(":")]
             for a in ids:
                 merge[a] = ids
+    size_select = None if args.size_select == "none" else args.size_select
+    confusable_diameters = None
+    if size_select is not None:
+        # Diameters for every id that participates in a merge group; fall back
+        # to the known YCB-V clamp table (lab recipe).
+        confusable_diameters = dict(YCBV_CLAMP_DIAMETERS_M)
+        if merge:
+            for ids in merge.values():
+                for oid in ids:
+                    confusable_diameters.setdefault(
+                        int(oid), YCBV_CLAMP_DIAMETERS_M.get(int(oid), 0.0))
+            confusable_diameters = {
+                k: v for k, v in confusable_diameters.items() if v > 0
+            }
+        if not confusable_diameters:
+            raise SystemExit(
+                "--size-select needs confusable diameters; use --merge ycbv "
+                "or extend YCBV_CLAMP_DIAMETERS_M")
     if args.cache:
         os.makedirs(args.cache, exist_ok=True)
 
@@ -236,9 +285,21 @@ def main():
     # Detection top-K floored at the dataset's max inst_count (see floored_topk);
     # for a union the floor holds per (source, label) bucket.
     max_inst = max(target_counts.values(), default=1)
-    segmentor = resolve_segmentor(args.detections, args.sources,
-                                  topk=floored_topk(args.topk, max_inst),
-                                  merge_labels=merge)
+    segmentor = resolve_segmentor(
+        args.detections, args.sources,
+        topk=floored_topk(args.topk, max_inst),
+        merge_labels=merge,
+        size_select=size_select,
+        confusable_diameters=confusable_diameters,
+        size_select_fallback=not args.size_select_no_fallback,
+    )
+    if size_select:
+        print(f"size_select={size_select} diameters={confusable_diameters}",
+              flush=True)
+    if args.dual_assign:
+        if not merge:
+            raise SystemExit("--dual-assign requires --merge with a confusable pair")
+        print(f"dual_assign=ON merge={merge}", flush=True)
     q_enc, t_enc = best_encoders(target_grid=args.grid,
                                  render_backend=args.render_backend)
     selector = BestScoreSelector()
@@ -401,6 +462,10 @@ def main():
                           scene_id=scene_id, im_id=im_id)
             scene_fp = fingerprint(rgb, depth, K) if cache else None
 
+            # Buffer per-object hyp maps so --dual-assign can re-pick after
+            # both confusable CADs have registered the same cand indices.
+            buffered: dict = {}  # obj_id -> (inst_count, hyps_by_det, elapsed)
+
             for obj_id, inst_count in pending:
                 t_start = time.time()
                 obj, q, (solver, refiner, scorer) = query_cache[obj_id]
@@ -448,19 +513,27 @@ def main():
                         except Exception as e:
                             note_failure("solve/refine/score", obj_id, e)
                             continue
-                champs = select_top_instances(hyps_by_det, selector, inst_count)
+                elapsed = f"{time.time()-t_start:.3f}"
+                buffered[obj_id] = (inst_count, hyps_by_det, elapsed)
+
+            for obj_id, (inst_count, hyps_by_det, elapsed) in buffered.items():
                 # THE COMPLETION INVARIANT: a finished target emits EXACTLY
                 # inst_count rows — champions first, zero rows (score 0,
                 # identity R) padding the rest. Resume can then classify by
-                # row COUNT alone; inferring completion from row contents
-                # cannot work (a legitimate 2-champion inst_count=3 target is
-                # indistinguishable from a crash after two rows, and a real
-                # score can format as "0.000000"). One row per INSTANCE is
-                # BOP-standard; metrics/ar.py + vsd.py assume one row per
-                # target and guard against multi-instance CSVs.
-                # inst_count==1: one champion row or one zero row — identical
-                # to the historical format.
-                elapsed = f"{time.time()-t_start:.3f}"
+                # row COUNT alone. inst_count==1: one champion or one zero.
+                if args.dual_assign and inst_count == 1:
+                    pid = partner_id(obj_id, merge)
+                    if pid is not None and pid in buffered:
+                        best = dual_assign_hyps(
+                            hyps_by_det, buffered[pid][1], use_metric_fit=True
+                        )
+                        champs = [best] if best is not None else []
+                    else:
+                        champs = select_top_instances(
+                            hyps_by_det, selector, inst_count)
+                else:
+                    champs = select_top_instances(
+                        hyps_by_det, selector, inst_count)
                 for best in champs:
                     wr.writerow([scene_id, im_id, obj_id,
                                  f"{best.score:.6f}",

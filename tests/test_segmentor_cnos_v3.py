@@ -6,7 +6,10 @@ from popoe.segmentor import SegmentorUnavailable
 from popoe.segmentor_cnos_v3 import (
     CNOSv3Segmentor,
     DepthSizeGate,
+    DiameterSizeModel,
     PatchForegroundScorer,
+    select_by_nearest_diameter,
+    select_by_soft_affinity,
 )
 
 
@@ -117,3 +120,68 @@ def test_cnos_v3_reuses_template_bank_scorer_when_not_explicit():
 def test_cnos_v3_requires_explicit_heavy_components():
     with pytest.raises(SegmentorUnavailable, match="mask proposer"):
         CNOSv3Segmentor().segment(_scene(), ObjectModel(9, "x", diameter=0.25))
+
+
+def test_diameter_size_model_prefers_matching_extent():
+    model = DiameterSizeModel()
+    d19, d20 = 0.175, 0.217
+    # Small mask should prefer 19; large mask prefer 20.
+    assert model.nearest_obj_id(0.16, {19: d19, 20: d20}) == 19
+    assert model.nearest_obj_id(0.23, {19: d19, 20: d20}) == 20
+    # Soft affinity ranks the correct diameter higher.
+    assert model.affinity(0.16, d19) > model.affinity(0.16, d20)
+    assert model.affinity(0.23, d20) > model.affinity(0.23, d19)
+    # Perfect match → affinity 1; large mismatch → near 0.
+    assert model.affinity(d19, d19) == pytest.approx(1.0)
+    assert model.affinity(0.05, d19) < 0.05
+
+
+def test_select_by_soft_affinity_breaks_appearance_swap():
+    # Appearance prefers the large confuser (index 0); size prefers small (1).
+    # Raw Gaussian affinity is not always enough against a large score gap —
+    # competitive (softmax) share vs the partner diameter is.
+    appearances = [0.90, 0.55, 0.20]
+    extents = [0.23, 0.16, None]
+    d19, d20 = 0.175, 0.217
+    pick = select_by_soft_affinity(
+        appearances, extents, d19, rival_diameters=[d20]
+    )
+    assert pick is not None
+    assert pick.index == 1
+    # Missing extent alone should not win when affinity is zeroed.
+    pick2 = select_by_soft_affinity(
+        [0.99, 0.50], [None, 0.16], d19, missing_extent_affinity=0.0,
+        rival_diameters=[d20],
+    )
+    assert pick2 is not None
+    assert pick2.index == 1
+
+
+def test_select_by_nearest_diameter_assigns_and_fallback():
+    diameters = {19: 0.175, 20: 0.217}
+    appearances = [0.90, 0.55]
+    extents = [0.23, 0.16]
+    # Query 19 → keep only nearest-to-19 mask (index 1).
+    pick = select_by_nearest_diameter(
+        appearances, extents, 19, diameters, fallback_appearance=False
+    )
+    assert pick is not None
+    assert pick.index == 1
+    assert pick.assigned_obj_id == 19
+    # Query 20 → large mask.
+    pick20 = select_by_nearest_diameter(
+        appearances, extents, 20, diameters, fallback_appearance=False
+    )
+    assert pick20 is not None
+    assert pick20.index == 0
+    # No matching extent → fallback to appearance top-1.
+    pick_fb = select_by_nearest_diameter(
+        [0.8, 0.2], [None, None], 19, diameters, fallback_appearance=True
+    )
+    assert pick_fb is not None
+    assert pick_fb.index == 0
+    assert pick_fb.assigned_obj_id is None
+    # Strict empty.
+    assert select_by_nearest_diameter(
+        [0.8], [None], 19, diameters, fallback_appearance=False
+    ) is None

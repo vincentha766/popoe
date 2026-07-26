@@ -14,6 +14,7 @@ are lazy and optional.
 from __future__ import annotations
 
 import glob
+import math
 import os
 from collections.abc import Mapping as MappingABC
 from dataclasses import dataclass
@@ -132,6 +133,164 @@ class DepthSizeGate:
         lo = self.min_extent_ratio * float(obj.diameter)
         hi = self.max_extent_ratio * float(obj.diameter)
         return lo <= extent <= hi, extent
+
+
+@dataclass(frozen=True)
+class DiameterSizeModel:
+    """Compare a measured 3D extent to one or more CAD diameters.
+
+    The band gate in :class:`DepthSizeGate` is a *one-sided* filter: a small
+    confuser still sits inside a larger object's ``[0.25, 1.1]×diam`` band, so
+    it cannot disambiguate YCB-V clamps when the query is the larger one.
+    This model instead scores **relative** size fit (log-ratio), so each mask
+    prefers the diameter it is nearest to — the missing half of size-aware
+    mask selection. Registration-stage bidirectional ``metric_fit``
+    (:class:`popoe.scoring.ChampionScorer`) remains complementary: it needs a
+    pose; this runs on depth alone.
+    """
+
+    # ~0.2 separates YCB-V clamp diameters under competitive softmax; 0.35 is too soft
+    # to overturn large wrong-label CNOS score gaps (measured in size-select A/B).
+    sigma_log: float = 0.20
+
+    def log_ratio_error(self, extent: float, diameter: float) -> float:
+        e = max(float(extent), 1e-9)
+        d = max(float(diameter), 1e-9)
+        return abs(math.log(e / d))
+
+    def relative_error(self, extent: float, diameter: float) -> float:
+        d = max(float(diameter), 1e-9)
+        return abs(float(extent) - d) / d
+
+    def affinity(self, extent: float, diameter: float) -> float:
+        """Soft size weight in ``(0, 1]``; 1 when extent == diameter."""
+        err = self.log_ratio_error(extent, diameter)
+        sig = max(float(self.sigma_log), 1e-6)
+        return float(math.exp(-0.5 * (err / sig) ** 2))
+
+    def nearest_obj_id(self, extent: float,
+                      diameters: Mapping[int, float]) -> int:
+        if not diameters:
+            raise ValueError("diameters mapping is empty")
+        return min(
+            diameters.keys(),
+            key=lambda oid: self.log_ratio_error(extent, diameters[oid]),
+        )
+
+    def soft_score(self, appearance: float, extent: Optional[float],
+                   diameter: float, *,
+                   missing_extent_affinity: float = 0.0) -> float:
+        """Appearance × size affinity; missing extent → ``missing_extent_affinity``."""
+        if extent is None:
+            return float(appearance) * float(missing_extent_affinity)
+        return float(appearance) * self.affinity(extent, diameter)
+
+
+@dataclass(frozen=True)
+class SizeSelectResult:
+    """One selected candidate after size-aware ranking."""
+    index: int
+    appearance: float
+    extent: Optional[float]
+    size_score: float
+    assigned_obj_id: Optional[int]
+
+
+def select_by_soft_affinity(
+    appearances: Sequence[float],
+    extents: Sequence[Optional[float]],
+    diameter: float,
+    model: Optional[DiameterSizeModel] = None,
+    *,
+    missing_extent_affinity: float = 0.0,
+    rival_diameters: Optional[Sequence[float]] = None,
+) -> Optional[SizeSelectResult]:
+    """Pick argmax_i appearance_i × size weight for ``diameter``.
+
+    If ``rival_diameters`` is set (other CADs in a confusable set), the size
+    weight is the *softmax share* of affinity for the query diameter among
+    {query}∪rivals. That competes sizes fairly when appearance margins are
+    large (band/Gaussian alone often cannot overturn a strong wrong-label
+    CNOS score). Without rivals, weight is the raw Gaussian affinity.
+    """
+    if len(appearances) != len(extents):
+        raise ValueError("appearances and extents length mismatch")
+    if not appearances:
+        return None
+    model = model or DiameterSizeModel()
+    rivals = list(rival_diameters or ())
+    best_i = -1
+    best_s = -1.0
+    for i, (app, ext) in enumerate(zip(appearances, extents)):
+        if ext is None:
+            w = float(missing_extent_affinity)
+        elif rivals:
+            aff_q = model.affinity(ext, diameter)
+            aff_sum = aff_q + sum(model.affinity(ext, rd) for rd in rivals)
+            w = aff_q / aff_sum if aff_sum > 0 else 0.0
+        else:
+            w = model.affinity(ext, diameter)
+        s = float(app) * w
+        if s > best_s:
+            best_s = s
+            best_i = i
+    if best_i < 0:
+        return None
+    return SizeSelectResult(
+        index=best_i,
+        appearance=float(appearances[best_i]),
+        extent=extents[best_i],
+        size_score=float(best_s),
+        assigned_obj_id=None,
+    )
+
+
+def select_by_nearest_diameter(
+    appearances: Sequence[float],
+    extents: Sequence[Optional[float]],
+    query_obj_id: int,
+    diameters: Mapping[int, float],
+    model: Optional[DiameterSizeModel] = None,
+    *,
+    fallback_appearance: bool = True,
+) -> Optional[SizeSelectResult]:
+    """Keep only masks whose nearest CAD diameter is ``query_obj_id``, then top appearance.
+
+    If none remain and ``fallback_appearance`` is True, fall back to pure
+    appearance top-1 (same practical default as band-gate empty handling).
+    """
+    if len(appearances) != len(extents):
+        raise ValueError("appearances and extents length mismatch")
+    if not appearances:
+        return None
+    if query_obj_id not in diameters:
+        raise KeyError(f"query_obj_id {query_obj_id} missing from diameters")
+    model = model or DiameterSizeModel()
+    kept: list[tuple[int, float, float]] = []  # i, appearance, extent
+    for i, (app, ext) in enumerate(zip(appearances, extents)):
+        if ext is None:
+            continue
+        if model.nearest_obj_id(ext, diameters) == query_obj_id:
+            kept.append((i, float(app), float(ext)))
+    if kept:
+        i, app, ext = max(kept, key=lambda t: t[1])
+        return SizeSelectResult(
+            index=i,
+            appearance=app,
+            extent=ext,
+            size_score=app,
+            assigned_obj_id=query_obj_id,
+        )
+    if not fallback_appearance:
+        return None
+    i = max(range(len(appearances)), key=lambda j: float(appearances[j]))
+    return SizeSelectResult(
+        index=i,
+        appearance=float(appearances[i]),
+        extent=extents[i],
+        size_score=float(appearances[i]),
+        assigned_obj_id=None,
+    )
 
 
 class PatchForegroundScorer:
@@ -364,9 +523,13 @@ class CNOSv3Segmentor:
 __all__ = [
     "CNOSv3Segmentor",
     "DepthSizeGate",
+    "DiameterSizeModel",
     "DinoV2ForegroundPatchExtractor",
     "PatchForegroundScorer",
     "SAM2AMGMaskProposer",
+    "SizeSelectResult",
     "TemplateDirPatchBank",
+    "select_by_nearest_diameter",
+    "select_by_soft_affinity",
     "square_crop",
 ]
