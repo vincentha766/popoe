@@ -109,10 +109,12 @@ class set and `topk`; `--resume` therefore requires `--shard-dir` and will not
 reuse shards from a different smoke/full configuration. `--target-object-only`
 only filters the final combined file. Leave that flag off for leaderboard-style
 segmentation AP, where wrong-category detections on target images should remain
-false positives. For sensor-named BOP test splits such as `test_primesense`, the
-default targets path falls back to `test_targets_bop19.json`. The loader expects
-the usual BOP RGB-D PNG layout (`rgb/` + `depth/`); ITODD's gray `.tif` split
-needs a dataset-specific loader before this CLI can cover it.
+false positives. `--no-time` strips runtime from the combined output only;
+shards still keep time so resumed default runs can preserve it. For
+sensor-named BOP test splits such as `test_primesense`, the default targets path
+falls back to `test_targets_bop19.json`. The loader expects the usual BOP RGB-D
+PNG layout (`rgb/` + `depth/`); ITODD's gray `.tif` split needs a
+dataset-specific loader before this CLI can cover it.
 
 ## Library Use
 

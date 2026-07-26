@@ -1,4 +1,5 @@
 import json
+import stat
 from pathlib import Path
 
 import numpy as np
@@ -7,6 +8,7 @@ import pytest
 from popoe.bop_muse import (
     BOPTargetImage,
     _main,
+    _write_muse_detections_atomic,
     bop_frame_manifest,
     build_muse_classes,
     default_targets_path,
@@ -108,9 +110,17 @@ def test_load_bop_target_images_uses_row_count_when_inst_count_is_missing(tmp_pa
 def test_default_targets_path_falls_back_for_bop_test_sensor_splits(tmp_path):
     fallback = tmp_path / "test_targets_bop19.json"
     fallback.write_text("[]")
+    split_specific = tmp_path / "test_primesense_targets_bop19.json"
+    split_specific.write_text("[]")
 
-    assert default_targets_path(tmp_path, "test_primesense") == fallback
+    assert default_targets_path(tmp_path, "test_primesense") == split_specific
     assert default_targets_path(tmp_path, "test") == fallback
+    split_specific.unlink()
+    assert default_targets_path(tmp_path, "test_primesense") == fallback
+    assert (
+        default_targets_path(tmp_path, "val_primesense")
+        == tmp_path / "val_primesense_targets_bop19.json"
+    )
 
 
 def test_bop_frame_manifest_converts_depth_scale_to_metres(tmp_path):
@@ -373,7 +383,7 @@ def test_resume_default_path_keeps_stored_time(tmp_path):
     targets = [BOPTargetImage(scene_id=1, im_id=1, obj_ids=(9,))]
     shard_dir = tmp_path / "shards"
 
-    generate_bop_muse_detections(
+    first = generate_bop_muse_detections(
         bop_root="/unused",
         split="test",
         targets=targets,
@@ -397,6 +407,29 @@ def test_resume_default_path_keeps_stored_time(tmp_path):
 
     assert resumed
     assert all("time" in rec and rec["time"] >= 0.0 for rec in resumed)
+    assert [rec["time"] for rec in resumed] == [rec["time"] for rec in first]
+
+
+def test_atomic_detections_write_validates_before_replace_and_preserves_mode(tmp_path):
+    out = tmp_path / "nested" / "detections.json"
+    out.parent.mkdir()
+    out.write_text("old")
+    out.chmod(0o644)
+
+    with pytest.raises(RuntimeError, match="bad output"):
+        _write_muse_detections_atomic(
+            [{"source": MUSE_SOURCE}],
+            out,
+            validate=lambda _path: (_ for _ in ()).throw(RuntimeError("bad output")),
+        )
+
+    assert out.read_text() == "old"
+    assert not list(out.parent.glob("*.tmp"))
+
+    _write_muse_detections_atomic([{"source": MUSE_SOURCE}], out)
+
+    assert json.loads(out.read_text()) == [{"source": MUSE_SOURCE}]
+    assert stat.S_IMODE(out.stat().st_mode) == 0o644
 
 
 def test_resume_reports_corrupt_shard_path(tmp_path):

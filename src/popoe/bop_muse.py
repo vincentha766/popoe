@@ -335,6 +335,13 @@ def _write_muse_detections_atomic(
         write_muse_detections(records, tmp_name)
         if validate is not None:
             validate(tmp_name)
+        if output_json.exists():
+            mode = output_json.stat().st_mode & 0o666
+        else:
+            old_umask = os.umask(0)
+            os.umask(old_umask)
+            mode = 0o666 & ~old_umask
+        os.chmod(tmp_name, mode)
         os.replace(tmp_name, output_json)
     finally:
         if os.path.exists(tmp_name):
@@ -461,7 +468,8 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     ap.add_argument("--topk", type=int, default=2,
                     help="masks kept per class per image")
     ap.add_argument("--no-time", action="store_true",
-                    help="do not stamp BOP per-detection runtime")
+                    help="omit BOP per-detection runtime from the combined output; "
+                         "shards still keep time for resume")
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--gdino", default=DEFAULT_GDINO_MODEL)
     ap.add_argument("--prompt", default=DEFAULT_PROMPT)
