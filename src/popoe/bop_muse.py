@@ -523,10 +523,10 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                     help="class-token similarity in S_abs")
     ap.add_argument("--patch-sim", default="tanimoto", choices=("cosine", "tanimoto"),
                     help="GeM patch similarity (paper Eqs. 2–3 write cosine)")
-    ap.add_argument("--mask-rgb", action="store_true",
-                    help="zero RGB outside mask before DINOv2 (paper: object region only)")
-    ap.add_argument("--gem-tokens", default="fg", choices=("fg", "all"),
-                    help="GeM over foreground patches only, or all patch tokens")
+    ap.add_argument("--mask-rgb", action=argparse.BooleanOptionalAction, default=True,
+                    help="zero RGB outside mask before DINOv2 (default on; G3)")
+    ap.add_argument("--gem-tokens", default="all", choices=("fg", "all"),
+                    help="GeM token set (default all; historical was fg-only)")
     ap.add_argument("--allow-single-class", action="store_true")
     return ap.parse_args(argv)
 

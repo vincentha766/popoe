@@ -301,3 +301,21 @@ Residual ~0.08 may be templates / GD thresholds / SAM2 cascade details /
 αβτγ fine-tune. **Recommend promoting `--mask-rgb` (and likely
 `--gem-tokens all`) as the new muse-repro default** after a YCB-V
 confirm run.
+
+## G3 YCB-V confirm + default promotion (2026-07-26)
+
+Same knobs as LMO G3 (`--mask-rgb --gem-tokens all`), full YCB-V test
+(900 images, 21 classes). Artefacts:
+`outputs/g3_muse_ycbv_mask_rgb_20260726/`.
+
+| split | official AP | default (pre-G3) | **G3 mask_rgb+gem_all** |
+|---|---:|---:|---:|
+| LM-O | 0.471 | 0.228 | **0.388** |
+| YCB-V | 0.690 | 0.326 | **0.684** |
+
+YCB-V is essentially **parity with official** (−0.006). LMO residual
+~0.08 remains (templates / cascade / ranker).
+
+**Default change (this commit):** `build_muse_segmentor` and CLIs now default
+to `mask_rgb=True`, `gem_tokens="all"`. Opt out with `--no-mask-rgb` /
+`--gem-tokens fg` for the historical recipe.
