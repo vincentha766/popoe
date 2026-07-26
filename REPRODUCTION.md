@@ -24,6 +24,12 @@ entrypoints, under the dual-disclosure discipline of `../gedi/EXPERIMENTS.md`
 
 ## Headline ledger
 
+> **2026-07-26 pipeline verify**: frozen popoe commit **`75553a1`** (post PR #3/#4/#5/#6).  
+> LM-O headline (#2) **RUNNING** on pod `wrmy8k0thtxjq6` →  
+> `/workspace/results/pipeline_verify_20260726/parity_lmo_g32_union.csv`.  
+> YCB-V (#1) not started (balance). Seg-AP ledger section below is filled from offline AP run.
+
+
 | # | Experiment | Archive number (source) | popoe entrypoint | Class | Reproduced | popoe commit / pod / date | Status |
 |---|---|---|---|---|---|---|---|
 | 1 | YCB-V full BOP AR | **0.7668** — `score_rules_ycbvg32m`; recipe: CNOS-FastSAM TOPK2 + gripper label pooling + grid-32 + O3D + fit×s_feat_1(×metric) | `examples/bop_eval.py --bop $BOP/ycbv --detections data/detections/cnos/cnos-fastsam_ycbv-test.json --merge ycbv --topk 2 --grid 32 --solver o3d --weights 1.0,0.7,0.5,0.3,0.2 --render-backend nvdiffrast --out … --cache … --cand-csv …` (full cmd → Run plan #1) | **GPU-POD** | — | — | ☐ |
