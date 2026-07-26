@@ -243,6 +243,38 @@ class Segmentor(Protocol):
 
 
 @runtime_checkable
+class PointDescriptor(Protocol):
+    """Per-point 3D geometric descriptor — the encoders' geometric branch.
+
+    GeDi is the FreeZe default (`popoe.freeze.feature_extractor.load_gedi`);
+    FPFH (`popoe.descriptors.FPFHDescriptor`) is the hand-crafted control and
+    dGeDi the fast learned one. Both encoders call this and nothing else, so a
+    backbone swap is one env var (POPOE_GEOM_BACKBONE).
+
+    Contract:
+        pts:  (N, 3) keypoints to describe. Torch tensor or numpy array.
+        pcd:  (M, 3) support cloud the neighbourhoods are drawn from. At both
+              live call sites pts is a subset of pcd.
+        Both arrive already scaled by the CanonFrame (largest object extent
+        ~= 1.0), so every radius parameter is in canonical units — that is
+        what makes GeDi's r_lrf and FPFH's radii directly comparable, and it
+        is the invariant a new backbone must respect to be measured fairly.
+        returns: (N, D) float32. Rows that could not be described are NaN, the
+              invalid convention FeatureFusion.fuse expects. D may differ per
+              backbone (GeDi 64, FPFH 66): fusion matches the visual PCA dim
+              to it, so nothing downstream should hard-code a value.
+
+    An implementation MAY additionally accept a `role` keyword ("query" = CAD
+    model sampled all around, "target" = single-view depth cloud) when the two
+    sides need different treatment — FPFH does, because a normal's sign is
+    part of its descriptor. Call through `popoe.descriptors.describe()`, which
+    passes the role only to backbones whose signature accepts it, so
+    role-blind ones (GeDi, dGeDi) keep the two-argument form.
+    """
+    def compute(self, pts, pcd) -> np.ndarray: ...
+
+
+@runtime_checkable
 class FeatureFusion(Protocol):
     """Combine per-point visual and geometric features into one descriptor.
     Reference impl: popoe.freeze.fusion.DinoGeDiFusion. Swap for concat-only,
