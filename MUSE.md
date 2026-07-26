@@ -253,3 +253,21 @@ official gap (Δ ≈ −0.004 vs gate-on, noise-level). Next levers: **G2**
 **G2** patch_sim cosine (paper eqs) vs Tanimoto, then **G3** GD/SAM2 cascade.
 Keep the gate available for real-robot confuser filtering; it is not the
 BOP AP bottleneck.
+
+## G2 result (2026-07-26) — patch_sim cosine (paper Eqs. 2–3)
+
+LM-O full split, topk=3, gate **on** (default), `class_sim=cosine`,
+`patch_sim=cosine`. Code @ `0a86752`. Pod reuse `ctxs25f2eczigt`.
+Artefacts: `outputs/g2_muse_patch_sim_20260726/`.
+
+| condition | AP | AP50 | AP75 |
+|---|---:|---:|---:|
+| official `muse` | **0.471** | — | — |
+| default (cos cls + **Tanimoto** GeM) | **0.228** | 0.377 | 0.259 |
+| G1 gate off + default sim | 0.224 | 0.376 | 0.243 |
+| **G2 cos cls + cos GeM** (paper eqs) | **0.219** | 0.362 | 0.248 |
+
+**Conclusion:** switching patch similarity to cosine (literal paper
+equations) does **not** close the official gap; slightly worse than
+Tanimoto(GeM). Gap is elsewhere — GD/SAM2 cascade, templates, fg GeM
+masking, hyperparameters, or unpublished submission details (**G3+**).
