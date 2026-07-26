@@ -1,6 +1,6 @@
 # popoe — Pipeline Of Pose Estimation
 
-A modular, **training-free 6-DoF object pose** framework, built for and
+A modular **6-DoF object pose** framework, built for and
 evaluated on the **BOP benchmark**. The pipeline is broken into swappable stages
 behind small `Protocol` contracts, so **every step can grow its own method** —
 add a segmentor, a feature backbone, a pose solver, a scorer, without touching

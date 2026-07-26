@@ -1,6 +1,6 @@
 # Architecture
 
-popoe factors a training-free 6-DoF pose pipeline into **swappable stages**, each
+popoe factors a 6-DoF pose pipeline into **swappable stages**, each
 a `typing.Protocol` in [src/popoe/interfaces.py](src/popoe/interfaces.py). An
 implementation only needs matching method signatures — no base class, no
 registration — so stages stay decoupled and any one can be re-implemented alone.
