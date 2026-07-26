@@ -24,6 +24,9 @@ dependencies = ["numpy", "scikit-learn"]
 # Note: GeDi (POPOE_GEDI_PATH), nvdiffrast and SAM2 are external and NOT on PyPI —
 # see README "External dependencies".
 reference = ["torch", "torchvision", "open3d", "opencv-python", "trimesh", "Pillow", "scipy", "pycocotools"]
+# The MUSE reimplementation (segmentor_muse): Grounding DINO comes from
+# transformers, which nothing else here needs. SAM2 is external — see above.
+muse = ["torch", "transformers", "Pillow", "pycocotools"]
 dev = ["pytest", "pandas"]   # pandas: examples/rule_replay.py offline rule sweep
 
 [project.urls]
@@ -31,6 +34,7 @@ Documentation = "https://github.com/vincentha766/popoe/blob/main/ARCHITECTURE.md
 
 [project.scripts]
 popoe-cnos = "popoe.segmentor_cnos_official:_main"
+popoe-muse = "popoe.segmentor_muse:_main"
 popoe-nids-adapt = "popoe.segmentor_nids:_main"
 popoe-sam6d = "popoe.segmentor_sam6d:_main"
 

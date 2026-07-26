@@ -15,7 +15,7 @@ Scene (RGB-D, K) ──┘            TargetEncoder ──┴─ PoseSolver ─ 
 
 | Stage | Protocol | Reference implementation |
 |-------|----------|--------------------------|
-| Segmentation | `Segmentor` | `segmentor_detections.BOPDetectionsSegmentor` (evaluated; single file or a named-source union — see below); `segmentor_cnos_official.CNOSDetectionsSegmentor` (`source='cnos'`); `segmentor_cnos_v3.CNOSv3Segmentor` (`source='cnos-v3'`); `segmentor_cnos.CNOSSegmentor` (`source='cnos-live'`) / `.DinoWindowSegmentor`; `segmentor.SAMSegmentor` / `.DepthSegmentor`; `adapters.PrecomputedSegmentor` |
+| Segmentation | `Segmentor` | `segmentor_detections.BOPDetectionsSegmentor` (evaluated; single file or a named-source union — see below); `segmentor_cnos_official.CNOSDetectionsSegmentor` (`source='cnos'`); `segmentor_cnos_v3.CNOSv3Segmentor` (`source='cnos-v3'`); `segmentor_muse.MuseSegmentor` (`source='muse-repro'`, live + producer — see below); `segmentor_cnos.CNOSSegmentor` (`source='cnos-live'`) / `.DinoWindowSegmentor`; `segmentor.SAMSegmentor` / `.DepthSegmentor`; `adapters.PrecomputedSegmentor` |
 | Query features | `QueryEncoder` | `freeze.adapters.FreeZeQueryEncoder` (DINOv2 + GeDi) |
 | Target features | `TargetEncoder` | `freeze.adapters.FreeZeTargetEncoder` |
 | Fusion | `FeatureFusion` | `freeze.fusion.DinoGeDiFusion` |
@@ -203,6 +203,40 @@ drops its own near-duplicates. The single-file form
 `bop-detections` tag). The loader (`load_bop_detections`) coerces the
 fully-stringified NIDS WA_Sappe variant and decodes both compressed and
 uncompressed RLE — see the module docstring.
+
+### MUSE — the backend that has to be both (`segmentor_muse`)
+
+MUSE is the fourth mask source in FreeZeV2's ensemble and the only one with **no
+public code and no downloadable masks**, so there is no producer to adapt. What
+popoe carries is a reimplementation from the paper (arXiv 2510.17866), and it
+occupies both forms at once: `MuseSegmentor` computes masks from pixels like
+`CNOSv3Segmentor`, while `muse_records` / `write_muse_detections` dump those same
+masks to a detections JSON, after which `MuseDetectionsSegmentor` replays them as
+an ordinary named source — GPU-free, unionable, archivable. See [MUSE.md](MUSE.md).
+
+| Source | Meaning |
+|--------|---------|
+| `muse` | RESERVED for official MUSE artefacts; nothing here writes it |
+| `muse-repro` | this reimplementation |
+
+The naming rule is the CNOS rule with more at stake: the study cites MUSE as
+evidence that an ensemble member is externally unreproducible, so our own
+reimplementation must never wear the official name.
+
+Two design points follow from MUSE scoring classes *jointly* rather than
+independently, and neither is optional:
+
+- **Classes are registered up front.** `Segmentor.segment` is a per-object
+  contract, but MUSE's relative score is a softmax across all candidate classes.
+  So the segmentor computes a `(proposal x class)` score matrix once and serves
+  one column per call. A single registered class makes that score the constant 1
+  and silently reduces the method to `beta * S_abs` — the availability
+  contract's "two methods behind one name" in miniature, so it must be asked for
+  explicitly (`allow_single_class=True`).
+- **Proposals are per-frame.** Grounding DINO + SAM2 would otherwise re-run for
+  every object in one image. Results are memoised by frame CONTENT, never by
+  `scene_id`/`im_id` (real captures leave those at -1) — the same content-addressing
+  invariant the cache follows.
 
 SAM-6D PEM is different: it is an external full pose producer, not a detections
 source. `segmentor_sam6d.SAM6DPemResultsCoarseEstimator` adapts its BOP CSV or

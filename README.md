@@ -186,6 +186,19 @@ CNOS naming is deliberately split:
 | `cnos-v3` | Local lab recipe: proposal masks -> depth size gate -> DINOv2 foreground-patch rank |
 | `cnos-live` | Existing simplified live CNOS-style segmentor (`CNOSSegmentor`), not an official result |
 
+The ensemble's fourth member, **MUSE**, publishes neither code nor masks, so it
+has no external producer to adapt. `popoe.segmentor_muse` is a reimplementation
+from the paper: a live segmentor that can also dump its masks as a detections
+JSON, which then unions and evaluates like any other source. It writes
+`muse-repro`; the name `muse` stays reserved for official artefacts. See
+[MUSE.md](MUSE.md).
+
+```bash
+popoe-muse --frame capture/frame_000000.json \
+  --classes 9=/templates/obj_000009,14=/templates/obj_000014 \
+  --models-info .../models_info.json --out outputs/muse_frame0.json
+```
+
 **Format notes.** A detections file is a JSON list of records
 `{scene_id, image_id, category_id, score, segmentation}` where `segmentation`
 is a COCO RLE. Real-capture files may use a `mask` or `mask_path` alias instead;
@@ -217,12 +230,17 @@ python examples/bop_seg_eval.py \
   --bop /path/to/ycbv \
   --detections data/detections/cnos/cnos-fastsam_ycbv-test.json \
   --targets /path/to/ycbv/test_targets_bop19.json \
+  --per-object \
   --out-dir outputs/ycbv_cnos_seg_ap
 ```
 
 The command builds a merged `gt_coco.json` from `mask_visib`, converts the BOP
 detections into `pred_coco.json`, then runs `pycocotools` in `segm` mode and
-writes `summary.json`. It needs a complete BOP split with GT masks; sparse local
+writes `summary.json`. With `--per-object`, it also writes per-category
+`per_object.json` and `per_object.csv` diagnostics for the same single
+segmentation source. BOP targets select target images, matching the official
+BOP COCO evaluator; wrong-category detections on those images remain false
+positives. It needs a complete BOP split with GT masks; sparse local
 subsets that only include RGB/depth/poses are useful for pose debugging but
 cannot produce segmentation AP.
 
