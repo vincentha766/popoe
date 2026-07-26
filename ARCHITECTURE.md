@@ -106,10 +106,11 @@ So:
 - anything that selects a method (`render_backend`, the segmentor's `source`)
   is part of the stage config and belongs **in the cache key**.
 
-## Pluggability proven — a second PoseSolver
+## Pluggability proven — the PoseSolver stage
 
-Two independent `PoseSolver` implementations run through the identical
-encoders→refiner→scorer→selector chain, changing one line:
+Four `PoseSolver` implementations run through the identical
+encoders→refiner→scorer→selector chain, each selected by changing one line. The
+original proof was a pair:
 
 - `adapters.RansacSolver` — hand-rolled feature-aware RANSAC.
 - `solvers.Open3DFeatureRansacSolver` — Open3D's C++ correspondence RANSAC, added
@@ -153,7 +154,7 @@ CUDA) with a selectable `fitness`:
 ### A fourth solver — TEASER++ certifiable registration
 
 `solvers.TeaserSolver` wraps TEASER++ (Yang, Shi & Carlone, T-RO 2021) — the
-robust backend the second-solver section anticipated. Instead of sampling
+robust backend the Open3D A/B above anticipated. Instead of sampling
 minimal triplets, it prunes the correspondence pool with a pairwise
 translation-invariant-measurement max-clique and solves rotation by GNC-TLS:
 robust to >90% outlier correspondences, deterministic (no RNG, no seed), with

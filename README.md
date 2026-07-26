@@ -139,7 +139,7 @@ Because a solver only has to *propose* candidates and the feature-aware
 `PoseScorer` + `Selector` *dispose*, `Open3DFeatureRansacSolver(n_restarts=8)`
 turns a geometry-only RANSAC (which flips on near-symmetric objects) back to
 parity with the feature-aware solver — with no new scoring code. See
-[ARCHITECTURE.md](ARCHITECTURE.md#pluggability-proven--a-second-posesolver).
+[ARCHITECTURE.md](ARCHITECTURE.md#pluggability-proven--the-posesolver-stage).
 
 ## Detections (segmentation sources)
 
