@@ -67,6 +67,8 @@ Grounding DINO weights come from the HF hub on first use
 
 ## CLI
 
+Single frame:
+
 ```bash
 popoe-muse \
   --frame     capture/frame_000000.json \
@@ -86,6 +88,25 @@ it through `load_bop_detections` so a schema error surfaces immediately.
 classes; with one registered class it is the constant 1 and `S_joint`
 degenerates to `beta * S_abs`. The library refuses that configuration unless
 `allow_single_class=True` (CLI: `--allow-single-class`) asks for it explicitly.
+
+BOP target split:
+
+```bash
+popoe-bop-muse \
+  --bop-root /workspace/bop_data/ycbv \
+  --template-root /workspace/templates/ycbv \
+  --out outputs/muse-repro_ycbv-test.json \
+  --shard-dir outputs/muse-repro_ycbv-test_shards \
+  --resume
+```
+
+`popoe-bop-muse` reads `<bop-root>/test_targets_bop19.json` by default, groups
+repeated BOP targets so each image is processed once, registers every target
+object found in that file, and writes one combined BOP-format detections JSON.
+Use `--objs 9,14 --limit-images 10` for smoke runs. Per-image shards are full
+registered-class output; `--target-object-only` only filters the final combined
+file. Leave that flag off for leaderboard-style segmentation AP, where
+wrong-category detections on target images should remain false positives.
 
 ## Library Use
 
