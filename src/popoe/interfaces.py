@@ -57,13 +57,33 @@ def is_runtime_failure(exc: BaseException) -> bool:
     the dedicated `torch.cuda.OutOfMemoryError`; plenty of allocation failures
     still arrive as a bare `RuntimeError('CUDA out of memory. Tried to allocate
     ...')`. Matched by name and message so this module stays torch-free.
+
+    The message match enumerates FAULTS rather than keying on "CUDA error:",
+    because that prefix covers both sides of this line. These are faults:
+
+        out of memory / alloc failed   the GPU is full
+        illegal memory access          a kernel wrote out of bounds
+        device-side assert             a kernel tripped an assertion
+
+    while these, which carry the same prefix, are ordinary unavailability and
+    must stay routable — they are what a fallback chain exists for:
+
+        no kernel image is available   arch mismatch (sm_89 kernels elsewhere)
+        no CUDA-capable device         no GPU on this box
+        invalid device ordinal         wrong device index
+        driver version is insufficient driver too old
+
+    Underscores are normalised so driver-style spellings
+    (`CUDA_ERROR_OUT_OF_MEMORY`, `CUBLAS_STATUS_ALLOC_FAILED`) match too.
     """
     if isinstance(exc, MemoryError) or type(exc).__name__ == "OutOfMemoryError":
         return True
-    text = str(exc).lower()
-    return isinstance(exc, RuntimeError) and (
-        "out of memory" in text or "cuda error" in text
-        or "cublas_status_alloc_failed" in text)
+    if not isinstance(exc, RuntimeError):
+        return False
+    text = str(exc).lower().replace("_", " ")
+    return any(fault in text for fault in (
+        "out of memory", "alloc failed", "illegal memory access",
+        "device-side assert", "device side assert"))
 
 
 # ════════════════════════════════════════════════════════════════════════
