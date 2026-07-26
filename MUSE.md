@@ -271,3 +271,33 @@ Artefacts: `outputs/g2_muse_patch_sim_20260726/`.
 equations) does **not** close the official gap; slightly worse than
 Tanimoto(GeM). Gap is elsewhere — GD/SAM2 cascade, templates, fg GeM
 masking, hyperparameters, or unpublished submission details (**G3+**).
+
+## G3 result (2026-07-26) — mask_rgb + gem_tokens=all
+
+Paper §4.1: "only the object region inside the box is preserved" before
+matching. Run: `--mask-rgb --gem-tokens all`, default gate + default
+sim (cos,tanimoto), LM-O full, topk=3. Code @ `e57cf03`.
+Artefacts: `outputs/g3_muse_mask_rgb_20260726/`.
+
+| condition | AP | AP50 | AP75 | notes |
+|---|---:|---:|---:|---|
+| official `muse` | **0.471** | — | — | BOP submission |
+| default repro | **0.228** | 0.377 | 0.259 | square crop + FG GeM |
+| G1 gate off | 0.224 | 0.376 | 0.243 | no depth gate |
+| G2 cos+cos | 0.219 | 0.362 | 0.248 | paper eq cosine |
+| **G3 mask_rgb + gem all** | **0.388** | **0.629** | **0.454** | **+16 pt vs default** |
+
+**Conclusion:** The main muse-repro AP hole was **proposal embedding
+hygiene** (class token seeing background in the square crop), not the
+depth gate or Tanimoto/cosine choice. Closing most of the gap:
+
+```text
+official 0.471
+G3       0.388   ← recovered ~2/3 of the deficit
+default  0.228
+```
+
+Residual ~0.08 may be templates / GD thresholds / SAM2 cascade details /
+αβτγ fine-tune. **Recommend promoting `--mask-rgb` (and likely
+`--gem-tokens all`) as the new muse-repro default** after a YCB-V
+confirm run.
