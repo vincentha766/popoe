@@ -233,3 +233,23 @@ margin below that is a tie.
 
 Nothing has been registered in `REPRODUCTION.md`: this run verifies the port
 against its reference, it does not produce a benchmark number.
+
+## G1 result (2026-07-26) — depth size gate A/B
+
+LM-O full split, topk=3, same templates/env as campaign2 muse-repro.
+Code: branch `g1-muse-depth-gate-ab` @ `8f7378d`, flag `--no-size-gate`.
+Pod: reused `ctxs25f2eczigt` (network volume). Artefacts:
+`outputs/g1_muse_gate_20260726/`, pod
+`/workspace/results/g1_muse_gate_20260726/`.
+
+| condition | AP | AP50 | AP75 |
+|---|---:|---:|---:|
+| official `muse` | **0.471** | — | — |
+| muse-repro **gate on** (default) | **0.228** | 0.377 | 0.259 |
+| muse-repro **gate off** (G1) | **0.224** | 0.376 | 0.243 |
+
+**Conclusion:** disabling the depth 3D-extent gate does **not** close the
+official gap (Δ ≈ −0.004 vs gate-on, noise-level). Next levers: **G2**
+matcher (GeM/Tanimoto vs paper vMF) and **G3** GD/SAM2 cascade audit.
+Keep the gate available for real-robot confuser filtering; it is not the
+BOP AP bottleneck.
