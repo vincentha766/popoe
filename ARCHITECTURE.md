@@ -124,11 +124,14 @@ The A/B (see [examples/solver_swap_demo.py](examples/solver_swap_demo.py)) also
 surfaces a real finding and its fix by composition alone. On the near-symmetric
 mustard bottle (YCB-V obj 5, 5 instances), median rotation error:
 
-| solver | median rot | median trans |
-|--------|-----------|--------------|
-| `freeze_ransac` | 23.4° | 17.6 mm |
-| `open3d` (1 shot) | 42.5° (flips: 94°, 152°) | 19.5 mm |
-| `open3d` (`n_restarts=8`) | **23.9°** | 17.9 mm |
+| solver | median rot |
+|--------|-----------|
+| `freeze_ransac` | 23.4° |
+| `open3d` (1 shot) | 42.5° (flips: 94°, 152°) |
+| `open3d` (`n_restarts=8`) | **23.9°** |
+
+Median translation was comparable across all three (~18–20 mm): the failure is
+orientation, not position.
 
 One-shot Open3D ranks by geometric inlier fitness and flips on symmetric geometry
 the visual features would disambiguate. Emitting several candidates
