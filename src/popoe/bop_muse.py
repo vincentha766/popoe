@@ -12,10 +12,11 @@ import json
 import os
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from popoe.cache import fingerprint
 from popoe.datasets.frames import load_scene_from_manifest
 from popoe.interfaces import FrameManifest, ObjectModel, Scene
 from popoe.segmentor_muse import (
@@ -41,6 +42,11 @@ class BOPTargetImage:
     scene_id: int
     im_id: int
     obj_ids: tuple[int, ...]
+    inst_counts: tuple[tuple[int, int], ...] = field(default_factory=tuple)
+
+    @property
+    def max_inst_count(self) -> int:
+        return max((count for _, count in self.inst_counts), default=1)
 
 
 SceneLoader = Callable[[str | os.PathLike, str, int, int], Scene]
@@ -55,7 +61,10 @@ def _read_json(path: str | os.PathLike):
 def _parse_obj_ids(text: str | None) -> set[int]:
     if not text:
         return set()
-    return {int(x.strip()) for x in text.split(",") if x.strip()}
+    try:
+        return {int(x.strip()) for x in text.split(",") if x.strip()}
+    except ValueError as e:
+        raise ValueError(f"--objs entries must be integers, got {text!r}") from e
 
 
 def _parse_template_overrides(spec: str | None) -> dict[int, str]:
@@ -71,7 +80,12 @@ def _parse_template_overrides(spec: str | None) -> dict[int, str]:
         if "=" not in item:
             raise ValueError(f"--classes entry needs 'obj_id=template_dir', got {item!r}")
         oid, path = item.split("=", 1)
-        obj_id = int(oid)
+        try:
+            obj_id = int(oid)
+        except ValueError as e:
+            raise ValueError(
+                f"--classes obj_id must be an integer, got {oid!r}"
+            ) from e
         if obj_id in out:
             raise ValueError(f"duplicate template override for obj_id {obj_id}")
         out[obj_id] = path.strip()
@@ -97,17 +111,27 @@ def load_bop_target_images(
     are used for optional output filtering and smoke subsets.
     """
 
-    keep = {int(x) for x in obj_ids} if obj_ids else None
+    keep = None if obj_ids is None else {int(x) for x in obj_ids}
+    if limit_images is not None and int(limit_images) < 0:
+        raise ValueError(f"limit_images must be >= 0, got {limit_images}")
     grouped: dict[tuple[int, int], set[int]] = {}
+    inst_counts: dict[tuple[int, int], dict[int, int]] = {}
     for rec in _read_json(targets_json):
         obj_id = int(rec["obj_id"])
         if keep is not None and obj_id not in keep:
             continue
         key = (int(rec["scene_id"]), int(rec["im_id"]))
         grouped.setdefault(key, set()).add(obj_id)
+        counts = inst_counts.setdefault(key, {})
+        counts[obj_id] = max(counts.get(obj_id, 1), int(rec.get("inst_count", 1)))
 
     out = [
-        BOPTargetImage(scene_id=sid, im_id=iid, obj_ids=tuple(sorted(ids)))
+        BOPTargetImage(
+            scene_id=sid,
+            im_id=iid,
+            obj_ids=tuple(sorted(ids)),
+            inst_counts=tuple(sorted(inst_counts[(sid, iid)].items())),
+        )
         for (sid, iid), ids in sorted(grouped.items())
     ]
     if limit_images is not None and int(limit_images) > 0:
@@ -221,10 +245,41 @@ def load_bop_scene(
     )
 
 
-def _shard_path(shard_dir: str | os.PathLike, target: BOPTargetImage) -> Path:
+def _segmentor_config(segmentor) -> dict:
+    config = getattr(segmentor, "config", None)
+    if callable(config):
+        return dict(config())
+    return {
+        "class_order": [
+            int(c.obj.obj_id) for c in getattr(segmentor, "classes", [])
+        ]
+    }
+
+
+def _effective_n_masks(n_masks: int | None, segmentor, target: BOPTargetImage) -> int | None:
+    floor = target.max_inst_count
+    if n_masks is None:
+        base = getattr(segmentor, "n_masks", None)
+        return max(int(base), floor) if base is not None else None
+    return max(int(n_masks), floor)
+
+
+def _shard_key(segmentor, n_masks: int | None) -> str:
+    return fingerprint({
+        "source": MUSE_SOURCE,
+        "segmentor": _segmentor_config(segmentor),
+        "n_masks": n_masks,
+    })
+
+
+def _shard_path(
+    shard_dir: str | os.PathLike,
+    target: BOPTargetImage,
+    shard_key: str,
+) -> Path:
     return (
         Path(shard_dir)
-        / f"scene_{target.scene_id:06d}_im_{target.im_id:06d}.json"
+        / f"scene_{target.scene_id:06d}_im_{target.im_id:06d}_{shard_key}.json"
     )
 
 
@@ -237,6 +292,12 @@ def _filter_target_objects(
         return [dict(rec) for rec in records]
     keep = set(target.obj_ids)
     return [dict(rec) for rec in records if int(rec["category_id"]) in keep]
+
+
+def _write_muse_detections_atomic(records: Sequence[dict], output_json: Path) -> None:
+    tmp = output_json.with_name(output_json.name + ".tmp")
+    write_muse_detections(records, str(tmp))
+    os.replace(tmp, output_json)
 
 
 def generate_bop_muse_detections(
@@ -260,29 +321,42 @@ def generate_bop_muse_detections(
     usable across full-output and target-only smoke runs.
     """
 
+    if resume and shard_dir is None:
+        raise ValueError("resume=True requires shard_dir")
     all_records: list[dict] = []
     target_list = list(targets)
     if shard_dir is not None:
         Path(shard_dir).mkdir(parents=True, exist_ok=True)
 
     for idx, target in enumerate(target_list, start=1):
-        shard = _shard_path(shard_dir, target) if shard_dir is not None else None
+        image_n_masks = _effective_n_masks(n_masks, segmentor, target)
+        shard_key = _shard_key(segmentor, image_n_masks)
+        shard = (
+            _shard_path(shard_dir, target, shard_key)
+            if shard_dir is not None else None
+        )
         resumed = bool(resume and shard is not None and shard.exists())
         if resumed:
-            image_records = _read_json(shard)
+            try:
+                image_records = _read_json(shard)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"cannot resume from corrupt shard {shard}: {e}") from e
             elapsed = float(image_records[0].get("time", 0.0)) if image_records else 0.0
         else:
             scene = scene_loader(bop_root, split, target.scene_id, target.im_id)
             start = time.perf_counter()
-            image_records = muse_records(scene, segmentor, n_masks=n_masks)
+            image_records = muse_records(scene, segmentor, n_masks=image_n_masks)
             elapsed = time.perf_counter() - start
             if record_time:
                 for rec in image_records:
                     rec["time"] = float(elapsed)
             if shard is not None:
-                write_muse_detections(image_records, str(shard))
+                _write_muse_detections_atomic(image_records, shard)
 
         emitted = _filter_target_objects(image_records, target, target_object_only)
+        if not record_time:
+            for rec in emitted:
+                rec.pop("time", None)
         all_records.extend(emitted)
         if progress is not None:
             progress(idx, len(target_list), target, len(emitted), elapsed, resumed)
@@ -366,20 +440,33 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
 
     from popoe.segmentor_detections import load_bop_detections
 
+    if args.resume and not args.shard_dir:
+        raise SystemExit("--resume requires --shard-dir")
+    if args.limit_images < 0:
+        raise SystemExit("--limit-images must be >= 0")
+    if args.topk < 0:
+        raise SystemExit("--topk must be >= 0")
+
     bop_root = Path(args.bop_root)
     targets_path = Path(args.targets) if args.targets else default_targets_path(bop_root, args.split)
     models_info = Path(args.models_info) if args.models_info else bop_root / "models" / "models_info.json"
     models_dir = Path(args.models_dir) if args.models_dir else bop_root / "models"
-    obj_filter = _parse_obj_ids(args.objs)
-    overrides = _parse_template_overrides(args.classes)
+    try:
+        obj_filter = _parse_obj_ids(args.objs)
+        overrides = _parse_template_overrides(args.classes)
+    except ValueError as e:
+        raise SystemExit(str(e)) from None
     if not obj_filter and overrides and not args.template_root:
         obj_filter = set(overrides)
 
-    target_images = load_bop_target_images(
-        targets_path,
-        obj_ids=obj_filter or None,
-        limit_images=args.limit_images,
-    )
+    try:
+        target_images = load_bop_target_images(
+            targets_path,
+            obj_ids=obj_filter or None,
+            limit_images=args.limit_images,
+        )
+    except ValueError as e:
+        raise SystemExit(str(e)) from None
     if not target_images:
         raise SystemExit(f"no BOP target images after filtering: {targets_path}")
 

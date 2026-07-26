@@ -40,6 +40,9 @@ class _FakeMuseSegmentor:
         self.classes = [MuseClass(_obj(oid), f"/tpl/{oid}") for oid in obj_ids]
         self.calls = []
 
+    def config(self):
+        return {"class_order": [c.obj.obj_id for c in self.classes]}
+
     def detections_for(self, scene, obj_id, n_masks=None):
         self.calls.append((scene.scene_id, scene.im_id, int(obj_id), n_masks))
         mask = np.zeros((5, 6), bool)
@@ -66,10 +69,27 @@ def test_load_bop_target_images_groups_repeated_targets_and_filters(tmp_path):
     filtered = load_bop_target_images(targets, obj_ids={14})
 
     assert grouped == [
-        BOPTargetImage(scene_id=1, im_id=8, obj_ids=(9,)),
-        BOPTargetImage(scene_id=2, im_id=3, obj_ids=(9, 14)),
+        BOPTargetImage(scene_id=1, im_id=8, obj_ids=(9,), inst_counts=((9, 1),)),
+        BOPTargetImage(
+            scene_id=2,
+            im_id=3,
+            obj_ids=(9, 14),
+            inst_counts=((9, 2), (14, 1)),
+        ),
     ]
-    assert filtered == [BOPTargetImage(scene_id=2, im_id=3, obj_ids=(14,))]
+    assert filtered == [
+        BOPTargetImage(scene_id=2, im_id=3, obj_ids=(14,), inst_counts=((14, 1),))
+    ]
+
+
+def test_load_bop_target_images_treats_empty_filter_as_empty_and_rejects_negative_limit(tmp_path):
+    targets = _write_json(tmp_path / "test_targets_bop19.json", [
+        {"scene_id": 2, "im_id": 3, "obj_id": 14, "inst_count": 1},
+    ])
+
+    assert load_bop_target_images(targets, obj_ids=set()) == []
+    with pytest.raises(ValueError, match="limit_images"):
+        load_bop_target_images(targets, limit_images=-1)
 
 
 def test_bop_frame_manifest_converts_depth_scale_to_metres(tmp_path):
@@ -199,3 +219,128 @@ def test_generate_bop_muse_detections_resumes_from_full_output_shards(tmp_path):
         (14, MUSE_SOURCE),
     ]
     assert [(r["category_id"], r["source"]) for r in resumed] == [(9, MUSE_SOURCE)]
+
+
+def test_generate_bop_muse_detections_shard_key_depends_on_segmentor_config(tmp_path):
+    pytest.importorskip("pycocotools")
+    targets = [BOPTargetImage(scene_id=1, im_id=1, obj_ids=(9,))]
+    shard_dir = tmp_path / "shards"
+
+    generate_bop_muse_detections(
+        bop_root="/unused",
+        split="test",
+        targets=targets,
+        segmentor=_FakeMuseSegmentor((9, 14)),
+        n_masks=1,
+        shard_dir=shard_dir,
+        scene_loader=lambda _root, _split, sid, iid: _scene(sid, iid),
+    )
+    seg = _FakeMuseSegmentor((9, 14, 21))
+    records = generate_bop_muse_detections(
+        bop_root="/unused",
+        split="test",
+        targets=targets,
+        segmentor=seg,
+        n_masks=1,
+        shard_dir=shard_dir,
+        resume=True,
+        scene_loader=lambda _root, _split, sid, iid: _scene(sid, iid),
+    )
+
+    assert len(list(shard_dir.glob("*.json"))) == 2
+    assert sorted({r["category_id"] for r in records}) == [9, 14, 21]
+    assert seg.calls == [(1, 1, 9, 1), (1, 1, 14, 1), (1, 1, 21, 1)]
+
+
+def test_generate_bop_muse_detections_floors_n_masks_to_inst_count():
+    pytest.importorskip("pycocotools")
+    seg = _FakeMuseSegmentor()
+    targets = [
+        BOPTargetImage(
+            scene_id=1,
+            im_id=1,
+            obj_ids=(9,),
+            inst_counts=((9, 3),),
+        )
+    ]
+
+    generate_bop_muse_detections(
+        bop_root="/unused",
+        split="test",
+        targets=targets,
+        segmentor=seg,
+        n_masks=1,
+        scene_loader=lambda _root, _split, sid, iid: _scene(sid, iid),
+    )
+
+    assert seg.calls == [(1, 1, 9, 3), (1, 1, 14, 3)]
+
+
+def test_resume_requires_shard_dir_and_no_time_strips_resumed_time(tmp_path):
+    pytest.importorskip("pycocotools")
+    targets = [BOPTargetImage(scene_id=1, im_id=1, obj_ids=(9,))]
+    shard_dir = tmp_path / "shards"
+
+    with pytest.raises(ValueError, match="requires shard_dir"):
+        generate_bop_muse_detections(
+            bop_root="/unused",
+            split="test",
+            targets=targets,
+            segmentor=_FakeMuseSegmentor(),
+            resume=True,
+        )
+
+    generate_bop_muse_detections(
+        bop_root="/unused",
+        split="test",
+        targets=targets,
+        segmentor=_FakeMuseSegmentor(),
+        n_masks=1,
+        shard_dir=shard_dir,
+        scene_loader=lambda _root, _split, sid, iid: _scene(sid, iid),
+        record_time=True,
+    )
+    resumed = generate_bop_muse_detections(
+        bop_root="/unused",
+        split="test",
+        targets=targets,
+        segmentor=_FakeMuseSegmentor(),
+        n_masks=1,
+        shard_dir=shard_dir,
+        resume=True,
+        scene_loader=lambda *_args: pytest.fail("resume should use shard"),
+        record_time=False,
+    )
+
+    assert resumed
+    assert all("time" not in rec for rec in resumed)
+
+
+def test_resume_reports_corrupt_shard_path(tmp_path):
+    pytest.importorskip("pycocotools")
+    targets = [BOPTargetImage(scene_id=1, im_id=1, obj_ids=(9,))]
+    shard_dir = tmp_path / "shards"
+
+    generate_bop_muse_detections(
+        bop_root="/unused",
+        split="test",
+        targets=targets,
+        segmentor=_FakeMuseSegmentor(),
+        n_masks=1,
+        shard_dir=shard_dir,
+        scene_loader=lambda _root, _split, sid, iid: _scene(sid, iid),
+    )
+    shard = next(shard_dir.glob("*.json"))
+    shard.write_text("{")
+
+    with pytest.raises(ValueError, match=f"corrupt shard {shard}"):
+        generate_bop_muse_detections(
+            bop_root="/unused",
+            split="test",
+            targets=targets,
+            segmentor=_FakeMuseSegmentor(),
+            n_masks=1,
+            shard_dir=shard_dir,
+            resume=True,
+            scene_loader=lambda *_args: pytest.fail("resume should read shard"),
+        )
