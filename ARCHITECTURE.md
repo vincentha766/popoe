@@ -245,8 +245,10 @@ uncompressed RLE — see the module docstring.
 ### MUSE — the backend that has to be both (`segmentor_muse`)
 
 MUSE is the fourth mask source in FreeZeV2's ensemble and the only one with **no
-public code and no downloadable masks**, so there is no producer to adapt. What
-popoe carries is a reimplementation from the paper (arXiv 2510.17866), and it
+public code**, so there is no producer to adapt (its masks, unlike its method,
+*are* obtainable — the authors' BOP submissions are public and sit under
+`data/detections/muse/`). What popoe carries is a reimplementation from the
+paper (arXiv 2510.17866), and it
 occupies both forms at once: `MuseSegmentor` computes masks from pixels like
 `CNOSv3Segmentor`, while `muse_records` / `write_muse_detections` dump those same
 masks to a detections JSON, after which `MuseDetectionsSegmentor` replays them as
@@ -254,7 +256,7 @@ an ordinary named source — GPU-free, unionable, archivable. See [MUSE.md](MUSE
 
 | Source | Meaning |
 |--------|---------|
-| `muse` | RESERVED for official MUSE artefacts; nothing here writes it |
+| `muse` | the authors' official artefacts only; nothing here writes it — those files were downloaded |
 | `muse-repro` | this reimplementation |
 
 The naming rule is the CNOS rule with more at stake: the study cites MUSE as

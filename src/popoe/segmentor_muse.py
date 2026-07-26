@@ -1,10 +1,12 @@
 """MUSE-style segmentor — a reimplementation, and its detections producer.
 
 MUSE (arXiv 2510.17866, Cho/Park/Oh) is one of the four mask sources FreeZeV2
-ensembles, and the only one with **no public code and no downloadable masks**
-(BOP method_info/873). So unlike CNOS / SAM-6D / NIDS there is no official
-producer to adapt: what popoe can offer is a reimplementation from the paper,
-and that distinction is part of the contract, not a footnote.
+ensembles, and the only one with **no public code**. So unlike CNOS / SAM-6D /
+NIDS there is no official producer to adapt: what popoe can offer is a
+reimplementation from the paper, and that distinction is part of the contract,
+not a footnote. The authors' *masks*, unlike their method, are obtainable —
+their BOP submissions are public (see MUSE.md, Upstream Status) — so ``muse``
+names real downloaded files, never anything this module writes.
 
 Naming (same discipline as CNOS's ``cnos`` / ``cnos-v3`` / ``cnos-live`` split):
 
