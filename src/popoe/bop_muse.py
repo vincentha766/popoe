@@ -96,7 +96,14 @@ def _parse_template_overrides(spec: str | None) -> dict[int, str]:
 def default_targets_path(bop_root: str | os.PathLike, split: str = "test") -> Path:
     """Return the conventional BOP target file path for a split."""
 
-    return Path(bop_root) / f"{split}_targets_bop19.json"
+    root = Path(bop_root)
+    path = root / f"{split}_targets_bop19.json"
+    if path.exists():
+        return path
+    fallback = root / "test_targets_bop19.json"
+    if split.startswith("test_") and fallback.exists():
+        return fallback
+    return path
 
 
 def load_bop_target_images(
@@ -279,7 +286,6 @@ def _shard_key(
     split: str,
     segmentor,
     n_masks: int | None,
-    record_time: bool,
 ) -> str:
     return fingerprint({
         "source": MUSE_SOURCE,
@@ -287,7 +293,6 @@ def _shard_key(
         "split": split,
         "segmentor": _segmentor_config(segmentor),
         "n_masks": n_masks,
-        "record_time": bool(record_time),
     })
 
 
@@ -313,7 +318,13 @@ def _filter_target_objects(
     return [dict(rec) for rec in records if int(rec["category_id"]) in keep]
 
 
-def _write_muse_detections_atomic(records: Sequence[dict], output_json: Path) -> None:
+def _write_muse_detections_atomic(
+    records: Sequence[dict],
+    output_json: Path,
+    *,
+    validate: Callable[[str], None] | None = None,
+) -> None:
+    output_json.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(
         prefix=output_json.name + ".",
         suffix=".tmp",
@@ -322,6 +333,8 @@ def _write_muse_detections_atomic(records: Sequence[dict], output_json: Path) ->
     os.close(fd)
     try:
         write_muse_detections(records, tmp_name)
+        if validate is not None:
+            validate(tmp_name)
         os.replace(tmp_name, output_json)
     finally:
         if os.path.exists(tmp_name):
@@ -365,7 +378,6 @@ def generate_bop_muse_detections(
                 split=split,
                 segmentor=segmentor,
                 n_masks=image_n_masks,
-                record_time=record_time,
             )
             shard = _shard_path(shard_dir, target, shard_key)
         resumed = bool(resume and shard is not None and shard.exists())
@@ -380,9 +392,8 @@ def generate_bop_muse_detections(
             start = time.perf_counter()
             image_records = muse_records(scene, segmentor, n_masks=image_n_masks)
             elapsed = time.perf_counter() - start
-            if record_time:
-                for rec in image_records:
-                    rec["time"] = float(elapsed)
+            for rec in image_records:
+                rec["time"] = float(elapsed)
             if shard is not None:
                 _write_muse_detections_atomic(image_records, shard)
 
@@ -548,8 +559,11 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
         record_time=not args.no_time,
         progress=_print_progress,
     )
-    write_muse_detections(records, args.out)
-    load_bop_detections(args.out, source=MUSE_SOURCE)
+    _write_muse_detections_atomic(
+        records,
+        Path(args.out),
+        validate=lambda path: load_bop_detections(path, source=MUSE_SOURCE),
+    )
     print(f"wrote {len(records)} detections -> {args.out}")
     return 0
 

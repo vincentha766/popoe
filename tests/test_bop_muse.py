@@ -9,6 +9,7 @@ from popoe.bop_muse import (
     _main,
     bop_frame_manifest,
     build_muse_classes,
+    default_targets_path,
     generate_bop_muse_detections,
     load_bop_target_images,
 )
@@ -102,6 +103,14 @@ def test_load_bop_target_images_uses_row_count_when_inst_count_is_missing(tmp_pa
     assert load_bop_target_images(targets) == [
         BOPTargetImage(scene_id=2, im_id=3, obj_ids=(14,), inst_counts=((14, 2),))
     ]
+
+
+def test_default_targets_path_falls_back_for_bop_test_sensor_splits(tmp_path):
+    fallback = tmp_path / "test_targets_bop19.json"
+    fallback.write_text("[]")
+
+    assert default_targets_path(tmp_path, "test_primesense") == fallback
+    assert default_targets_path(tmp_path, "test") == fallback
 
 
 def test_bop_frame_manifest_converts_depth_scale_to_metres(tmp_path):
@@ -318,7 +327,7 @@ def test_generate_bop_muse_detections_floors_n_masks_to_inst_count():
     assert seg.calls == [(1, 1, 9, 3), (1, 1, 14, 3)]
 
 
-def test_resume_requires_shard_dir_and_record_time_uses_separate_shards(tmp_path):
+def test_resume_requires_shard_dir_and_no_time_strips_resumed_time(tmp_path):
     pytest.importorskip("pycocotools")
     targets = [BOPTargetImage(scene_id=1, im_id=1, obj_ids=(9,))]
     shard_dir = tmp_path / "shards"
@@ -342,23 +351,52 @@ def test_resume_requires_shard_dir_and_record_time_uses_separate_shards(tmp_path
         scene_loader=lambda _root, _split, sid, iid: _scene(sid, iid),
         record_time=True,
     )
-    seg = _FakeMuseSegmentor()
     resumed = generate_bop_muse_detections(
         bop_root="/unused",
         split="test",
         targets=targets,
-        segmentor=seg,
+        segmentor=_FakeMuseSegmentor(),
         n_masks=1,
         shard_dir=shard_dir,
         resume=True,
-        scene_loader=lambda _root, _split, sid, iid: _scene(sid, iid),
+        scene_loader=lambda *_args: pytest.fail("resume should use shard"),
         record_time=False,
     )
 
     assert resumed
-    assert seg.calls == [(1, 1, 9, 1), (1, 1, 14, 1)]
-    assert len(list(shard_dir.glob("*.json"))) == 2
+    assert len(list(shard_dir.glob("*.json"))) == 1
     assert all("time" not in rec for rec in resumed)
+
+
+def test_resume_default_path_keeps_stored_time(tmp_path):
+    pytest.importorskip("pycocotools")
+    targets = [BOPTargetImage(scene_id=1, im_id=1, obj_ids=(9,))]
+    shard_dir = tmp_path / "shards"
+
+    generate_bop_muse_detections(
+        bop_root="/unused",
+        split="test",
+        targets=targets,
+        segmentor=_FakeMuseSegmentor(),
+        n_masks=1,
+        shard_dir=shard_dir,
+        scene_loader=lambda _root, _split, sid, iid: _scene(sid, iid),
+        record_time=True,
+    )
+    resumed = generate_bop_muse_detections(
+        bop_root="/unused",
+        split="test",
+        targets=targets,
+        segmentor=_FakeMuseSegmentor(),
+        n_masks=1,
+        shard_dir=shard_dir,
+        resume=True,
+        scene_loader=lambda *_args: pytest.fail("resume should use shard"),
+        record_time=True,
+    )
+
+    assert resumed
+    assert all("time" in rec and rec["time"] >= 0.0 for rec in resumed)
 
 
 def test_resume_reports_corrupt_shard_path(tmp_path):
