@@ -47,6 +47,9 @@ def _write_bop_scene(root: Path, mask: np.ndarray, *, obj_id=5):
     (scene / "scene_gt.json").write_text(json.dumps({
         "7": [{"obj_id": obj_id}]
     }))
+    (scene / "scene_gt_info.json").write_text(json.dumps({
+        "7": [{"visib_fract": 1.0}]
+    }))
     return scene
 
 
@@ -333,6 +336,9 @@ def test_missing_visible_mask_is_loud(tmp_path):
     (scene / "scene_gt.json").write_text(json.dumps({
         "7": [{"obj_id": 5}]
     }))
+    (scene / "scene_gt_info.json").write_text(json.dumps({
+        "7": [{"visib_fract": 1.0}]
+    }))
 
     with pytest.raises(FileNotFoundError, match="missing BOP GT mask"):
         build_coco_gt_from_bop(tmp_path)
@@ -351,6 +357,9 @@ def test_mask_kind_does_not_silently_fall_back(tmp_path):
         scene / "mask" / "000007_000000.png")
     (scene / "scene_gt.json").write_text(json.dumps({
         "7": [{"obj_id": 5}]
+    }))
+    (scene / "scene_gt_info.json").write_text(json.dumps({
+        "7": [{"visib_fract": 1.0}]
     }))
 
     with pytest.raises(FileNotFoundError, match="mask_kind=mask_visib"):
@@ -383,6 +392,18 @@ def test_build_coco_gt_marks_low_visibility_instances_ignored(tmp_path):
     stats = evaluate_coco_segm(gt_json, pred_json, quiet=True)
 
     assert stats["AP"] == pytest.approx(-1.0)
+
+
+def test_build_coco_gt_warns_when_scene_gt_info_missing(tmp_path):
+    mask5 = _mask(y0=4, x0=5)
+    scene = _write_bop_scene(tmp_path, mask5, obj_id=5)
+    (scene / "scene_gt_info.json").unlink()
+
+    with pytest.warns(RuntimeWarning, match="scene_gt_info.json"):
+        coco_gt = build_coco_gt_from_bop(tmp_path)
+
+    assert coco_gt["annotations"][0]["ignore"] is False
+    assert coco_gt["annotations"][0]["iscrowd"] == 0
 
 
 def test_targets_keep_selected_negative_images(tmp_path):
@@ -553,3 +574,71 @@ def test_bop_seg_eval_cli_gt_coco_filters_targets(tmp_path):
     assert summary["gt_annotations"] == 2
     assert summary["predictions"] == 2
     assert summary["stats"]["AP"] == pytest.approx(1.0)
+
+
+def test_bop_seg_eval_cli_objs_keeps_target_negative_images(tmp_path):
+    example = Path(__file__).resolve().parents[1] / "examples" / "bop_seg_eval.py"
+    spec = importlib.util.spec_from_file_location("bop_seg_eval", example)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    mask5 = _mask(y0=4, x0=5)
+    mask9 = _mask(y0=15, x0=20)
+    scene = _write_bop_scene(tmp_path, mask5, obj_id=5)
+    Image.fromarray((mask9.astype(np.uint8) * 255)).save(
+        scene / "mask_visib" / "000008_000000.png")
+    Image.fromarray(np.zeros((*mask9.shape, 3), dtype=np.uint8)).save(
+        scene / "rgb" / "000008.png")
+    (scene / "scene_gt.json").write_text(json.dumps({
+        "7": [{"obj_id": 5}],
+        "8": [{"obj_id": 9}],
+    }))
+
+    det_path = tmp_path / "detections.json"
+    det_path.write_text(json.dumps([
+        {
+            "scene_id": 1,
+            "image_id": 7,
+            "category_id": 5,
+            "score": 0.9,
+            "segmentation": _rle(mask5),
+        },
+        {
+            "scene_id": 1,
+            "image_id": 8,
+            "category_id": 5,
+            "score": 0.8,
+            "segmentation": _rle(mask9),
+        },
+    ]))
+    targets_path = tmp_path / "targets.json"
+    targets_path.write_text(json.dumps([
+        {"scene_id": 1, "im_id": 7, "obj_id": 5, "inst_count": 1},
+        {"scene_id": 1, "im_id": 8, "obj_id": 9, "inst_count": 1},
+    ]))
+    out_dir = tmp_path / "seg_eval_objs_targets"
+
+    rc = mod.main([
+        "--bop", str(tmp_path),
+        "--detections", str(det_path),
+        "--targets", str(targets_path),
+        "--objs", "5",
+        "--out-dir", str(out_dir),
+    ])
+
+    written_gt = json.loads((out_dir / "gt_coco.json").read_text())
+    pred = json.loads((out_dir / "pred_coco.json").read_text())
+    summary = json.loads((out_dir / "summary.json").read_text())
+    assert rc == 0
+    assert [im["id"] for im in written_gt["images"]] == [
+        bop_image_id(1, 7), bop_image_id(1, 8),
+    ]
+    assert [ann["category_id"] for ann in written_gt["annotations"]] == [5]
+    assert [cat["id"] for cat in written_gt["categories"]] == [5]
+    assert [(rec["image_id"], rec["category_id"]) for rec in pred] == [
+        (bop_image_id(1, 7), 5),
+        (bop_image_id(1, 8), 5),
+    ]
+    assert summary["gt_images"] == 2
+    assert summary["gt_annotations"] == 1
+    assert summary["predictions"] == 2

@@ -61,7 +61,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                          "and bop_image_id.")
     ap.add_argument("--objs", default="",
                     help="optional comma-separated obj ids, e.g. 5,8,9; "
-                         "filters GT categories and detections.")
+                         "filters GT categories and detections. With "
+                         "--targets, this does not shrink the target image set.")
     ap.add_argument("--out-dir", default="outputs/bop_seg_eval",
                     help="directory for gt_coco.json, pred_coco.json, summary.json.")
     ap.add_argument("--mask-kind", default="mask_visib",
@@ -83,8 +84,6 @@ def main(argv: list[str] | None = None) -> int:
 
     obj_ids = _parse_obj_ids(args.objs)
     targets = load_bop_targets(args.targets or None)
-    if obj_ids and targets is not None:
-        targets = {t for t in targets if t[2] in obj_ids}
 
     if args.gt_coco:
         coco_gt = _load_json(args.gt_coco)

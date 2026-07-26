@@ -4,11 +4,18 @@ The BOP model-based 2D segmentation task evaluates records shaped like
 ``{scene_id, image_id, category_id, score, segmentation}`` against visible
 object masks. popoe already loads those detections for pose estimation; this
 module adds the thin COCOeval bridge needed to score the masks themselves.
+
+Ground truth built here targets stock PyPI ``pycocotools``: low-visibility BOP
+instances mirror the ``ignore`` bit into ``iscrowd`` because stock
+``COCOeval._prepare`` derives ignore from crowd. For exact BOP toolkit COCO-fork
+semantics, prefer toolkit-generated ``scene_gt_coco`` or reset ``iscrowd`` to
+0 while preserving ``ignore`` before scoring with that fork.
 """
 
 from __future__ import annotations
 
 import json
+import warnings
 from contextlib import nullcontext, redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -153,7 +160,9 @@ def build_coco_gt_from_bop(
     ``targets`` follows the official BOP COCO evaluator semantics: it selects
     target images, not target object triples. All GT instances on those images
     stay in the COCO annotations, with ``ignore=True`` for instances whose
-    ``scene_gt_info.json`` visibility is below 10%.
+    ``scene_gt_info.json`` visibility is below 10%. Missing
+    ``scene_gt_info.json`` triggers a warning and defaults instances in that
+    scene to non-ignored because visibility fractions are unavailable.
 
     When ``category_ids`` is set, every selected image is kept even if it has
     no annotation for the selected categories. That preserves negative images
@@ -168,6 +177,9 @@ def build_coco_gt_from_bop(
     seen_category_ids: set[int] = set()
     target_images = {
         (int(scene_id), int(im_id)) for scene_id, im_id, _ in targets
+    } if targets is not None else None
+    target_scenes = {
+        int(scene_id) for scene_id, _, _ in targets
     } if targets is not None else None
     ann_id = 1
 
@@ -190,7 +202,18 @@ def build_coco_gt_from_bop(
             continue
         scene_gt = _read_json(gt_path)
         info_path = scene_dir / "scene_gt_info.json"
-        scene_gt_info = _read_json(info_path) if info_path.exists() else {}
+        if info_path.exists():
+            scene_gt_info = _read_json(info_path)
+        else:
+            scene_gt_info = {}
+            if target_scenes is None or scene_id in target_scenes:
+                warnings.warn(
+                    "missing BOP scene_gt_info.json for "
+                    f"scene={scene_dir.name}; low-visibility instances cannot "
+                    "be ignored",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
         for im_key, objs in scene_gt.items():
             im_id = int(im_key)
             image_id = bop_image_id(scene_id, im_id, image_id_factor)
@@ -235,13 +258,6 @@ def build_coco_gt_from_bop(
                 })
                 ann_id += 1
                 seen_category_ids.add(obj_id)
-
-            # Category filters must keep negative images so FPs on frames
-            # without the selected object (including empty scene_gt rows [])
-            # still affect COCO precision.
-            if category_filter is not None and image_id not in images:
-                height, width = _image_hw(scene_dir, im_id, objs, mask_kind)
-                _register_image(image_id, scene_id, im_id, height, width)
 
     if category_filter is not None:
         category_source = category_filter
