@@ -24,20 +24,25 @@ entrypoints, under the dual-disclosure discipline of `../gedi/EXPERIMENTS.md`
 
 ## Headline ledger
 
-> **2026-07-26 pipeline verify**: frozen popoe commit **`75553a1`** (post PR #3/#4/#5/#6).  
-> LM-O headline (#2) **RUNNING** on pod `wrmy8k0thtxjq6` →  
-> `/workspace/results/pipeline_verify_20260726/parity_lmo_g32_union.csv`.  
-> YCB-V (#1) not started (balance). Seg-AP ledger section below is filled from offline AP run.
-
+> **2026-07-26 pipeline verify COMPLETE** — popoe **`75553a1`**, pod `wrmy8k0thtxjq6` (stopped).  
+> Artifacts: `outputs/pipeline_verify_20260726/`. Full AR = mean(MSSD, MSPD, VSD).  
+> **Δ exceeds ±0.003** on full AR; all six rows land **above** the gedi archive. Do **not** rewrite the archive headline; cite this as the popoe parity measurement (dual-track). Promotion line remains 0.8201 / 0.6896.
 
 | # | Experiment | Archive number (source) | popoe entrypoint | Class | Reproduced | popoe commit / pod / date | Status |
 |---|---|---|---|---|---|---|---|
-| 1 | YCB-V full BOP AR | **0.7668** — `score_rules_ycbvg32m`; recipe: CNOS-FastSAM TOPK2 + gripper label pooling + grid-32 + O3D + fit×s_feat_1(×metric) | `examples/bop_eval.py --bop $BOP/ycbv --detections data/detections/cnos/cnos-fastsam_ycbv-test.json --merge ycbv --topk 2 --grid 32 --solver o3d --weights 1.0,0.7,0.5,0.3,0.2 --render-backend nvdiffrast --out … --cache … --cand-csv …` (full cmd → Run plan #1) | **GPU-POD** | — | — | ☐ |
-| 2 | LM-O full BOP AR | **0.6726** — `lmog32`; CNOS∪SAM6D union detections + same pipeline | `examples/bop_eval.py --bop $BOP/lmo --sources cnos=…/cnos-fastsam_lmo-test.json,sam6d=…/sam6d_ism_lmo.json --merge none --topk 2 --grid 32 --solver o3d …` (full cmd → Run plan #2) | **GPU-POD** | — | — | ☐ |
-| 3 | YCB-V AR(2/3) | 0.7528 (same run as #1) | same pose CSV as #1; score with gedi `scripts/freezev2_compute_ar_mssd_mspd.py` (LOCAL-CPU after #1) | **LOCAL-CPU** (post #1) | — | — | ☐ |
-| 4 | LM-O AR(2/3) | 0.7324 (same run as #2) | same pose CSV as #2; same AR scorer as #3 | **LOCAL-CPU** (post #2) | — | — | ☐ |
-| 5 | YCB-V grasp ADD(-S)@0.1d | **0.8173** (median 2.5 mm / 6.6°) — gedi `scripts/freezev2_grasp_eval.py`, locally recomputable from pose CSVs | **No popoe port** — run gedi script on #1 pose CSV: `BOP_PATH=$BOP/ycbv python ../gedi/scripts/freezev2_grasp_eval.py <pose.csv>` | **LOCAL-CPU** (post #1; GAP: no in-repo grasp CLI) | — | — | ☐ |
-| 6 | LM-O grasp ADD(-S)@0.1d | **0.7617** (7.2 mm / 5.8°) | same as #5 with `BOP_PATH=$BOP/lmo` + #2 pose CSV | **LOCAL-CPU** (post #2; GAP: same) | — | — | ☐ |
+| 1 | YCB-V full BOP AR | **0.7668** — `score_rules_ycbvg32m`; recipe: CNOS-FastSAM TOPK2 + gripper label pooling + grid-32 + O3D + fit×s_feat_1(×metric) | `examples/bop_eval.py --bop $BOP/ycbv --detections data/detections/cnos/cnos-fastsam_ycbv-test.json --merge ycbv --topk 2 --grid 32 --solver o3d --weights 1.0,0.7,0.5,0.3,0.2 --render-backend nvdiffrast --out … --cache … --cand-csv …` (full cmd → Run plan #1) | **GPU-POD** | **0.7781** (MSSD 0.7934 / MSPD 0.7414 / VSD 0.7995) | `75553a1` / `wrmy8k0thtxjq6` / 2026-07-26 | ☑ Δ=+0.0113 |
+| 2 | LM-O full BOP AR | **0.6726** — `lmog32`; CNOS∪SAM6D union detections + same pipeline | `examples/bop_eval.py --bop $BOP/lmo --sources cnos=…/cnos-fastsam_lmo-test.json,sam6d=…/sam6d_ism_lmo.json --merge none --topk 2 --grid 32 --solver o3d …` (full cmd → Run plan #2) | **GPU-POD** | **0.6792** (MSSD 0.7242 / MSPD 0.7566 / VSD 0.5568) | same campaign | ☑ Δ=+0.0066 |
+| 3 | YCB-V AR(2/3) | 0.7528 (same run as #1) | same pose CSV as #1; score with gedi / freezev2 `freezev2_compute_ar_mssd_mspd.py` | **LOCAL-CPU** (post #1) | **0.7674** | same | ☑ Δ=+0.0146 |
+| 4 | LM-O AR(2/3) | 0.7324 (same run as #2) | same pose CSV as #2; same AR scorer as #3 | **LOCAL-CPU** (post #2) | **0.7404** | same | ☑ Δ=+0.0080 |
+| 5 | YCB-V grasp ADD(-S)@0.1d | **0.8173** (median 2.5 mm / 6.6°) — gedi `scripts/freezev2_grasp_eval.py` | external grasp CLI on #1 CSV | **LOCAL-CPU** (post #1) | **0.8240** (@0.05d 0.7716; med 2.5 mm / 11.9°) | same | ☑ Δ=+0.0067 |
+| 6 | LM-O grasp ADD(-S)@0.1d | **0.7617** (7.2 mm / 5.8°) | same as #5 on #2 CSV | **LOCAL-CPU** (post #2) | **0.7706** (@0.05d 0.5146; med 7.1 mm / 5.9°) | same | ☑ Δ=+0.0089 |
+
+### Campaign notes (2026-07-26)
+
+- Fresh clone path on pod: `/workspace/popoe_verify_75553a1` @ `75553a1`.
+- Outputs: `outputs/pipeline_verify_20260726/{parity_ycbv_g32m,parity_lmo_g32_union}.csv` (+ AR/VSD/grasp logs, `master.log`, `CAMPAIGN_DONE`).
+- Scheduling: O3D is CPU-bound; `OMP_NUM_THREADS=16` capped thrash; brief dual-GPU occupancy then serial finish.
+- Multi-mask LM-O union is exercised by #2 (secondary row can be read as covered for full-AR end-to-end).
 
 ## Contribution-level parity (secondary)
 
@@ -46,7 +51,7 @@ entrypoints, under the dual-disclosure discipline of `../gedi/EXPERIMENTS.md`
 | Adaptive visual weight | beats best-fixed on all 4 datasets | Built into `bop_eval.py --weights 1.0,0.7,0.5,0.3,0.2` (ChampionScorer per-target argmax over w). Cross-dataset 4-set claim still needs TUD-L / IC-BIN BOP data + GPU runs (not in this repo). Offline post-hoc: gedi `scripts/freezev2_adaptive_select.py` over per-w CSVs. | **GPU-POD** (YCB-V/LM-O covered by #1/#2); **GAP** for TUD-L/IC-BIN data | ☐ |
 | Canonical-space scoring | 26-rule ablation; champion rule constant across datasets | Live rule = `ChampionScorer` (`s_icp * max(s_feat_1,0) * metric_fit?`). Offline re-sweep: `examples/rule_replay.py <cand.csv> --rule "s_icp*s_feat_1" --rule "s_icp*s_feat_1*metric_fit" --out-dir …` on a `--cand-csv` dump from #1/#2 (or existing popoe cands under `../gedi/ycbv_local_data/union_scoring_20260716/`). | **LOCAL-CPU** (once cand-csv exists) | ☐ |
 | Gripper label pooling + metric_fit | obj20 +33.6 pt; 2×2 ablation | `bop_eval.py --merge ycbv` (pools 19:20, size_aware metric_fit) vs `--merge none` on YCB-V objs 19,20 (`--objs 19,20`). Live scorer: `ChampionScorer(size_aware=True)` for pooled pairs. | **GPU-POD** (subset ablation) | ☐ |
-| Multi-mask / detection union (LM-O) | CNOS∪SAM6D +2.8 pt | Smoke (no GPU): `examples/union_smoke.py --dataset lmo --source sam6d=data/detections/sam6d/sam6d_ism_lmo.json`. Full AR: same as headline #2 (`--sources cnos=…,sam6d=…`). CNOS-only control: `--detections …/cnos-fastsam_lmo-test.json`. | **LOCAL-CPU** smoke + **GPU-POD** full | ☐ |
+| Multi-mask / detection union (LM-O) | CNOS∪SAM6D +2.8 pt | Smoke (no GPU): `examples/union_smoke.py --dataset lmo --source sam6d=data/detections/sam6d/sam6d_ism_lmo.json`. Full AR: same as headline #2 (`--sources cnos=…,sam6d=…`). CNOS-only control: `--detections …/cnos-fastsam_lmo-test.json`. | **LOCAL-CPU** smoke + **GPU-POD** full | ☑ full-AR via #2 (2026-07-26); no separate CNOS-only control re-run |
 
 ## Rules of engagement
 
@@ -355,16 +360,13 @@ CLI flags from code, light CPU tests. GPU parity numbers still ☐.
 | `uv run python examples/union_smoke.py --dataset lmo --source sam6d=data/detections/sam6d/sam6d_ism_lmo.json` | <2 min | **OK** end-to-end (393 champions) |
 | `uv run python examples/rule_replay.py …/popoe_ycbv_formal_A_cands.csv --rule "s_icp*s_feat_1" --rule "s_icp*s_feat_1*metric_fit" --rule "s_icp*s_feat_1*metric_fit*s_coarse" --out-dir …` | <1 min | **OK** — 21 800 hyps / 1 669 targets; ×metric_fit flips 44.0% vs formal baseline; +s_coarse flips 0.2% (formal baseline is itself s_coarse-arbitrated — consistency check ✓). Original plan referenced `popoe_ycbv_union2_cands.csv` which does not exist; corrected to `popoe_ycbv_formal_A_cands.csv`. |
 | `uv run python examples/pipeline_selfcheck.py …` | needs GPU | **skipped** (no local GPU) |
-| full `bop_eval` parity | 15–22 h GPU | **not run** (zero-GPU prep) |
+| full `bop_eval` parity | 15–22 h GPU | **done 2026-07-26** — see Headline ledger #1–#6 |
 
-## Segmentation AP ledger (draft — 2026-07-26)
+## Segmentation AP ledger (2026-07-26)
 
 > **Status**: offline measurements from `outputs/seg_ap_20260725T223014Z/`.  
-> **Not** a formal parity row for pose. Pose headline #1/#2 still ☐.  
-> **Gate**: do not re-score or promote new official numbers until popoe PRs
-> #3 / #4 / #5 are merged into `main` and this file is re-run at a frozen
-> commit (PR #5 changes evaluator semantics; PR #3 enables `muse-repro`
-> full-split production; PR #4 affects pose fallback/OOM behaviour).
+> **Not** a pose parity row. Pose headline #1/#2 filled above from the same day's campaign.  
+> PRs #3/#4/#5/#6 are merged; evaluator semantics from #5 apply to future re-scores.
 
 ### Official single-source mask AP (YCB-V / LM-O)
 
