@@ -519,6 +519,10 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                     help="min extent/diameter when size gate is on")
     ap.add_argument("--size-gate-max-ratio", type=float, default=1.1,
                     help="max extent/diameter when size gate is on")
+    ap.add_argument("--class-sim", default="cosine", choices=("cosine", "tanimoto"),
+                    help="class-token similarity in S_abs")
+    ap.add_argument("--patch-sim", default="tanimoto", choices=("cosine", "tanimoto"),
+                    help="GeM patch similarity (paper Eqs. 2–3 write cosine)")
     ap.add_argument("--allow-single-class", action="store_true")
     return ap.parse_args(argv)
 
@@ -589,6 +593,8 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
         beta=args.beta,
         tau=args.tau,
         gamma=args.gamma,
+        class_sim=args.class_sim,
+        patch_sim=args.patch_sim,
         n_masks=args.topk,
         allow_single_class=args.allow_single_class,
     )
@@ -597,7 +603,8 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
         f"on[{args.size_gate_min_ratio:g},{args.size_gate_max_ratio:g}]")
     print(
         f"MUSE {MUSE_SOURCE}: {len(target_images)} images, "
-        f"{len(classes)} classes size_gate={gate_tag} -> {args.out}",
+        f"{len(classes)} classes size_gate={gate_tag} "
+        f"sim=({args.class_sim},{args.patch_sim}) -> {args.out}",
         flush=True,
     )
     records = generate_bop_muse_detections(

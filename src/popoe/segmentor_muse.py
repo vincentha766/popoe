@@ -50,9 +50,9 @@ numbers being read as an exact replication):
   printed-text confuser failure mode seen on this project's real shots.
 * No union-bbox box-prompt refinement pass (CNOS-v3 has one); the GD+SAM2
   cascade is the paper's single largest ablation lever and should not need it.
-* Embedding fusion is simplified: the paper's vMF-weighted multi-embedding
-  similarity is replaced by GeM pooling + Tanimoto, which needs no per-class
-  concentration parameters fitted from a template set this small.
+* Matching defaults to cosine(class token) + Tanimoto(GeM patch). Paper
+  Eqs. (2)–(3) write cosine for both streams (prose also names Tanimoto);
+  use ``patch_sim="cosine"`` for the paper-equation A/B (G2).
 
 The scoring core is numpy-only and unit-tested; every heavy component (Grounding
 DINO, SAM2, DINOv2, template PNGs) is lazy, injected, and raises
@@ -197,14 +197,31 @@ def _unit(v: np.ndarray) -> np.ndarray:
     return v / (np.linalg.norm(v) + 1e-12)
 
 
+def _vector_sim(a: np.ndarray, b: np.ndarray, kind: str) -> float:
+    """Pairwise embedding similarity.
+
+    ``cosine`` matches paper Eqs. (2)–(3) (L2-normalised inner product).
+    ``tanimoto`` is continuous Jaccard (our previous default for patch GeM).
+    """
+    kind = str(kind).lower().strip()
+    if kind == "cosine":
+        return float(_unit(a) @ _unit(b))
+    if kind == "tanimoto":
+        return tanimoto(a, b)
+    raise ValueError(f"unknown similarity kind {kind!r}; use cosine|tanimoto")
+
+
 def absolute_score(cls_q: np.ndarray, gem_q: np.ndarray,
                    cls_bank: np.ndarray, gem_bank: np.ndarray,
-                   alpha: float = DEFAULT_ALPHA) -> float:
+                   alpha: float = DEFAULT_ALPHA,
+                   class_sim: str = "cosine",
+                   patch_sim: str = "tanimoto") -> float:
     """``S_abs(p,c)``: best-matching template view of one class.
 
     `cls_bank` / `gem_bank` are ``(T, d)`` stacks over that class's templates.
-    Class tokens are L2-normalised here so the cosine is well defined whatever
-    the caller passed.
+    Defaults keep historical behaviour (cosine class + Tanimoto GeM). Paper
+    Eqs. (2)–(3) write cosine for **both** streams — use
+    ``patch_sim="cosine"`` for that A/B (G2).
     """
     cls_bank = np.atleast_2d(np.asarray(cls_bank, dtype=np.float64))
     gem_bank = np.atleast_2d(np.asarray(gem_bank, dtype=np.float64))
@@ -212,10 +229,10 @@ def absolute_score(cls_q: np.ndarray, gem_q: np.ndarray,
         raise ValueError(
             f"template bank mismatch: {cls_bank.shape[0]} class tokens vs "
             f"{gem_bank.shape[0]} patch embeddings")
-    q = _unit(cls_q)
     best = -np.inf
     for cls_t, gem_t in zip(cls_bank, gem_bank):
-        s = alpha * float(q @ _unit(cls_t)) + (1.0 - alpha) * tanimoto(gem_q, gem_t)
+        s = (alpha * _vector_sim(cls_q, cls_t, class_sim)
+             + (1.0 - alpha) * _vector_sim(gem_q, gem_t, patch_sim))
         best = max(best, s)
     return float(best)
 
@@ -580,6 +597,8 @@ class MuseSegmentor:
                  beta: float = DEFAULT_BETA,
                  tau: float = DEFAULT_TAU,
                  gamma: float = DEFAULT_GAMMA,
+                 class_sim: str = "cosine",
+                 patch_sim: str = "tanimoto",
                  n_masks: int = 2,
                  allow_single_class: bool = False,
                  cache_frames: int = 2):
@@ -607,6 +626,11 @@ class MuseSegmentor:
         self.beta = float(beta)
         self.tau = float(tau)
         self.gamma = float(gamma)
+        self.class_sim = str(class_sim).lower().strip()
+        self.patch_sim = str(patch_sim).lower().strip()
+        # validate early
+        _vector_sim(np.ones(2), np.ones(2), self.class_sim)
+        _vector_sim(np.ones(2), np.ones(2), self.patch_sim)
         self.n_masks = _check_n_masks(n_masks)
         self.cache_frames = int(cache_frames)
         self._frames: dict[str, MuseSceneResult] = {}
@@ -630,6 +654,7 @@ class MuseSegmentor:
             "source": self.source,
             "alpha": self.alpha, "beta": self.beta,
             "tau": self.tau, "gamma": self.gamma,
+            "class_sim": self.class_sim, "patch_sim": self.patch_sim,
             "n_masks": self.n_masks,
             "classes": {c.obj.obj_id: (c.template_dir, float(c.obj.diameter))
                         for c in self.classes},
@@ -723,8 +748,9 @@ class MuseSegmentor:
                 continue                       # row stays -inf: never a winner
             cls_q, gem_q = embedder.embed(crop, crop_mask)
             for ci, (cls_bank, gem_bank) in enumerate(banks):
-                s_abs[pi, ci] = absolute_score(cls_q, gem_q, cls_bank, gem_bank,
-                                               self.alpha)
+                s_abs[pi, ci] = absolute_score(
+                    cls_q, gem_q, cls_bank, gem_bank, self.alpha,
+                    class_sim=self.class_sim, patch_sim=self.patch_sim)
 
         if len(masks):
             s_rel = relative_scores(s_abs, self.tau)
@@ -983,6 +1009,10 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
                     help="min extent/diameter when size gate is on")
     ap.add_argument("--size-gate-max-ratio", type=float, default=1.1,
                     help="max extent/diameter when size gate is on")
+    ap.add_argument("--class-sim", default="cosine", choices=("cosine", "tanimoto"),
+                    help="class-token similarity in S_abs")
+    ap.add_argument("--patch-sim", default="tanimoto", choices=("cosine", "tanimoto"),
+                    help="GeM patch similarity in S_abs (paper Eqs. 2–3 use cosine)")
     ap.add_argument("--allow-single-class", action="store_true")
     args = ap.parse_args(argv)
 
@@ -1001,6 +1031,7 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
         min_extent_ratio=args.size_gate_min_ratio,
         max_extent_ratio=args.size_gate_max_ratio,
         alpha=args.alpha, beta=args.beta, tau=args.tau, gamma=args.gamma,
+        class_sim=args.class_sim, patch_sim=args.patch_sim,
         n_masks=args.topk, allow_single_class=args.allow_single_class)
 
     records = muse_records(scene, seg, n_masks=args.topk)

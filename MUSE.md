@@ -25,7 +25,7 @@ purpose. Do not relabel.
   Park & Oh — an independent team, **not** the FreeZe/FBK group.
 - Code: none published. Masks: none downloadable (BOP `method_info/873`).
 - Training-free by construction: Grounding DINO (Swin-B, prompt "items") →
-  SAM2 (Hiera-L) → DINOv2 template matching with vMF-weighted multi-embedding
+  SAM2 (Hiera-L) → DINOv2 template matching (GeM patch + joint score)
   similarity.
 - FreeZeV2 consumes it as a pure upstream data dependency; BOP rules only
   require *declaring* the segmentation source, not publishing it.
@@ -153,7 +153,7 @@ list honest — it is what stops these numbers being read as an exact replicatio
 | Paper | Here | Why |
 |-------|------|-----|
 | No depth size gate (BOP proposals are RGB-only) | Depth 3D-extent gate after proposal, union of all registered classes' intervals | Cheap, already validated on this project's real shots, targets the printed-text confuser failure mode |
-| vMF-weighted multi-embedding similarity | GeM pooling (p=1.5) + Tanimoto on foreground patch tokens | No per-class concentration parameters to fit from a template set this small |
+| Paper Eqs. (2)–(3): cosine on cls **and** GeM | Default: cosine(cls) + **Tanimoto**(GeM); optional ``patch_sim=cosine`` | G2 A/B; paper prose also names Tanimoto |
 | — | No union-bbox box-prompt refinement (CNOS-v3 has one) | The GD+SAM2 cascade is the paper's largest ablation lever (+0.108 mAP over plain SAM proposals); it should not need the patch |
 | Naive softmax | Max-subtracted softmax | Identical on any input the reference handles; additionally keeps an all-failed proposal row from becoming NaN and poisoning every class's ranking |
 
@@ -250,6 +250,6 @@ Pod: reused `ctxs25f2eczigt` (network volume). Artefacts:
 
 **Conclusion:** disabling the depth 3D-extent gate does **not** close the
 official gap (Δ ≈ −0.004 vs gate-on, noise-level). Next levers: **G2**
-matcher (GeM/Tanimoto vs paper vMF) and **G3** GD/SAM2 cascade audit.
+**G2** patch_sim cosine (paper eqs) vs Tanimoto, then **G3** GD/SAM2 cascade.
 Keep the gate available for real-robot confuser filtering; it is not the
 BOP AP bottleneck.

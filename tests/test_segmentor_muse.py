@@ -51,6 +51,17 @@ def test_tanimoto_is_one_for_identical_and_symmetric():
     assert tanimoto(np.array([1.0, 0.0]), np.array([0.0, 1.0])) == pytest.approx(0.0, abs=1e-6)
 
 
+def test_absolute_score_patch_sim_cosine_matches_l2_inner_product():
+    """Paper Eqs. (2)–(3) write cosine for GeM streams as well."""
+    cls_q = np.array([1.0, 0.0])
+    gem_q = np.array([3.0, 0.0])  # unnormalised
+    cls_bank = np.array([[1.0, 0.0]])
+    gem_bank = np.array([[1.0, 0.0]])
+    s = absolute_score(cls_q, gem_q, cls_bank, gem_bank, alpha=0.0,
+                       patch_sim="cosine")
+    assert s == pytest.approx(1.0, abs=1e-6)
+
+
 def test_absolute_score_takes_the_best_template_view():
     cls_q, gem_q = np.array([1.0, 0.0]), np.array([1.0, 0.0])
     cls_bank = np.array([[0.0, 1.0], [1.0, 0.0]])      # 2nd view matches
