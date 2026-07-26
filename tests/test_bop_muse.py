@@ -6,6 +6,7 @@ import pytest
 
 from popoe.bop_muse import (
     BOPTargetImage,
+    _main,
     bop_frame_manifest,
     build_muse_classes,
     generate_bop_muse_detections,
@@ -90,6 +91,17 @@ def test_load_bop_target_images_treats_empty_filter_as_empty_and_rejects_negativ
     assert load_bop_target_images(targets, obj_ids=set()) == []
     with pytest.raises(ValueError, match="limit_images"):
         load_bop_target_images(targets, limit_images=-1)
+
+
+def test_load_bop_target_images_uses_row_count_when_inst_count_is_missing(tmp_path):
+    targets = _write_json(tmp_path / "test_targets_bop19.json", [
+        {"scene_id": 2, "im_id": 3, "obj_id": 14},
+        {"scene_id": 2, "im_id": 3, "obj_id": 14},
+    ])
+
+    assert load_bop_target_images(targets) == [
+        BOPTargetImage(scene_id=2, im_id=3, obj_ids=(14,), inst_counts=((14, 2),))
+    ]
 
 
 def test_bop_frame_manifest_converts_depth_scale_to_metres(tmp_path):
@@ -252,6 +264,36 @@ def test_generate_bop_muse_detections_shard_key_depends_on_segmentor_config(tmp_
     assert seg.calls == [(1, 1, 9, 1), (1, 1, 14, 1), (1, 1, 21, 1)]
 
 
+def test_generate_bop_muse_detections_shard_key_depends_on_bop_split(tmp_path):
+    pytest.importorskip("pycocotools")
+    targets = [BOPTargetImage(scene_id=1, im_id=1, obj_ids=(9,))]
+    shard_dir = tmp_path / "shards"
+
+    generate_bop_muse_detections(
+        bop_root=tmp_path / "bop",
+        split="test",
+        targets=targets,
+        segmentor=_FakeMuseSegmentor(),
+        n_masks=1,
+        shard_dir=shard_dir,
+        scene_loader=lambda _root, _split, sid, iid: _scene(sid, iid),
+    )
+    seg = _FakeMuseSegmentor()
+    generate_bop_muse_detections(
+        bop_root=tmp_path / "bop",
+        split="train",
+        targets=targets,
+        segmentor=seg,
+        n_masks=1,
+        shard_dir=shard_dir,
+        resume=True,
+        scene_loader=lambda _root, _split, sid, iid: _scene(sid, iid),
+    )
+
+    assert len(list(shard_dir.glob("*.json"))) == 2
+    assert seg.calls == [(1, 1, 9, 1), (1, 1, 14, 1)]
+
+
 def test_generate_bop_muse_detections_floors_n_masks_to_inst_count():
     pytest.importorskip("pycocotools")
     seg = _FakeMuseSegmentor()
@@ -276,7 +318,7 @@ def test_generate_bop_muse_detections_floors_n_masks_to_inst_count():
     assert seg.calls == [(1, 1, 9, 3), (1, 1, 14, 3)]
 
 
-def test_resume_requires_shard_dir_and_no_time_strips_resumed_time(tmp_path):
+def test_resume_requires_shard_dir_and_record_time_uses_separate_shards(tmp_path):
     pytest.importorskip("pycocotools")
     targets = [BOPTargetImage(scene_id=1, im_id=1, obj_ids=(9,))]
     shard_dir = tmp_path / "shards"
@@ -300,19 +342,22 @@ def test_resume_requires_shard_dir_and_no_time_strips_resumed_time(tmp_path):
         scene_loader=lambda _root, _split, sid, iid: _scene(sid, iid),
         record_time=True,
     )
+    seg = _FakeMuseSegmentor()
     resumed = generate_bop_muse_detections(
         bop_root="/unused",
         split="test",
         targets=targets,
-        segmentor=_FakeMuseSegmentor(),
+        segmentor=seg,
         n_masks=1,
         shard_dir=shard_dir,
         resume=True,
-        scene_loader=lambda *_args: pytest.fail("resume should use shard"),
+        scene_loader=lambda _root, _split, sid, iid: _scene(sid, iid),
         record_time=False,
     )
 
     assert resumed
+    assert seg.calls == [(1, 1, 9, 1), (1, 1, 14, 1)]
+    assert len(list(shard_dir.glob("*.json"))) == 2
     assert all("time" not in rec for rec in resumed)
 
 
@@ -344,3 +389,30 @@ def test_resume_reports_corrupt_shard_path(tmp_path):
             resume=True,
             scene_loader=lambda *_args: pytest.fail("resume should read shard"),
         )
+
+
+def test_generate_bop_muse_detections_rejects_zero_masks():
+    with pytest.raises(ValueError, match="n_masks"):
+        generate_bop_muse_detections(
+            bop_root="/unused",
+            split="test",
+            targets=[BOPTargetImage(scene_id=1, im_id=1, obj_ids=(9,))],
+            segmentor=_FakeMuseSegmentor(),
+            n_masks=0,
+            scene_loader=lambda _root, _split, sid, iid: _scene(sid, iid),
+        )
+
+
+def test_cli_rejects_invalid_resume_limit_topk_and_specs():
+    base = ["--bop-root", "/unused", "--out", "/tmp/out.json"]
+
+    with pytest.raises(SystemExit, match="--resume requires --shard-dir"):
+        _main(base + ["--resume"])
+    with pytest.raises(SystemExit, match="--limit-images"):
+        _main(base + ["--limit-images", "-1"])
+    with pytest.raises(SystemExit, match="--topk"):
+        _main(base + ["--topk", "0"])
+    with pytest.raises(SystemExit, match="--objs entries"):
+        _main(base + ["--objs", "not-an-int"])
+    with pytest.raises(SystemExit, match="obj_id must be an integer"):
+        _main(base + ["--classes", "x=/tpl"])

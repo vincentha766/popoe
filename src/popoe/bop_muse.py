@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import tempfile
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -115,22 +116,31 @@ def load_bop_target_images(
     if limit_images is not None and int(limit_images) < 0:
         raise ValueError(f"limit_images must be >= 0, got {limit_images}")
     grouped: dict[tuple[int, int], set[int]] = {}
-    inst_counts: dict[tuple[int, int], dict[int, int]] = {}
+    field_counts: dict[tuple[int, int], dict[int, int]] = {}
+    row_counts: dict[tuple[int, int], dict[int, int]] = {}
     for rec in _read_json(targets_json):
         obj_id = int(rec["obj_id"])
         if keep is not None and obj_id not in keep:
             continue
         key = (int(rec["scene_id"]), int(rec["im_id"]))
         grouped.setdefault(key, set()).add(obj_id)
-        counts = inst_counts.setdefault(key, {})
+        counts = field_counts.setdefault(key, {})
         counts[obj_id] = max(counts.get(obj_id, 1), int(rec.get("inst_count", 1)))
+        rows = row_counts.setdefault(key, {})
+        rows[obj_id] = rows.get(obj_id, 0) + 1
 
     out = [
         BOPTargetImage(
             scene_id=sid,
             im_id=iid,
             obj_ids=tuple(sorted(ids)),
-            inst_counts=tuple(sorted(inst_counts[(sid, iid)].items())),
+            inst_counts=tuple(sorted(
+                (obj_id, max(
+                    field_counts[(sid, iid)].get(obj_id, 1),
+                    row_counts[(sid, iid)].get(obj_id, 0),
+                ))
+                for obj_id in ids
+            )),
         )
         for (sid, iid), ids in sorted(grouped.items())
     ]
@@ -249,11 +259,7 @@ def _segmentor_config(segmentor) -> dict:
     config = getattr(segmentor, "config", None)
     if callable(config):
         return dict(config())
-    return {
-        "class_order": [
-            int(c.obj.obj_id) for c in getattr(segmentor, "classes", [])
-        ]
-    }
+    raise ValueError("sharded MUSE runs require segmentor.config() for cache identity")
 
 
 def _effective_n_masks(n_masks: int | None, segmentor, target: BOPTargetImage) -> int | None:
@@ -261,14 +267,27 @@ def _effective_n_masks(n_masks: int | None, segmentor, target: BOPTargetImage) -
     if n_masks is None:
         base = getattr(segmentor, "n_masks", None)
         return max(int(base), floor) if base is not None else None
-    return max(int(n_masks), floor)
+    n = int(n_masks)
+    if n < 1:
+        raise ValueError(f"n_masks must be >= 1 for BOP production, got {n_masks}")
+    return max(n, floor)
 
 
-def _shard_key(segmentor, n_masks: int | None) -> str:
+def _shard_key(
+    *,
+    bop_root: str | os.PathLike,
+    split: str,
+    segmentor,
+    n_masks: int | None,
+    record_time: bool,
+) -> str:
     return fingerprint({
         "source": MUSE_SOURCE,
+        "bop_root": str(Path(bop_root).expanduser().resolve()),
+        "split": split,
         "segmentor": _segmentor_config(segmentor),
         "n_masks": n_masks,
+        "record_time": bool(record_time),
     })
 
 
@@ -295,9 +314,18 @@ def _filter_target_objects(
 
 
 def _write_muse_detections_atomic(records: Sequence[dict], output_json: Path) -> None:
-    tmp = output_json.with_name(output_json.name + ".tmp")
-    write_muse_detections(records, str(tmp))
-    os.replace(tmp, output_json)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=output_json.name + ".",
+        suffix=".tmp",
+        dir=output_json.parent,
+    )
+    os.close(fd)
+    try:
+        write_muse_detections(records, tmp_name)
+        os.replace(tmp_name, output_json)
+    finally:
+        if os.path.exists(tmp_name):
+            os.unlink(tmp_name)
 
 
 def generate_bop_muse_detections(
@@ -330,11 +358,16 @@ def generate_bop_muse_detections(
 
     for idx, target in enumerate(target_list, start=1):
         image_n_masks = _effective_n_masks(n_masks, segmentor, target)
-        shard_key = _shard_key(segmentor, image_n_masks)
-        shard = (
-            _shard_path(shard_dir, target, shard_key)
-            if shard_dir is not None else None
-        )
+        shard = None
+        if shard_dir is not None:
+            shard_key = _shard_key(
+                bop_root=bop_root,
+                split=split,
+                segmentor=segmentor,
+                n_masks=image_n_masks,
+                record_time=record_time,
+            )
+            shard = _shard_path(shard_dir, target, shard_key)
         resumed = bool(resume and shard is not None and shard.exists())
         if resumed:
             try:
@@ -444,8 +477,8 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
         raise SystemExit("--resume requires --shard-dir")
     if args.limit_images < 0:
         raise SystemExit("--limit-images must be >= 0")
-    if args.topk < 0:
-        raise SystemExit("--topk must be >= 0")
+    if args.topk < 1:
+        raise SystemExit("--topk must be >= 1")
 
     bop_root = Path(args.bop_root)
     targets_path = Path(args.targets) if args.targets else default_targets_path(bop_root, args.split)
