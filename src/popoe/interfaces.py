@@ -58,32 +58,20 @@ def is_runtime_failure(exc: BaseException) -> bool:
     still arrive as a bare `RuntimeError('CUDA out of memory. Tried to allocate
     ...')`. Matched by name and message so this module stays torch-free.
 
-    The message match enumerates FAULTS rather than keying on "CUDA error:",
-    because that prefix covers both sides of this line. These are faults:
-
-        out of memory / alloc failed   the GPU is full
-        illegal memory access          a kernel wrote out of bounds
-        device-side assert             a kernel tripped an assertion
-        unspecified launch failure     a hard kernel fault after launch
-        misaligned address             a kernel read off an unaligned pointer
-        illegal instruction            a kernel hit an invalid opcode
-        launch timed out               the watchdog killed a running kernel
-        ecc error / uncorrectable      the card's memory is failing
-
-    while these, which carry the same prefix, are ordinary unavailability and
-    must stay routable — they are what a fallback chain exists for:
+    The message policy allowlists ordinary CUDA availability cases, then treats
+    CUDA/driver/library runtime-shaped errors as faults. The availability set is
+    intentionally small and stable:
 
         no kernel image is available   arch mismatch (sm_89 kernels elsewhere)
         no CUDA-capable device         no GPU on this box
         invalid device ordinal         wrong device index
         driver version is insufficient driver too old
 
-    The fault list has to cover every hard fault, not a sample of them: CUDA
-    errors are sticky, so a fault classified as unavailability poisons the
+    Hard CUDA faults are more open-ended: a missed sticky fault can poison the
     context for the NEXT backend too, which then reports itself unavailable for
     the same reason. The chain runs to its end and the caller is told "no
-    backend is available" while the real cause — a failing card, a watchdog
-    timeout — never surfaces.
+    backend is available" while the real cause -- a failing card, a watchdog
+    timeout, or a destroyed context -- never surfaces.
 
     Underscores are normalised so driver-style spellings
     (`CUDA_ERROR_OUT_OF_MEMORY`, `CUBLAS_STATUS_ALLOC_FAILED`) match too.
@@ -93,12 +81,31 @@ def is_runtime_failure(exc: BaseException) -> bool:
     if not isinstance(exc, RuntimeError):
         return False
     text = str(exc).lower().replace("_", " ")
-    return any(fault in text for fault in (
+
+    availability = (
+        "no kernel image is available",
+        "no cuda-capable device",
+        "no cuda capable device",
+        "invalid device ordinal",
+        "driver version is insufficient",
+    )
+    if any(reason in text for reason in availability):
+        return False
+
+    named_faults = (
         "out of memory", "alloc failed", "illegal memory access",
         "device-side assert", "device side assert",
         "unspecified launch failure", "misaligned address",
         "illegal instruction", "launch timed out",
-        "ecc error", "uncorrectable"))
+        "ecc error", "uncorrectable")
+    if any(fault in text for fault in named_faults):
+        return True
+
+    runtime_markers = (
+        "cuda error", "cuda runtime error", "cuda driver error",
+        "cudnn error", "cudnn status", "cublas error", "cublas status",
+    )
+    return any(marker in text for marker in runtime_markers)
 
 
 # ════════════════════════════════════════════════════════════════════════

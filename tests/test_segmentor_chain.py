@@ -175,27 +175,31 @@ def test_cuda_availability_errors_stay_routable():
     # ... while allocation failures in any spelling stay fatal
     for msg in ("CUDA out of memory. Tried to allocate 2.00 GiB",
                 "CUDA_ERROR_OUT_OF_MEMORY",
-                "CUBLAS_STATUS_ALLOC_FAILED when calling cublasCreate",
-                "CUDA error: unspecified launch failure"):
+                "CUBLAS_STATUS_ALLOC_FAILED when calling cublasCreate"):
         assert is_runtime_failure(RuntimeError(msg)), msg
 
 
 def test_hard_device_faults_are_not_mistaken_for_unavailability():
-    """The sample-vs-cover distinction, on the fault side.
+    """The allowlist-vs-denylist distinction, on the fault side.
 
-    Enumerating faults only works if the list COVERS them. These four all carry
-    the same `CUDA error:` prefix as the routable messages above, and all four
-    are hard faults. Missing one is worse than it looks: CUDA errors are sticky,
-    so the next backend in the chain trips the same error, reports itself
-    unavailable for the same reason, and the caller ends up with "no backend is
-    available" instead of a failing card or a watchdog timeout.
+    The routable availability messages are a small stable set; the sticky fault
+    side is open-ended. CUDA, cuDNN and cuBLAS runtime-shaped errors should
+    therefore surface unless they match a known availability reason.
     """
     from popoe.interfaces import is_runtime_failure
 
-    for msg in ("CUDA error: misaligned address",
+    for msg in ("CUDA error: unspecified launch failure",
+                "CUDA error: misaligned address",
                 "CUDA error: an illegal instruction was encountered",
                 "CUDA error: the launch timed out and was terminated",
-                "CUDA error: uncorrectable ECC error encountered"):
+                "CUDA error: uncorrectable ECC error encountered",
+                "CUDA error: hardware stack error",
+                "CUDA error: invalid program counter",
+                "CUDA error: unknown error",
+                "CUDA error: context is destroyed",
+                "cuDNN error: CUDNN_STATUS_INTERNAL_ERROR",
+                "cuDNN error: CUDNN_STATUS_EXECUTION_FAILED",
+                "cuBLAS error: CUBLAS_STATUS_EXECUTION_FAILED"):
         assert is_runtime_failure(RuntimeError(msg)), msg
 
 
@@ -211,8 +215,22 @@ def test_an_arch_mismatch_still_routes_to_the_next_segmentor(monkeypatch):
 
     from popoe.segmentor_cnos import DinoV2Backbone
 
-    with pytest.raises(SegmentorUnavailable):
-        DinoV2Backbone(device="cpu").model
+    class _DinoLoadGuardSegmentor:
+        source = "dinov2-load"
+
+        def __init__(self):
+            self.backbone = DinoV2Backbone(device="cpu")
+
+        def segment(self, scene, obj):
+            self.backbone.model
+            return []
+
+    chain = FirstAvailableSegmentor([_DinoLoadGuardSegmentor(), _Works(n=1)])
+    dets = chain.segment(_scene(), _obj())
+
+    assert len(dets) == 1
+    assert chain.last_used == "works"
+    assert {d.source for d in dets} == {"works"}
 
 
 def test_an_oom_probe_does_not_latch_the_renderer_into_cpu_mode(monkeypatch):
