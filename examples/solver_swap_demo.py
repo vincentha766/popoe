@@ -5,12 +5,22 @@ implementations by changing ONE line, and score each against GT.
     solver = Open3DFeatureRansacSolver(n_restarts=1)  # Open3D C++ RANSAC, 1 shot
     solver = Open3DFeatureRansacSolver(n_restarts=8)  # + feature-aware re-ranking
 
-Everything downstream (ICP refiner, scorer, selector) is identical. Shows both
-that the stage is swappable and how "geometry proposes, features dispose" fixes
-the 1-shot flips on near-symmetric objects.
+Everything downstream (ICP refiner, scorer, selector) is identical, so this shows
+the stage is swappable.
+
+WARNING — this script CANNOT rank the solvers. `pose_err` below is a raw geodesic
+rotation distance with no symmetry handling, and the usual subject (YCB-V obj 5,
+the mustard bottle) is near-symmetric: on the full 150-instance population about
+half the instances land in a 180°-flipped mode for every solver, so the median
+sits on a bimodal boundary where a 3-point change in flip rate swings it by 125°.
+An earlier A/B from 5 instances was withdrawn for exactly this (see
+ARCHITECTURE.md, Pluggability). Use a symmetry-aware metric — MSSD, or
+`popoe.metrics.vsd` — before drawing any accuracy conclusion.
+
+Pass --seed for a reproducible run: Open3D's RANSAC is otherwise unseeded.
 
     POPOE_GEDI_PATH=/path/to/gedi POPOE_TWO_SCALE_GEDI=1 \
-    python examples/solver_swap_demo.py --bop /path/to/ycbv --obj 5 -n 5
+    python -u examples/solver_swap_demo.py --bop /path/to/ycbv --obj 5 -n 150 --seed 42
 """
 import argparse
 import numpy as np

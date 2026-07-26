@@ -120,25 +120,32 @@ original proof was a pair:
 - `solvers.Open3DFeatureRansacSolver` — Open3D's C++ correspondence RANSAC, added
   as one new file, zero changes elsewhere.
 
-The A/B (see [examples/solver_swap_demo.py](examples/solver_swap_demo.py)) also
-surfaces a real finding and its fix by composition alone. On the near-symmetric
-mustard bottle (YCB-V obj 5, 5 instances), median rotation error:
+The A/B ships as [examples/solver_swap_demo.py](examples/solver_swap_demo.py):
+three solvers, one chain, one line changed.
+`Open3DFeatureRansacSolver(n_restarts=8)` exercises the seam on purpose — a
+solver may return SEVERAL hypotheses and leave the choice to the scorer and
+selector, so "geometry proposes, features dispose" is reachable as pure
+composition, with no new scoring code.
 
-| solver | median rot |
-|--------|-----------|
-| `freeze_ransac` | 23.4° |
-| `open3d` (1 shot) | 42.5° (flips: 94°, 152°) |
-| `open3d` (`n_restarts=8`) | **23.9°** |
+**Whether that composition improves accuracy is not established here.** This
+section used to quote median rotation errors from a 5-instance run as evidence
+that it recovered parity; those numbers were withdrawn on 2026-07-26 after a
+seeded rerun over the **full** obj-5 population (150 instances — logs in
+`outputs/solver_swap_20260726/`). Two defects, the second fatal:
 
-Median translation was comparable across all three (~18–20 mm): the failure is
-orientation, not position.
+1. Open3D's RANSAC was unseeded (fixed: `Open3DFeatureRansacSolver(seed=...)`),
+   so no run reproduced.
+2. `solver_swap_demo`'s error is a **raw geodesic rotation distance on a
+   near-symmetric object**. About half of all instances sit in a 180°-flipped
+   mode for EVERY solver — flip rate 41% / 48% / 51% for
+   freeze_ransac / 1-shot / rerank — and the median straddles that bimodal
+   boundary, so a 3-point difference in flip rate moves it by 125°. The three
+   solvers' non-flipped modes are nearly identical (p25 19-21°).
 
-One-shot Open3D ranks by geometric inlier fitness and flips on symmetric geometry
-the visual features would disambiguate. Emitting several candidates
-(`n_restarts=8`) and letting the EXISTING feature-aware `PoseScorer` + `Selector`
-pick the feature-best — **no new scoring code** — recovers parity. "Geometry
-proposes, features dispose." A robust backend (TEASER++, MAC) slots in the same
-way — TEASER++ since has, two headings below.
+A symmetry-aware metric (MSSD, or `metrics.vsd`) is a prerequisite for this
+comparison meaning anything; BOP uses one for exactly this reason. A robust
+backend (TEASER++, MAC) slots in the same way — TEASER++ since has, two headings
+below.
 
 ### A third solver — feature-aware fitness INSIDE selection (the B layer)
 

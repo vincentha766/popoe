@@ -46,11 +46,15 @@ class Open3DFeatureRansacSolver:
         self.mutual_filter = mutual_filter
         # n_restarts>1: run RANSAC on `subsample` fractions of the points (varied
         # per restart) and return ALL resulting poses as separate hypotheses.
-        # Open3D ranks by geometric fitness and flips on symmetric geometry; by
-        # emitting several candidates, the downstream feature-aware PoseScorer +
-        # Selector do the disambiguation instead ("geometry proposes, features
-        # dispose"). Every hypothesis' s_coarse is still feature_aware_score on
-        # the FULL cloud, so candidates are comparable.
+        # Open3D ranks by geometric fitness alone, so emitting several candidates
+        # hands the choice to the downstream feature-aware PoseScorer + Selector
+        # instead. Every hypothesis' s_coarse is still feature_aware_score on the
+        # FULL cloud, so candidates are comparable.
+        # This is a composition SEAM, not a demonstrated accuracy win: the A/B
+        # that once claimed it recovered parity on near-symmetric objects was
+        # withdrawn (ARCHITECTURE.md, Pluggability) — the metric behind it was
+        # symmetry-blind. Do not cite n_restarts as an improvement without a
+        # symmetry-aware measurement.
         self.n_restarts = n_restarts
         self.subsample = subsample
         # Open3D's RANSAC draws from a GLOBAL RNG that it does not seed itself,

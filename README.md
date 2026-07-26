@@ -135,11 +135,13 @@ See [ARCHITECTURE.md](ARCHITECTURE.md#the-availability-contract-no-hidden-fallba
 for why (short version: a silent fallback makes results unattributable and
 poisons the config-addressed cache).
 
-Because a solver only has to *propose* candidates and the feature-aware
-`PoseScorer` + `Selector` *dispose*, `Open3DFeatureRansacSolver(n_restarts=8)`
-turns a geometry-only RANSAC (which flips on near-symmetric objects) back to
-parity with the feature-aware solver — with no new scoring code. See
-[ARCHITECTURE.md](ARCHITECTURE.md#pluggability-proven--the-posesolver-stage).
+A solver only has to *propose* candidates; the feature-aware `PoseScorer` +
+`Selector` *dispose*. So a geometry-only RANSAC can emit several hypotheses
+(`Open3DFeatureRansacSolver(n_restarts=8)`) and let the existing scorer choose,
+with no new scoring code. Whether that composition wins on accuracy is an open
+question here, not a result — see
+[ARCHITECTURE.md](ARCHITECTURE.md#pluggability-proven--the-posesolver-stage) for
+what was measured, withdrawn, and why.
 
 ## Detections (segmentation sources)
 

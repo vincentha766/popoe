@@ -318,3 +318,47 @@ family itself (O3D +7-11pt over the GPU port, matching the historical
 grid-16-fast-config gap): the accuracy lever lives in O3D's correspondence
 construction/convergence, not the fitness formula. Feature-aware line
 closes as: A-layer +2.5 YCB-V (in production) + three measured negatives.
+
+## 2026-07-26 · Solver A/B table withdrawn: symmetry-blind metric on a symmetric object
+
+ARCHITECTURE.md's Pluggability section quoted a median-rotation A/B on YCB-V
+obj 5 (freeze_ransac 23.4° / open3d 1-shot 42.5° / open3d `n_restarts=8` 23.9°)
+as evidence that "geometry proposes, features dispose" recovered parity. No raw
+artefact for it survived anywhere — only the gedi archive's prose, which gave
+translation as "~18-20 mm" while popoe's table printed 17.6/19.5/17.9. That
+mismatch is what prompted a rerun.
+
+Rerun at `42c916e`, `--seed 42`, over the **full** obj-5 population (150
+instances: scene 50 x75, scene 52 x75 — not a sample). Logs:
+`outputs/solver_swap_20260726/` (untracked, as raw artefacts are here).
+
+| solver | median rot | p25 | p75 | >90° | >150° |
+|---|---|---|---|---|---|
+| `freeze_ransac` | 26.70° | 18.48° | 161.19° | 62/150 | 61 |
+| `open3d_1shot` | 42.03° | 19.82° | 159.74° | 74/150 | 72 |
+| `open3d_rerank` | 151.25° | 20.85° | 161.93° | 77/150 | 76 |
+
+**The median is the wrong statistic here.** The distribution is bimodal and the
+flip fraction straddles 50%. All three solvers' non-flipped modes are nearly
+identical (p25 19-21°); they differ only in flip rate — 41% / 48% / 51%. So the
+median reports which side of 50% a solver's flip rate landed on, and 3 points of
+flip rate moves it by 125°. `open3d_rerank`'s 151° is not a collapse; it is
+50.7% > 50%. Symmetrically, the original 23.9° was a median over 5 draws from a
+~50/50 bimodal distribution — close to a coin flip.
+
+Root cause: `solver_swap_demo.pose_err` is a raw geodesic rotation distance and
+obj 5 (mustard bottle) is near-symmetric, so a 180° flip need not be an error at
+all. This is precisely why BOP scores with MSSD/VSD. Any solver comparison on
+this object needs a symmetry-aware metric first.
+
+Secondary defect, fixed: Open3D's RANSAC drew from a global RNG it never seeds,
+and 0.17's `registration_ransac_based_on_feature_matching` takes no `seed`
+argument, so no run reproduced. `Open3DFeatureRansacSolver(seed=...)` now seeds
+`o3d.utility.random.seed(seed + restart)` per restart. `seed=None` stays the
+default so the evaluated o3d mainline is not silently shifted;
+`popoe.registration.ransac_pose_estimation` was already seeded
+(`default_rng(42)`), which is why only the two open3d rows moved between runs.
+
+Lesson, beyond this table: a number with no surviving raw artefact should be
+treated as unverified, and "median" over a small sample of a near-symmetric
+object is a trap that hides behind a plausible-looking value.
