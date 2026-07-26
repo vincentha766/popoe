@@ -360,16 +360,13 @@ CLI flags from code, light CPU tests. GPU parity numbers still ☐.
 | `uv run python examples/union_smoke.py --dataset lmo --source sam6d=data/detections/sam6d/sam6d_ism_lmo.json` | <2 min | **OK** end-to-end (393 champions) |
 | `uv run python examples/rule_replay.py …/popoe_ycbv_formal_A_cands.csv --rule "s_icp*s_feat_1" --rule "s_icp*s_feat_1*metric_fit" --rule "s_icp*s_feat_1*metric_fit*s_coarse" --out-dir …` | <1 min | **OK** — 21 800 hyps / 1 669 targets; ×metric_fit flips 44.0% vs formal baseline; +s_coarse flips 0.2% (formal baseline is itself s_coarse-arbitrated — consistency check ✓). Original plan referenced `popoe_ycbv_union2_cands.csv` which does not exist; corrected to `popoe_ycbv_formal_A_cands.csv`. |
 | `uv run python examples/pipeline_selfcheck.py …` | needs GPU | **skipped** (no local GPU) |
-| full `bop_eval` parity | 15–22 h GPU | **not run** (zero-GPU prep) |
+| full `bop_eval` parity | 15–22 h GPU | **done 2026-07-26** — see Headline ledger #1–#6 |
 
-## Segmentation AP ledger (draft — 2026-07-26)
+## Segmentation AP ledger (2026-07-26)
 
 > **Status**: offline measurements from `outputs/seg_ap_20260725T223014Z/`.  
-> **Not** a formal parity row for pose. Pose headline #1/#2 still ☐.  
-> **Gate**: do not re-score or promote new official numbers until popoe PRs
-> #3 / #4 / #5 are merged into `main` and this file is re-run at a frozen
-> commit (PR #5 changes evaluator semantics; PR #3 enables `muse-repro`
-> full-split production; PR #4 affects pose fallback/OOM behaviour).
+> **Not** a pose parity row. Pose headline #1/#2 filled above from the same day's campaign.  
+> PRs #3/#4/#5/#6 are merged; evaluator semantics from #5 apply to future re-scores.
 
 ### Official single-source mask AP (YCB-V / LM-O)
 
