@@ -415,17 +415,25 @@ class SAM2BoxMaskRefiner:
 
 
 class DinoV2ClsGemEmbedder:
-    """DINOv2 class token + GeM-pooled foreground patch tokens.
+    """DINOv2 class token + GeM-pooled patch tokens.
 
     Both come out of ONE forward pass: MUSE needs the pair for every proposal
     and every template, and running the backbone twice would double the cost of
     the stage's dominant term.
+
+    Paper setup (sec 4.1): "only the object region inside the box is preserved"
+    before matching. Historical default keeps the full square crop and pools
+    **foreground** patches only. G3 knobs:
+      * ``mask_rgb=True`` — zero RGB outside the mask before the backbone
+      * ``gem_tokens="all"`` — GeM over every patch token (not just FG)
     """
 
     def __init__(self, device: str = "cuda",
                  model_name: str = "dinov2_vitg14_reg",
                  grid: int = GRID, gem_p: float = DEFAULT_GEM_P,
-                 fg_threshold: float = 0.4):
+                 fg_threshold: float = 0.4,
+                 mask_rgb: bool = False,
+                 gem_tokens: str = "fg"):
         self.device = device
         self.model_name = model_name
         self.grid = int(grid)
@@ -433,6 +441,11 @@ class DinoV2ClsGemEmbedder:
         # Mirrored on self (not only inside the scorer) so it shows up in the
         # component identity that keys cached output.
         self.fg_threshold = float(fg_threshold)
+        self.mask_rgb = bool(mask_rgb)
+        gt = str(gem_tokens).lower().strip()
+        if gt not in ("fg", "all"):
+            raise ValueError(f"gem_tokens must be 'fg' or 'all', got {gem_tokens!r}")
+        self.gem_tokens = gt
         self._patch_mask = PatchForegroundScorer(grid=grid, fg_threshold=fg_threshold)
         self._model = None
         self._mean = None
@@ -462,7 +475,8 @@ class DinoV2ClsGemEmbedder:
 
     def config(self) -> dict:
         return {"model_name": self.model_name, "grid": self.grid,
-                "gem_p": self.gem_p, "fg_threshold": self.fg_threshold}
+                "gem_p": self.gem_p, "fg_threshold": self.fg_threshold,
+                "mask_rgb": self.mask_rgb, "gem_tokens": self.gem_tokens}
 
     def embed(self, rgb_crop: np.ndarray,
               fg_mask: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -470,16 +484,28 @@ class DinoV2ClsGemEmbedder:
         model = self.model      # guards torch: missing -> SegmentorUnavailable
         import torch
 
-        x = torch.from_numpy(np.asarray(rgb_crop, dtype=np.uint8)).float()
+        rgb = np.asarray(rgb_crop, dtype=np.uint8)
+        if self.mask_rgb:
+            m = np.asarray(fg_mask, dtype=bool)
+            if m.shape[:2] == rgb.shape[:2]:
+                rgb = rgb * m[..., None]
+        x = torch.from_numpy(rgb.copy()).float()
         x = x.permute(2, 0, 1).unsqueeze(0).to(self.device) / 255.0
         x = (x - self._mean) / self._std
         with torch.no_grad():
             feats = model.forward_features(x)
         cls = torch.nn.functional.normalize(feats["x_norm_clstoken"][0], dim=0)
         tok = feats["x_norm_patchtokens"][0].detach().cpu().numpy()
-        keep = self._patch_mask.foreground_patch_mask(np.asarray(fg_mask, dtype=bool))
-        return cls.detach().cpu().numpy().astype(np.float64), \
-            gem_pool(tok[keep], self.gem_p)
+        if self.gem_tokens == "all":
+            gem = gem_pool(tok, self.gem_p)
+        else:
+            keep = self._patch_mask.foreground_patch_mask(
+                np.asarray(fg_mask, dtype=bool))
+            if not np.any(keep):
+                gem = gem_pool(tok, self.gem_p)
+            else:
+                gem = gem_pool(tok[keep], self.gem_p)
+        return cls.detach().cpu().numpy().astype(np.float64), gem
 
 
 class MuseTemplateBank:
@@ -818,6 +844,8 @@ def build_muse_segmentor(classes: Sequence[MuseClass],
                          size_gate_enabled: bool = True,
                          min_extent_ratio: float = 0.25,
                          max_extent_ratio: float = 1.1,
+                         mask_rgb: bool = False,
+                         gem_tokens: str = "fg",
                          **kwargs) -> MuseSegmentor:
     """Wire the real GPU components. Construction stays lazy — nothing loads
     until the first ``segment``, so an unavailable backend surfaces at the call
@@ -825,8 +853,11 @@ def build_muse_segmentor(classes: Sequence[MuseClass],
 
     ``size_gate_enabled=False`` keeps every non-empty SAM mask (paper / BOP RGB
     proposal regime). Relaxed ratios only apply when the gate is enabled.
+    ``mask_rgb`` / ``gem_tokens`` control proposal embedding (G3 paper sec 4.1).
     """
-    embedder = DinoV2ClsGemEmbedder(device=device, model_name=dinov2_model)
+    embedder = DinoV2ClsGemEmbedder(
+        device=device, model_name=dinov2_model,
+        mask_rgb=mask_rgb, gem_tokens=gem_tokens)
     return MuseSegmentor(
         classes,
         proposer=GroundingDinoBoxProposer(gdino_model, prompt, box_threshold,
@@ -1013,6 +1044,10 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
                     help="class-token similarity in S_abs")
     ap.add_argument("--patch-sim", default="tanimoto", choices=("cosine", "tanimoto"),
                     help="GeM patch similarity in S_abs (paper Eqs. 2–3 use cosine)")
+    ap.add_argument("--mask-rgb", action="store_true",
+                    help="zero RGB outside mask before DINOv2 (paper: object region only)")
+    ap.add_argument("--gem-tokens", default="fg", choices=("fg", "all"),
+                    help="GeM over foreground patches only, or all patch tokens")
     ap.add_argument("--allow-single-class", action="store_true")
     args = ap.parse_args(argv)
 
@@ -1030,6 +1065,7 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
         size_gate_enabled=not args.no_size_gate,
         min_extent_ratio=args.size_gate_min_ratio,
         max_extent_ratio=args.size_gate_max_ratio,
+        mask_rgb=args.mask_rgb, gem_tokens=args.gem_tokens,
         alpha=args.alpha, beta=args.beta, tau=args.tau, gamma=args.gamma,
         class_sim=args.class_sim, patch_sim=args.patch_sim,
         n_masks=args.topk, allow_single_class=args.allow_single_class)
