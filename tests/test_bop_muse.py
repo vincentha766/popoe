@@ -1,4 +1,5 @@
 import json
+import os
 import stat
 from pathlib import Path
 
@@ -473,6 +474,25 @@ def test_atomic_detections_write_validates_before_replace_and_preserves_mode(tmp
     assert stat.S_IMODE(out.stat().st_mode) == 0o644
 
 
+def test_a_fresh_atomic_write_lands_at_the_umask_default(tmp_path):
+    """The other branch of the same write: no file to inherit a mode from.
+
+    It has to match what a plain `open(out, "w")` would have produced, because
+    that is what the non-atomic writer did. `mkstemp` would have forced 0600 and
+    needed an `os.umask(0)` probe to recover the intended mode; the temp file is
+    created through the normal writer instead, so the umask applies by itself.
+    """
+    out = tmp_path / "fresh" / "detections.json"
+    umask = os.umask(0o022)
+    os.umask(umask)
+
+    _write_muse_detections_atomic([{"source": MUSE_SOURCE}], out)
+
+    assert json.loads(out.read_text()) == [{"source": MUSE_SOURCE}]
+    assert stat.S_IMODE(out.stat().st_mode) == 0o666 & ~umask
+    assert not list(out.parent.glob("*.tmp"))
+
+
 def test_resume_reports_corrupt_shard_path(tmp_path):
     pytest.importorskip("pycocotools")
     targets = [BOPTargetImage(scene_id=1, im_id=1, obj_ids=(9,))]
@@ -509,6 +529,8 @@ def test_resume_reports_corrupt_shard_path(tmp_path):
     ["not-a-record"],
     [{"scene_id": 1, "image_id": 1}],
     [{"scene_id": 99, "image_id": 1, "category_id": 9}],
+    # `time` is read back as the resumed runtime, so it is part of the same gate
+    [{"scene_id": 1, "image_id": 1, "category_id": 9, "time": "soon"}],
 ])
 def test_resume_rejects_wrong_shape_shards(tmp_path, bad_payload):
     pytest.importorskip("pycocotools")

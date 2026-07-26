@@ -10,7 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import tempfile
+import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -45,10 +45,6 @@ class BOPTargetImage:
     im_id: int
     obj_ids: tuple[int, ...]
     inst_counts: tuple[tuple[int, int], ...] = field(default_factory=tuple)
-
-    @property
-    def max_inst_count(self) -> int:
-        return max((count for _, count in self.inst_counts), default=1)
 
 
 SceneLoader = Callable[[str | os.PathLike, str, int, int], Scene]
@@ -366,23 +362,22 @@ def _write_muse_detections_atomic(
     validate: Callable[[str], None] | None = None,
 ) -> None:
     output_json.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(
-        prefix=output_json.name + ".",
-        suffix=".tmp",
-        dir=output_json.parent,
+    # The temp name is built rather than taken from `mkstemp` so that
+    # `write_muse_detections`' own `open()` creates the file, which applies this
+    # process's umask the way a plain write to `output_json` would have.
+    # `mkstemp` forces 0600, and recovering the intended mode from it needs an
+    # `os.umask(0)` probe — process-wide, so any other thread creating a file in
+    # that window gets 0666/0777. pid+tid keeps concurrent writers apart.
+    tmp_name = str(
+        output_json.parent
+        / f"{output_json.name}.{os.getpid()}.{threading.get_ident()}.tmp"
     )
-    os.close(fd)
     try:
         write_muse_detections(records, tmp_name)
         if validate is not None:
             validate(tmp_name)
         if output_json.exists():
-            mode = output_json.stat().st_mode & 0o666
-        else:
-            old_umask = os.umask(0)
-            os.umask(old_umask)
-            mode = 0o666 & ~old_umask
-        os.chmod(tmp_name, mode)
+            os.chmod(tmp_name, output_json.stat().st_mode & 0o777)
         os.replace(tmp_name, output_json)
     finally:
         if os.path.exists(tmp_name):
@@ -426,6 +421,17 @@ def _read_shard_records(shard: Path, target: BOPTargetImage) -> list[dict]:
                 f"belongs to scene={scene_id:06d} im={image_id:06d}, "
                 f"expected scene={target.scene_id:06d} im={target.im_id:06d}"
             )
+        # `time` is read back as the resumed image's runtime, so it belongs to
+        # the same gate as the ids. Left outside, a non-numeric value surfaces
+        # as a bare `float()` ValueError naming neither the shard nor the field.
+        if "time" in rec:
+            try:
+                float(rec["time"])
+            except (TypeError, ValueError) as e:
+                raise ValueError(
+                    f"cannot resume from corrupt shard {shard}: record {idx} "
+                    f"has non-numeric time {rec['time']!r}"
+                ) from e
         out.append(dict(rec))
     return out
 
