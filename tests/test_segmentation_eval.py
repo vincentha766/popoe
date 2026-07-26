@@ -130,6 +130,54 @@ def test_targets_filter_gt_and_predictions(tmp_path):
     assert [rec["category_id"] for rec in pred] == [5]
 
 
+def test_targets_keep_wrong_category_predictions_on_target_images(tmp_path):
+    """Official BOP COCO eval filters result images, not result obj triples."""
+
+    mask5 = _mask(y0=4, x0=5)
+    mask9 = _mask(y0=15, x0=20)
+    scene = _write_bop_scene(tmp_path, mask5, obj_id=5)
+    Image.fromarray((mask9.astype(np.uint8) * 255)).save(
+        scene / "mask_visib" / "000008_000000.png")
+    Image.fromarray(np.zeros((*mask9.shape, 3), dtype=np.uint8)).save(
+        scene / "rgb" / "000008.png")
+    (scene / "scene_gt.json").write_text(json.dumps({
+        "7": [{"obj_id": 5}],
+        "8": [{"obj_id": 9}],
+    }))
+    det_path = tmp_path / "detections.json"
+    det_path.write_text(json.dumps([
+        {
+            "scene_id": 1,
+            "image_id": 7,
+            "category_id": 5,
+            "score": 0.9,
+            "segmentation": _rle(mask5),
+        },
+        {
+            "scene_id": 1,
+            "image_id": 7,
+            "category_id": 9,
+            "score": 0.8,
+            "segmentation": _rle(mask5),
+        },
+        {
+            "scene_id": 1,
+            "image_id": 99,
+            "category_id": 9,
+            "score": 0.7,
+            "segmentation": _rle(mask9),
+        },
+    ]))
+    targets = {(1, 7, 5)}
+    coco_gt = build_coco_gt_from_bop(tmp_path)
+    pred = detections_to_coco_results(det_path, coco_gt, targets=targets)
+
+    assert [(rec["image_id"], rec["category_id"]) for rec in pred] == [
+        (bop_image_id(1, 7), 5),
+        (bop_image_id(1, 7), 9),
+    ]
+
+
 def test_category_filter_gt_and_predictions(tmp_path):
     mask5 = _mask(y0=4, x0=5)
     mask9 = _mask(y0=15, x0=20)
@@ -296,6 +344,18 @@ def test_mask_kind_does_not_silently_fall_back(tmp_path):
     assert len(coco_gt["annotations"]) == 1
 
 
+def test_build_coco_gt_marks_low_visibility_instances_ignored(tmp_path):
+    mask5 = _mask(y0=4, x0=5)
+    scene = _write_bop_scene(tmp_path, mask5, obj_id=5)
+    (scene / "scene_gt_info.json").write_text(json.dumps({
+        "7": [{"visib_fract": 0.05}]
+    }))
+
+    coco_gt = build_coco_gt_from_bop(tmp_path)
+
+    assert coco_gt["annotations"][0]["ignore"] is True
+
+
 def test_filter_coco_gt_by_targets_and_categories(tmp_path):
     mask5 = _mask(y0=4, x0=5)
     mask9 = _mask(y0=15, x0=20)
@@ -314,9 +374,9 @@ def test_filter_coco_gt_by_targets_and_categories(tmp_path):
         targets={(1, 7, 5)},
         category_ids={5, 9},
     )
-    assert [ann["category_id"] for ann in filtered["annotations"]] == [5]
+    assert [ann["category_id"] for ann in filtered["annotations"]] == [5, 9]
     assert [im["id"] for im in filtered["images"]] == [bop_image_id(1, 7)]
-    assert [cat["id"] for cat in filtered["categories"]] == [5]
+    assert [cat["id"] for cat in filtered["categories"]] == [5, 9]
 
 
 def test_filter_coco_gt_category_only_keeps_negative_images(tmp_path):
@@ -444,7 +504,7 @@ def test_bop_seg_eval_cli_gt_coco_filters_targets(tmp_path):
     written_gt = json.loads((out_dir / "gt_coco.json").read_text())
     summary = json.loads((out_dir / "summary.json").read_text())
     assert rc == 0
-    assert [ann["category_id"] for ann in written_gt["annotations"]] == [5]
-    assert summary["gt_annotations"] == 1
-    assert summary["predictions"] == 1
+    assert [ann["category_id"] for ann in written_gt["annotations"]] == [5, 9]
+    assert summary["gt_annotations"] == 2
+    assert summary["predictions"] == 2
     assert summary["stats"]["AP"] == pytest.approx(1.0)

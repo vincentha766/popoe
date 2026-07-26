@@ -16,6 +16,7 @@ Example:
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from popoe.segmentation_eval import (
     build_coco_gt_from_bop,
     detections_to_coco_results,
     evaluate_coco_segm,
+    evaluate_coco_segm_per_category,
     filter_coco_gt,
     load_bop_targets,
     write_json,
@@ -53,9 +55,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--detections", required=True,
                     help="BOP-format detections JSON with segmentation masks.")
     ap.add_argument("--targets", default="",
-                    help="optional BOP targets JSON; filters GT and detections "
-                         "to target (scene_id, im_id, obj_id) triples. With "
-                         "--gt-coco, images must carry scene_id and bop_image_id.")
+                    help="optional BOP targets JSON; target images select GT "
+                         "and detections, matching the official BOP COCO "
+                         "evaluator. With --gt-coco, images must carry scene_id "
+                         "and bop_image_id.")
     ap.add_argument("--objs", default="",
                     help="optional comma-separated obj ids, e.g. 5,8,9; "
                          "filters GT categories and detections.")
@@ -67,6 +70,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--image-id-factor", type=int,
                     default=DEFAULT_IMAGE_ID_FACTOR,
                     help="COCO image id = scene_id * factor + im_id.")
+    ap.add_argument("--per-object", action="store_true",
+                    help="also write per_object.json and per_object.csv with "
+                         "COCO segm stats for each category in this source.")
     return ap.parse_args(argv)
 
 
@@ -155,11 +161,36 @@ def main(argv: list[str] | None = None) -> int:
         category_ids=category_ids,
     )
     summary["stats"] = stats
+    if args.per_object:
+        per_object = evaluate_coco_segm_per_category(
+            gt_path,
+            pred_path,
+            image_ids=image_ids,
+            category_ids=category_ids,
+        )
+        per_object_json = out_dir / "per_object.json"
+        per_object_csv = out_dir / "per_object.csv"
+        write_json(per_object_json, per_object)
+        with open(per_object_csv, "w", newline="") as f:
+            fieldnames = [
+                "category_id", "name", "gt_annotations", "gt_images",
+                "predictions", "pred_images",
+                "AP", "AP50", "AP75", "AP_small", "AP_medium", "AP_large",
+                "AR1", "AR10", "AR100", "AR_small", "AR_medium", "AR_large",
+            ]
+            wr = csv.DictWriter(f, fieldnames=fieldnames)
+            wr.writeheader()
+            wr.writerows(per_object)
+        summary["per_object_json"] = str(per_object_json)
+        summary["per_object_csv"] = str(per_object_csv)
     write_json(out_dir / "summary.json", summary)
 
     print(f"wrote {gt_path}")
     print(f"wrote {pred_path}")
     print(f"wrote {out_dir / 'summary.json'}")
+    if args.per_object:
+        print(f"wrote {out_dir / 'per_object.json'}")
+        print(f"wrote {out_dir / 'per_object.csv'}")
     print("segm AP: "
           f"AP={stats['AP']:.4f} AP50={stats['AP50']:.4f} "
           f"AP75={stats['AP75']:.4f}")
