@@ -180,6 +180,25 @@ def test_cuda_availability_errors_stay_routable():
         assert is_runtime_failure(RuntimeError(msg)), msg
 
 
+def test_hard_device_faults_are_not_mistaken_for_unavailability():
+    """The sample-vs-cover distinction, on the fault side.
+
+    Enumerating faults only works if the list COVERS them. These four all carry
+    the same `CUDA error:` prefix as the routable messages above, and all four
+    are hard faults. Missing one is worse than it looks: CUDA errors are sticky,
+    so the next backend in the chain trips the same error, reports itself
+    unavailable for the same reason, and the caller ends up with "no backend is
+    available" instead of a failing card or a watchdog timeout.
+    """
+    from popoe.interfaces import is_runtime_failure
+
+    for msg in ("CUDA error: misaligned address",
+                "CUDA error: an illegal instruction was encountered",
+                "CUDA error: the launch timed out and was terminated",
+                "CUDA error: uncorrectable ECC error encountered"):
+        assert is_runtime_failure(RuntimeError(msg)), msg
+
+
 def test_an_arch_mismatch_still_routes_to_the_next_segmentor(monkeypatch):
     """The application-level half of the above: a chain must still fall back."""
     torch = pytest.importorskip("torch")

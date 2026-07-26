@@ -65,6 +65,10 @@ def is_runtime_failure(exc: BaseException) -> bool:
         illegal memory access          a kernel wrote out of bounds
         device-side assert             a kernel tripped an assertion
         unspecified launch failure     a hard kernel fault after launch
+        misaligned address             a kernel read off an unaligned pointer
+        illegal instruction            a kernel hit an invalid opcode
+        launch timed out               the watchdog killed a running kernel
+        ecc error / uncorrectable      the card's memory is failing
 
     while these, which carry the same prefix, are ordinary unavailability and
     must stay routable — they are what a fallback chain exists for:
@@ -73,6 +77,13 @@ def is_runtime_failure(exc: BaseException) -> bool:
         no CUDA-capable device         no GPU on this box
         invalid device ordinal         wrong device index
         driver version is insufficient driver too old
+
+    The fault list has to cover every hard fault, not a sample of them: CUDA
+    errors are sticky, so a fault classified as unavailability poisons the
+    context for the NEXT backend too, which then reports itself unavailable for
+    the same reason. The chain runs to its end and the caller is told "no
+    backend is available" while the real cause — a failing card, a watchdog
+    timeout — never surfaces.
 
     Underscores are normalised so driver-style spellings
     (`CUDA_ERROR_OUT_OF_MEMORY`, `CUBLAS_STATUS_ALLOC_FAILED`) match too.
@@ -85,7 +96,9 @@ def is_runtime_failure(exc: BaseException) -> bool:
     return any(fault in text for fault in (
         "out of memory", "alloc failed", "illegal memory access",
         "device-side assert", "device side assert",
-        "unspecified launch failure"))
+        "unspecified launch failure", "misaligned address",
+        "illegal instruction", "launch timed out",
+        "ecc error", "uncorrectable"))
 
 
 # ════════════════════════════════════════════════════════════════════════
