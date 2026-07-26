@@ -1,6 +1,6 @@
 """popoe — Pipeline Of Pose Estimation.
 
-A modular, training-free 6-DoF object pose framework: every stage
+A modular 6-DoF object pose framework: every stage
 (segmentation, feature encoding, fusion, pose solving, refinement, scoring,
 selection) is a swappable component behind a Protocol, so each step can grow its
 own method. See ARCHITECTURE.md.

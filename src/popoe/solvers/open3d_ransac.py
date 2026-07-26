@@ -23,6 +23,8 @@ solver uses internally, so the two solvers feed the scorer comparably.
 """
 
 from __future__ import annotations
+from typing import Optional
+
 import numpy as np
 
 from popoe.interfaces import CanonFrame, PointFeatures, PoseHypothesis
@@ -34,7 +36,8 @@ class Open3DFeatureRansacSolver:
     def __init__(self, tau_inlier: float = 0.03, ransac_n: int = 3,
                  max_iteration: int = 10000, confidence: float = 0.999,
                  edge_length: float = 0.9, mutual_filter: bool = True,
-                 n_restarts: int = 1, subsample: float = 0.7):
+                 n_restarts: int = 1, subsample: float = 0.7,
+                 seed: Optional[int] = None):
         self.tau_inlier = tau_inlier
         self.ransac_n = ransac_n
         self.max_iteration = max_iteration
@@ -43,13 +46,26 @@ class Open3DFeatureRansacSolver:
         self.mutual_filter = mutual_filter
         # n_restarts>1: run RANSAC on `subsample` fractions of the points (varied
         # per restart) and return ALL resulting poses as separate hypotheses.
-        # Open3D ranks by geometric fitness and flips on symmetric geometry; by
-        # emitting several candidates, the downstream feature-aware PoseScorer +
-        # Selector do the disambiguation instead ("geometry proposes, features
-        # dispose"). Every hypothesis' s_coarse is still feature_aware_score on
-        # the FULL cloud, so candidates are comparable.
+        # Open3D ranks by geometric fitness alone, so emitting several candidates
+        # hands the choice to the downstream feature-aware PoseScorer + Selector
+        # instead. Every hypothesis' s_coarse is still feature_aware_score on the
+        # FULL cloud, so candidates are comparable.
+        # Measured on MSSD over YCB-V obj 5 (ARCHITECTURE.md, Pluggability):
+        # this roughly halves median MSSD vs n_restarts=1 and wins head-to-head
+        # 72:33, but does NOT reach the hand-rolled feature-aware RansacSolver.
+        # An older claim of parity was withdrawn (ISSUES.md 2026-07-26); cite the
+        # MSSD numbers, never a raw rotation angle.
         self.n_restarts = n_restarts
         self.subsample = subsample
+        # Open3D's RANSAC draws from a GLOBAL RNG that it does not seed itself,
+        # and 0.17's registration_ransac_based_on_feature_matching takes no seed
+        # argument — so back-to-back identical calls return different poses. The
+        # subsampling below is already deterministic (default_rng(1000+restart));
+        # this is the other half. `seed=None` keeps the historical unseeded
+        # behaviour so the evaluated mainline is not silently perturbed; set it
+        # for anything whose numbers get cited. It changes results, so it is
+        # stage config and belongs in the cache key like any other knob.
+        self.seed = seed
 
     def solve(self, query: PointFeatures, target: PointFeatures,
               frame: CanonFrame) -> list[PoseHypothesis]:
@@ -71,7 +87,11 @@ class Open3DFeatureRansacSolver:
         def feat(f, n):
             F = reg.Feature(); F.resize(dim, n); F.data = f.T.astype(np.float64); return F
 
-        def one_run(qp, qf, tp, tf):
+        def one_run(qp, qf, tp, tf, restart):
+            # Per-restart, not per-solve: a restart's pose then does not depend
+            # on how many restarts ran before it.
+            if self.seed is not None:
+                o3d.utility.random.seed(self.seed + restart)
             pcd_q, pcd_t = pcd(qp), pcd(tp)
             fq, ft = feat(qf, len(pcd_q.points)), feat(tf, len(pcd_t.points))
             r = reg.registration_ransac_based_on_feature_matching(
@@ -101,7 +121,7 @@ class Open3DFeatureRansacSolver:
                 qi = rng.choice(N_q, size=nq, replace=False)
                 ti = rng.choice(N_t, size=nt, replace=False)
                 qp, qf, tp, tf = query.pts[qi], query.feats[qi], target.pts[ti], target.feats[ti]
-            R, t, fit = one_run(qp, qf, tp, tf)
+            R, t, fit = one_run(qp, qf, tp, tf, restart)
             # Score every candidate on the FULL cloud so they are comparable.
             s_coarse, _ = feature_aware_score(
                 R, t, query.pts, target.pts, query.feats, target.feats, self.tau_inlier)

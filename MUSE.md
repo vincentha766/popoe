@@ -1,29 +1,41 @@
 # MUSE Notes
 
 MUSE is the fourth mask source in FreeZeV2's segmentation ensemble, and the odd
-one out: **there is no official code and no downloadable masks.** So popoe
-cannot adapt an official producer the way it does for CNOS, SAM-6D and NIDS-Net.
-What it has instead is `popoe.segmentor_muse` — a reimplementation from the
-paper.
+one out: **the method is unpublished, but its masks are not.** No code has been
+released, so popoe cannot adapt an official producer the way it does for CNOS,
+SAM-6D and NIDS-Net — what it has instead is `popoe.segmentor_muse`, a
+reimplementation from the paper. The authors' own BOP submissions, however, ARE
+public, and popoe carries them (see Upstream Status). Keep the two facts apart:
+*unreproducible method, obtainable artefacts*.
 
 ## Source Names
 
 | Source | Meaning |
 |--------|---------|
-| `muse` | RESERVED for official MUSE artefacts. **Nothing in popoe writes it.** |
+| `muse` | The authors' official artefacts ONLY. **Nothing in popoe writes it** — the files under this name were downloaded, not produced. |
 | `muse-repro` | This reimplementation (`popoe.segmentor_muse`, `MUSE_SOURCE`) |
 
-This split matters more here than anywhere else in the repo. The reproduction
-study cites MUSE as evidence that one of FreeZeV2's four ensemble members is
-externally unreproducible; a number produced by our own reimplementation, filed
-under the official name, would quietly refute an argument the study is making on
-purpose. Do not relabel.
+This split matters more here than anywhere else in the repo, and it carries more
+weight now that both names have files behind them. The reproduction study cites
+MUSE as the ensemble member whose *method* cannot be reproduced — no code, so
+the masks can only be re-derived from the paper's description. That argument is
+about the method, not the artefacts: the authors' masks are downloadable, so a
+union run CAN be fed the real thing. A number produced by our reimplementation
+but filed under `muse` would collapse exactly the distinction the study is
+drawing. Do not relabel.
 
 ## Upstream Status
 
 - Paper: [arXiv:2510.17866](https://arxiv.org/abs/2510.17866) (Oct 2025), Cho,
   Park & Oh — an independent team, **not** the FreeZe/FBK group.
-- Code: none published. Masks: none downloadable (BOP `method_info/873`).
+- Code: none published.
+- Masks: **downloadable** as the authors' public BOP submissions — retrieved
+  2026-07-26 from `sub_info/29108` (LM-O) and `sub_info/29113` (YCB-V), SHA256s
+  in `outputs/seg_ap_20260725T223014Z/OFFICIAL_JSON_ACQUISITION.md`, now under
+  `data/detections/muse/` as `muse-full_{lmo,ycbv}-test.json`. (An earlier note
+  here said masks were undownloadable, citing BOP `method_info/873`; that was
+  either stale or a page-level inconsistency — the submission pages served the
+  files.)
 - Training-free by construction: Grounding DINO (Swin-B, prompt "items") →
   SAM2 (Hiera-L) → DINOv2 template matching (GeM patch + joint score)
   similarity.

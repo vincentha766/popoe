@@ -28,6 +28,17 @@ def test_teaser_solver():
     assert isinstance(solver, TeaserSolver)
 
 
+def test_open3d_seed_defaults_to_unseeded():
+    """The evaluated mainline must keep Open3D's historical unseeded RNG:
+    turning determinism on silently would shift every existing o3d number."""
+    solver, _, _ = stages_for_object(0.1)
+    assert solver.seed is None
+
+
+def test_open3d_seed_is_settable():
+    assert Open3DFeatureRansacSolver(seed=7).seed == 7
+
+
 def test_unknown_solver_raises():
     with pytest.raises(ValueError, match="solver must be"):
         stages_for_object(0.1, solver="bogus")

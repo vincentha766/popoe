@@ -1,6 +1,6 @@
 # popoe — Pipeline Of Pose Estimation
 
-A modular, **training-free 6-DoF object pose** framework, built for and
+A modular **6-DoF object pose** framework, built for and
 evaluated on the **BOP benchmark**. The pipeline is broken into swappable stages
 behind small `Protocol` contracts, so **every step can grow its own method** —
 add a segmentor, a feature backbone, a pose solver, a scorer, without touching
@@ -13,9 +13,9 @@ their own repositories and consume popoe as a dependency behind the
 `popoe.freeze.recipes` into its own pipeline).
 
 ```
-ObjectModel (CAD) ─┐
-                   ├─ Segmentor ─ QueryEncoder ─┐
-Scene (RGB-D, K) ──┘            TargetEncoder ──┴─ PoseSolver ─ PoseRefiner* ─ PoseScorer ─ Selector ─ (R, t)
+ObjectModel (CAD) ─┬─ QueryEncoder ──────────── q, CanonFrame ─┐
+                   ├─ Segmentor ─ Detection ─┐                 │
+Scene (RGB-D, K) ──┴─────────────────────────┴─ TargetEncoder ─┴─ PoseSolver ─ PoseRefiner* ─ PoseScorer ─ Selector ─ (R, t)
 ```
 
 The bundled reference implementation reproduces a FreeZe-v2-style pipeline
@@ -135,11 +135,13 @@ See [ARCHITECTURE.md](ARCHITECTURE.md#the-availability-contract-no-hidden-fallba
 for why (short version: a silent fallback makes results unattributable and
 poisons the config-addressed cache).
 
-Because a solver only has to *propose* candidates and the feature-aware
-`PoseScorer` + `Selector` *dispose*, `Open3DFeatureRansacSolver(n_restarts=8)`
-turns a geometry-only RANSAC (which flips on near-symmetric objects) back to
-parity with the feature-aware solver — with no new scoring code. See
-[ARCHITECTURE.md](ARCHITECTURE.md#pluggability-proven--a-second-posesolver).
+A solver only has to *propose* candidates; the feature-aware `PoseScorer` +
+`Selector` *dispose*. So a geometry-only RANSAC can emit several hypotheses
+(`Open3DFeatureRansacSolver(n_restarts=8)`) and let the existing scorer choose,
+with no new scoring code. Measured on MSSD over YCB-V obj 5, that roughly halves
+the 1-shot median error — though it does not catch the hand-rolled feature-aware
+solver. See
+[ARCHITECTURE.md](ARCHITECTURE.md#pluggability-proven--the-posesolver-stage).
 
 ## Detections (segmentation sources)
 
