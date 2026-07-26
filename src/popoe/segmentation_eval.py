@@ -198,7 +198,8 @@ def build_coco_gt_from_bop(
                 all_category_ids.add(int(obj["obj_id"]))
             if target_images is not None and (scene_id, im_id) not in target_images:
                 continue
-            if category_filter is not None and image_id not in images:
+            if (target_images is not None or category_filter is not None) \
+                    and image_id not in images:
                 height, width = _image_hw(scene_dir, im_id, objs, mask_kind)
                 _register_image(image_id, scene_id, im_id, height, width)
             for gt_idx, obj in enumerate(objs):
@@ -226,7 +227,10 @@ def build_coco_gt_from_bop(
                     "segmentation": rle,
                     "area": int(mask.sum()),
                     "bbox": bbox,
-                    "iscrowd": 0,
+                    # Stock pycocotools overwrites `ignore` from `iscrowd`
+                    # during COCOeval._prepare(), so carry the low-vis ignore
+                    # bit in both fields.
+                    "iscrowd": int(ignore),
                     "ignore": bool(ignore),
                 })
                 ann_id += 1

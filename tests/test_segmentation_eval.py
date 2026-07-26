@@ -178,6 +178,22 @@ def test_targets_keep_wrong_category_predictions_on_target_images(tmp_path):
     ]
 
 
+def test_targets_keep_all_gt_on_target_images(tmp_path):
+    mask5 = _mask(y0=4, x0=5)
+    mask9 = _mask(y0=15, x0=20)
+    scene = _write_bop_scene(tmp_path, mask5, obj_id=5)
+    Image.fromarray((mask9.astype(np.uint8) * 255)).save(
+        scene / "mask_visib" / "000007_000001.png")
+    (scene / "scene_gt.json").write_text(json.dumps({
+        "7": [{"obj_id": 5}, {"obj_id": 9}]
+    }))
+
+    coco_gt = build_coco_gt_from_bop(tmp_path, targets={(1, 7, 5)})
+
+    assert [ann["category_id"] for ann in coco_gt["annotations"]] == [5, 9]
+    assert [cat["id"] for cat in coco_gt["categories"]] == [5, 9]
+
+
 def test_category_filter_gt_and_predictions(tmp_path):
     mask5 = _mask(y0=4, x0=5)
     mask9 = _mask(y0=15, x0=20)
@@ -354,6 +370,35 @@ def test_build_coco_gt_marks_low_visibility_instances_ignored(tmp_path):
     coco_gt = build_coco_gt_from_bop(tmp_path)
 
     assert coco_gt["annotations"][0]["ignore"] is True
+    assert coco_gt["annotations"][0]["iscrowd"] == 1
+
+    det_path = tmp_path / "detections.json"
+    _write_detections(det_path, mask5)
+    pred = detections_to_coco_results(det_path, coco_gt)
+    gt_json = tmp_path / "gt_coco.json"
+    pred_json = tmp_path / "pred_coco.json"
+    write_json(gt_json, coco_gt)
+    write_json(pred_json, pred)
+
+    stats = evaluate_coco_segm(gt_json, pred_json, quiet=True)
+
+    assert stats["AP"] == pytest.approx(-1.0)
+
+
+def test_targets_keep_selected_negative_images(tmp_path):
+    mask5 = _mask(y0=4, x0=5)
+    scene = _write_bop_scene(tmp_path, mask5, obj_id=5)
+    Image.fromarray(np.zeros((*mask5.shape, 3), dtype=np.uint8)).save(
+        scene / "rgb" / "000008.png")
+    (scene / "scene_gt.json").write_text(json.dumps({
+        "7": [{"obj_id": 5}],
+        "8": [],
+    }))
+
+    coco_gt = build_coco_gt_from_bop(tmp_path, targets={(1, 8, 5)})
+
+    assert [im["id"] for im in coco_gt["images"]] == [bop_image_id(1, 8)]
+    assert coco_gt["annotations"] == []
 
 
 def test_filter_coco_gt_by_targets_and_categories(tmp_path):
