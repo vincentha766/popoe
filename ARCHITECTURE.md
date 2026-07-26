@@ -127,25 +127,33 @@ solver may return SEVERAL hypotheses and leave the choice to the scorer and
 selector, so "geometry proposes, features dispose" is reachable as pure
 composition, with no new scoring code.
 
-**Whether that composition improves accuracy is not established here.** This
-section used to quote median rotation errors from a 5-instance run as evidence
-that it recovered parity; those numbers were withdrawn on 2026-07-26 after a
-seeded rerun over the **full** obj-5 population (150 instances — logs in
-`outputs/solver_swap_20260726/`). Two defects, the second fatal:
+**Measured 2026-07-26**, ranked by MSSD (bop_toolkit's symmetry-aware surface
+distance), seeded, over 140 of obj 5's 150 instances — a pod died at 140, the
+missing 10 are all scene 52. Logs: `outputs/solver_swap_20260726/`.
 
-1. Open3D's RANSAC was unseeded (fixed: `Open3DFeatureRansacSolver(seed=...)`),
-   so no run reproduced.
-2. `solver_swap_demo`'s error is a **raw geodesic rotation distance on a
-   near-symmetric object**. About half of all instances sit in a 180°-flipped
-   mode for EVERY solver — flip rate 41% / 48% / 51% for
-   freeze_ransac / 1-shot / rerank — and the median straddles that bimodal
-   boundary, so a 3-point difference in flip rate moves it by 125°. The three
-   solvers' non-flipped modes are nearly identical (p25 19-21°).
+| solver | median MSSD | recall @0.2d | @0.5d |
+|--------|------------|--------------|-------|
+| `RansacSolver` (freeze_ransac) | **42.9 mm** (0.218 d) | **0.371** | **0.600** |
+| `open3d` 1-shot | 111.2 mm (0.566 d) | 0.271 | 0.457 |
+| `open3d` `n_restarts=8` | 62.7 mm (0.319 d) | 0.343 | 0.521 |
 
-A symmetry-aware metric (MSSD, or `metrics.vsd`) is a prerequisite for this
-comparison meaning anything; BOP uses one for exactly this reason. A robust
-backend (TEASER++, MAC) slots in the same way — TEASER++ since has, two headings
-below.
+Handing several hypotheses to the scorer **does** work: 1-shot's median MSSD
+nearly halves (111.2 → 62.7 mm), and rerank wins head-to-head on 72 instances
+against 33 (35 tied). The ordering is the same at every threshold. What it does
+**not** do is reach `freeze_ransac` — it closes roughly two thirds of the gap.
+An earlier version of this section claimed parity, from a 5-instance run scored
+on raw rotation angle; that number was withdrawn (ISSUES.md, 2026-07-26) and
+this replaces it.
+
+Read the absolute values with care: **recall@0.1d is 0.000 for all three**, so
+none of these configurations is BOP-usable on this object. `solver_swap_demo` is
+not the evaluated pipeline — it runs `FreeZeScorer` on GT masks with fixed
+thresholds — and obj 5 is one of the thin/near-symmetric shapes where
+registration is known to be the weak stage. The table ranks solvers against each
+other; it is not a performance claim for popoe.
+
+A robust backend (TEASER++, MAC) slots in the same way — TEASER++ since has, two
+headings below.
 
 ### A third solver — feature-aware fitness INSIDE selection (the B layer)
 

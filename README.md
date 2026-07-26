@@ -138,10 +138,10 @@ poisons the config-addressed cache).
 A solver only has to *propose* candidates; the feature-aware `PoseScorer` +
 `Selector` *dispose*. So a geometry-only RANSAC can emit several hypotheses
 (`Open3DFeatureRansacSolver(n_restarts=8)`) and let the existing scorer choose,
-with no new scoring code. Whether that composition wins on accuracy is an open
-question here, not a result — see
-[ARCHITECTURE.md](ARCHITECTURE.md#pluggability-proven--the-posesolver-stage) for
-what was measured, withdrawn, and why.
+with no new scoring code. Measured on MSSD over YCB-V obj 5, that roughly halves
+the 1-shot median error — though it does not catch the hand-rolled feature-aware
+solver. See
+[ARCHITECTURE.md](ARCHITECTURE.md#pluggability-proven--the-posesolver-stage).
 
 ## Detections (segmentation sources)
 

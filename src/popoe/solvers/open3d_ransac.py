@@ -50,11 +50,11 @@ class Open3DFeatureRansacSolver:
         # hands the choice to the downstream feature-aware PoseScorer + Selector
         # instead. Every hypothesis' s_coarse is still feature_aware_score on the
         # FULL cloud, so candidates are comparable.
-        # This is a composition SEAM, not a demonstrated accuracy win: the A/B
-        # that once claimed it recovered parity on near-symmetric objects was
-        # withdrawn (ARCHITECTURE.md, Pluggability) — the metric behind it was
-        # symmetry-blind. Do not cite n_restarts as an improvement without a
-        # symmetry-aware measurement.
+        # Measured on MSSD over YCB-V obj 5 (ARCHITECTURE.md, Pluggability):
+        # this roughly halves median MSSD vs n_restarts=1 and wins head-to-head
+        # 72:33, but does NOT reach the hand-rolled feature-aware RansacSolver.
+        # An older claim of parity was withdrawn (ISSUES.md 2026-07-26); cite the
+        # MSSD numbers, never a raw rotation angle.
         self.n_restarts = n_restarts
         self.subsample = subsample
         # Open3D's RANSAC draws from a GLOBAL RNG that it does not seed itself,

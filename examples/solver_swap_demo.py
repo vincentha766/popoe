@@ -8,18 +8,19 @@ implementations by changing ONE line, and score each against GT.
 Everything downstream (ICP refiner, scorer, selector) is identical, so this shows
 the stage is swappable.
 
-Ranking is by **MSSD** — bop_toolkit's own symmetry-aware surface distance, with
-symmetries expanded from `models_eval/models_info.json`. That is not a detail:
-the usual subject (YCB-V obj 5, the mustard bottle) is near-symmetric, and an
-earlier A/B here was withdrawn precisely because it ranked on a raw geodesic
-rotation distance. Under that metric ~half of all instances sit in a 180°-flipped
-mode for EVERY solver, the median lands on a bimodal boundary, and a 3-point
-change in flip rate swings it 125° (see ARCHITECTURE.md, Pluggability, and
-ISSUES.md 2026-07-26). The rotation/translation numbers are still printed, but
-only for continuity — never rank a symmetric object on them.
+Ranking is by **MSSD** (bop_toolkit's surface distance, symmetries expanded from
+`models_eval/models_info.json`), because a rotation angle is not a pose error.
+An earlier A/B here ranked on raw geodesic rotation and was withdrawn: under that
+metric ~half of all instances sit in a 180°-flipped mode for EVERY solver, so the
+median lands on a bimodal boundary where 3 points of flip rate swing it 125°
+(ARCHITECTURE.md, Pluggability; ISSUES.md 2026-07-26). Those flips are real
+failures — BOP declares obj 5 NOT symmetric
+(`get_symmetry_transformations` -> 1, identity), so a flip is worth ~0.5 d under
+MSSD. Rotation and translation are still printed, for continuity only; do not
+rank on them.
 
 Needs bop_toolkit (`POPOE_BOP_TOOLKIT`); it raises rather than falling back to
-the symmetry-blind metric, since that substitution is the whole original defect.
+the rotation-angle metric, since that substitution is the original defect.
 
 Pass --seed for a reproducible run: Open3D's RANSAC is otherwise unseeded.
 
@@ -44,9 +45,9 @@ def load_eval_model(bop_root, obj_id):
     """models_eval vertices (mm) + BOP symmetry transformations + diameter.
 
     Uses bop_toolkit's own symmetry expansion and, below, its own MSSD, so the
-    ranking metric here is the reference implementation rather than a local
-    re-derivation. Missing toolkit raises: a silent fall back to the
-    symmetry-BLIND rotation error is what made the withdrawn A/B meaningless.
+    ranking metric is the reference implementation rather than a local
+    re-derivation. Missing toolkit raises: silently falling back to the rotation
+    error is what made the withdrawn A/B meaningless.
     """
     import sys
     sys.path.insert(0, os.environ.get("POPOE_BOP_TOOLKIT", "/workspace/bop_toolkit"))
@@ -63,8 +64,8 @@ def pose_err(R, t_m, R_gt, t_gt_mm, pts, syms):
     """(MSSD mm, symmetry-blind rot deg, trans mm).
 
     MSSD is the number that ranks solvers; the other two are printed for
-    continuity with the old output and must NOT be used to rank a symmetric
-    object — see this module's docstring.
+    continuity with the old output and must NOT be used for ranking — see this
+    module's docstring.
     """
     from bop_toolkit_lib import pose_error
     t_est = (np.asarray(t_m, np.float64) * 1000.0).reshape(3, 1)
