@@ -181,6 +181,13 @@ class QueryFeatureExtractor:
                 # A full GPU is not a missing rasteriser. Degrading to the CPU
                 # ray-caster here would silently change the rendered views, and
                 # therefore every query feature, on an 'auto' run.
+                #
+                # Un-latch the probe before re-raising: `_nvd_init_tried` was
+                # set BEFORE the attempt, so leaving it True would make every
+                # later call answer "already tried, no context" and quietly use
+                # trimesh — reintroducing the silent degrade one retry later,
+                # after the caller freed VRAM and tried again.
+                self._nvd_init_tried = False
                 raise
             self._nvd_ctx = None
             if self._render_backend_pref == 'nvdiffrast':

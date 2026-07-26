@@ -156,3 +156,130 @@ def test_a_missing_hub_cache_is_still_unavailability(monkeypatch):
 
     with pytest.raises(SegmentorUnavailable):
         DinoV2Backbone(device="cpu").model
+
+
+def test_cuda_availability_errors_stay_routable():
+    """Narrowness matters as much as breadth. Most `CUDA error: ...` messages
+    are unavailability, not a runtime fault — including the arch mismatch this
+    project actually hits when a pod comes up on a card the kernels were not
+    compiled for. Treating them as fatal would break the chain on exactly the
+    boxes it exists for."""
+    from popoe.interfaces import is_runtime_failure
+
+    for msg in ("CUDA error: invalid device ordinal",
+                "CUDA error: no CUDA-capable device is detected",
+                "CUDA error: no kernel image is available for execution on the device",
+                "CUDA driver version is insufficient for CUDA runtime version"):
+        assert not is_runtime_failure(RuntimeError(msg)), msg
+
+    # ... while allocation failures in any spelling stay fatal
+    for msg in ("CUDA out of memory. Tried to allocate 2.00 GiB",
+                "CUDA_ERROR_OUT_OF_MEMORY",
+                "CUBLAS_STATUS_ALLOC_FAILED when calling cublasCreate"):
+        assert is_runtime_failure(RuntimeError(msg)), msg
+
+
+def test_hard_device_faults_are_not_mistaken_for_unavailability():
+    """The allowlist-vs-denylist distinction, on the fault side.
+
+    The routable availability messages are a small stable set; the sticky fault
+    side is open-ended. CUDA, cuDNN and cuBLAS runtime-shaped errors should
+    therefore surface unless they match a known availability reason.
+    """
+    from popoe.interfaces import is_runtime_failure
+
+    for msg in ("CUDA error: unspecified launch failure",
+                "CUDA error: misaligned address",
+                "CUDA error: an illegal instruction was encountered",
+                "CUDA error: the launch timed out and was terminated",
+                "CUDA error: uncorrectable ECC error encountered",
+                "CUDA error: hardware stack error",
+                "CUDA error: invalid program counter",
+                "CUDA error: unknown error",
+                "CUDA error: context is destroyed",
+                "cuDNN error: CUDNN_STATUS_INTERNAL_ERROR",
+                "cuDNN error: CUDNN_STATUS_EXECUTION_FAILED",
+                "cuBLAS error: CUBLAS_STATUS_EXECUTION_FAILED"):
+        assert is_runtime_failure(RuntimeError(msg)), msg
+
+
+def test_an_arch_mismatch_still_routes_to_the_next_segmentor(monkeypatch):
+    """The application-level half of the above: a chain must still fall back."""
+    torch = pytest.importorskip("torch")
+
+    def _wrong_arch(*a, **kw):
+        raise RuntimeError(
+            "CUDA error: no kernel image is available for execution on the device")
+
+    monkeypatch.setattr(torch.hub, "load", _wrong_arch)
+
+    from popoe.segmentor_cnos import DinoV2Backbone
+
+    class _DinoLoadGuardSegmentor:
+        source = "dinov2-load"
+
+        def __init__(self):
+            self.backbone = DinoV2Backbone(device="cpu")
+
+        def segment(self, scene, obj):
+            self.backbone.model
+            return []
+
+    chain = FirstAvailableSegmentor([_DinoLoadGuardSegmentor(), _Works(n=1)])
+    dets = chain.segment(_scene(), _obj())
+
+    assert len(dets) == 1
+    assert chain.last_used == "works"
+    assert {d.source for d in dets} == {"works"}
+
+
+def test_an_oom_probe_does_not_latch_the_renderer_into_cpu_mode(monkeypatch):
+    """Same contract, the renderer stage.
+
+    `_init_nvdiffrast` marks the probe as tried BEFORE attempting it, so an OOM
+    that correctly re-raises must also un-latch that flag. Otherwise the caller
+    frees VRAM, retries, and gets "already tried, no context" -> the trimesh CPU
+    ray-caster, which renders different views and therefore different query
+    features. That is the silent degrade, one retry later.
+
+    `gedi` is stubbed because feature_extractor imports it at module scope from
+    POPOE_GEDI_PATH; nothing in this test touches it, and stubbing keeps the
+    check running on a dep-light box instead of skipping where it matters.
+    """
+    import sys
+    import types
+
+    pytest.importorskip("torch")
+    if "gedi" not in sys.modules:
+        stub = types.ModuleType("gedi")
+        stub.GeDi = object
+        monkeypatch.setitem(sys.modules, "gedi", stub)
+    fx = pytest.importorskip("popoe.freeze.feature_extractor")
+
+    calls = {"n": 0}
+
+    def _ctx(device=None):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("CUDA out of memory. Tried to allocate 2.00 GiB")
+        return "gpu-context"
+
+    fake = types.ModuleType("nvdiffrast.torch")
+    fake.RasterizeCudaContext = _ctx
+    pkg = types.ModuleType("nvdiffrast")
+    pkg.torch = fake
+    monkeypatch.setitem(sys.modules, "nvdiffrast", pkg)
+    monkeypatch.setitem(sys.modules, "nvdiffrast.torch", fake)
+
+    ex = fx.QueryFeatureExtractor.__new__(fx.QueryFeatureExtractor)
+    ex.device = "cuda"
+    ex._render_backend_pref = "auto"
+    ex._nvd_init_tried = False
+    ex._nvd_ctx = None
+
+    with pytest.raises(RuntimeError, match="out of memory"):
+        ex._init_nvdiffrast()
+
+    assert ex._init_nvdiffrast() is True, "retry must re-attempt, not answer from state"
+    assert ex._nvd_ctx == "gpu-context"
+    assert calls["n"] == 2

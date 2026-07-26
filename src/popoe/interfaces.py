@@ -57,13 +57,55 @@ def is_runtime_failure(exc: BaseException) -> bool:
     the dedicated `torch.cuda.OutOfMemoryError`; plenty of allocation failures
     still arrive as a bare `RuntimeError('CUDA out of memory. Tried to allocate
     ...')`. Matched by name and message so this module stays torch-free.
+
+    The message policy allowlists ordinary CUDA availability cases, then treats
+    CUDA/driver/library runtime-shaped errors as faults. The availability set is
+    intentionally small and stable:
+
+        no kernel image is available   arch mismatch (sm_89 kernels elsewhere)
+        no CUDA-capable device         no GPU on this box
+        invalid device ordinal         wrong device index
+        driver version is insufficient driver too old
+
+    Hard CUDA faults are more open-ended: a missed sticky fault can poison the
+    context for the NEXT backend too, which then reports itself unavailable for
+    the same reason. The chain runs to its end and the caller is told "no
+    backend is available" while the real cause -- a failing card, a watchdog
+    timeout, or a destroyed context -- never surfaces.
+
+    Underscores are normalised so driver-style spellings
+    (`CUDA_ERROR_OUT_OF_MEMORY`, `CUBLAS_STATUS_ALLOC_FAILED`) match too.
     """
     if isinstance(exc, MemoryError) or type(exc).__name__ == "OutOfMemoryError":
         return True
-    text = str(exc).lower()
-    return isinstance(exc, RuntimeError) and (
-        "out of memory" in text or "cuda error" in text
-        or "cublas_status_alloc_failed" in text)
+    if not isinstance(exc, RuntimeError):
+        return False
+    text = str(exc).lower().replace("_", " ")
+
+    availability = (
+        "no kernel image is available",
+        "no cuda-capable device",
+        "no cuda capable device",
+        "invalid device ordinal",
+        "driver version is insufficient",
+    )
+    if any(reason in text for reason in availability):
+        return False
+
+    named_faults = (
+        "out of memory", "alloc failed", "illegal memory access",
+        "device-side assert", "device side assert",
+        "unspecified launch failure", "misaligned address",
+        "illegal instruction", "launch timed out",
+        "ecc error", "uncorrectable")
+    if any(fault in text for fault in named_faults):
+        return True
+
+    runtime_markers = (
+        "cuda error", "cuda runtime error", "cuda driver error",
+        "cudnn error", "cudnn status", "cublas error", "cublas status",
+    )
+    return any(marker in text for marker in runtime_markers)
 
 
 # ════════════════════════════════════════════════════════════════════════
