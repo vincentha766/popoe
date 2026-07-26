@@ -197,6 +197,11 @@ JSON, which then unions and evaluates like any other source. It writes
 popoe-muse --frame capture/frame_000000.json \
   --classes 9=/templates/obj_000009,14=/templates/obj_000014 \
   --models-info .../models_info.json --out outputs/muse_frame0.json
+
+popoe-bop-muse --bop-root /path/to/ycbv \
+  --template-root /templates/ycbv \
+  --out outputs/muse-repro_ycbv-test.json \
+  --shard-dir outputs/muse-repro_ycbv-test_shards --resume
 ```
 
 **Format notes.** A detections file is a JSON list of records

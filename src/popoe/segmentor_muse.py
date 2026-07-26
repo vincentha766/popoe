@@ -815,7 +815,7 @@ def encode_rle(mask: np.ndarray) -> dict:
 
 
 def muse_records(scene: Scene, segmentor: MuseSegmentor, *,
-                 n_masks: Optional[int] = None,
+                 n_masks: Optional[int | Mapping[int, int]] = None,
                  source: str = MUSE_SOURCE) -> list[dict]:
     """BOP-format detection records for every registered class of one frame.
 
@@ -826,11 +826,17 @@ def muse_records(scene: Scene, segmentor: MuseSegmentor, *,
     _check_source(source)
     out = []
     for c in segmentor.classes:
-        for det in segmentor.detections_for(scene, c.obj.obj_id, n_masks=n_masks):
+        obj_id = int(c.obj.obj_id)
+        class_n_masks = (
+            n_masks.get(obj_id)
+            if isinstance(n_masks, MappingABC)
+            else n_masks
+        )
+        for det in segmentor.detections_for(scene, obj_id, n_masks=class_n_masks):
             rec = {
                 "scene_id": int(scene.scene_id),
                 "image_id": int(scene.im_id),
-                "category_id": int(c.obj.obj_id),
+                "category_id": obj_id,
                 "score": float(det.score),
                 "segmentation": encode_rle(det.mask),
                 "source": source,

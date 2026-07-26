@@ -67,6 +67,8 @@ Grounding DINO weights come from the HF hub on first use
 
 ## CLI
 
+Single frame:
+
 ```bash
 popoe-muse \
   --frame     capture/frame_000000.json \
@@ -86,6 +88,38 @@ it through `load_bop_detections` so a schema error surfaces immediately.
 classes; with one registered class it is the constant 1 and `S_joint`
 degenerates to `beta * S_abs`. The library refuses that configuration unless
 `allow_single_class=True` (CLI: `--allow-single-class`) asks for it explicitly.
+
+BOP target split:
+
+```bash
+popoe-bop-muse \
+  --bop-root /workspace/bop_data/ycbv \
+  --template-root /workspace/templates/ycbv \
+  --out outputs/muse-repro_ycbv-test.json \
+  --shard-dir outputs/muse-repro_ycbv-test_shards \
+  --resume
+```
+
+`popoe-bop-muse` reads `<bop-root>/test_targets_bop19.json` by default, groups
+repeated BOP targets so each image is processed once, registers every target
+object found in the full target file, and writes one combined BOP-format
+detections JSON. `--limit-images` only limits which frames are processed; it
+does not shrink the registered MUSE class set, because MUSE's relative score is
+a softmax across that set. Use `--objs 9,14 --limit-images 10` when you want a
+reduced-class smoke run; those scores are not directly comparable with a full
+multi-class run. Per-image shards are full registered-class output and are keyed
+by dataset root, split, MUSE config, class set and effective per-class `topk`;
+`--resume` therefore requires `--shard-dir` and will not reuse shards from a
+different smoke/full configuration. `--topk` is floored per class by that
+object's BOP `inst_count` on the image. `--target-object-only` only filters the
+final combined file. Leave that flag off for leaderboard-style segmentation AP,
+where wrong-category detections on target images should remain false positives.
+`--no-time` strips runtime from the combined output only; shards still keep time
+so resumed default runs can preserve it. For
+sensor-named BOP test splits such as `test_primesense`, the default targets path
+falls back to `test_targets_bop19.json`. The loader expects the usual BOP RGB-D
+PNG layout (`rgb/` + `depth/`); ITODD's gray `.tif` split needs a
+dataset-specific loader before this CLI can cover it.
 
 ## Library Use
 
