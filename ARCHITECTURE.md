@@ -16,8 +16,9 @@ Scene (RGB-D, K) ──┘            TargetEncoder ──┴─ PoseSolver ─ 
 | Stage | Protocol | Reference implementation |
 |-------|----------|--------------------------|
 | Segmentation | `Segmentor` | `segmentor_detections.BOPDetectionsSegmentor` (evaluated; single file or a named-source union — see below); `segmentor_cnos_official.CNOSDetectionsSegmentor` (`source='cnos'`); `segmentor_cnos_v3.CNOSv3Segmentor` (`source='cnos-v3'`); `segmentor_muse.MuseSegmentor` (`source='muse-repro'`, live + producer — see below); `segmentor_cnos.CNOSSegmentor` (`source='cnos-live'`) / `.DinoWindowSegmentor`; `segmentor.SAMSegmentor` / `.DepthSegmentor`; `adapters.PrecomputedSegmentor` |
-| Query features | `QueryEncoder` | `freeze.adapters.FreeZeQueryEncoder` (DINOv2 + GeDi) |
+| Query features | `QueryEncoder` | `freeze.adapters.FreeZeQueryEncoder` (DINOv2 visual + `PointDescriptor` geometric branch) |
 | Target features | `TargetEncoder` | `freeze.adapters.FreeZeTargetEncoder` |
+| Geometric descriptors | `PointDescriptor` | GeDi default via `freeze.feature_extractor.load_gedi`; `descriptors.FPFHDescriptor`; dGeDi via `POPOE_GEOM_BACKBONE` |
 | Fusion | `FeatureFusion` | `freeze.fusion.DinoGeDiFusion` |
 | Pose solve | `PoseSolver` | `adapters.RansacSolver`; `solvers.Open3DFeatureRansacSolver` (default); `solvers.GPURansacSolver` (ported batched RANSAC, geometric or Eq.5 feature fitness); `solvers.TeaserSolver` (TEASER++ certifiable registration, needs `teaserpp_python`) |
 | External coarse pose | `CoarseEstimator` | `segmentor_sam6d.SAM6DPemResultsCoarseEstimator` over already-written PEM results |
@@ -31,11 +32,15 @@ The reference control flow is `interfaces.Pipeline.run`.
 ## Cross-cutting data (conventions live in one place)
 
 `Scene`, `ObjectModel`, and `CanonFrame` are built once and threaded through
-every stage, carrying the conventions that would otherwise be re-derived per
-module and drift:
+the pipeline, carrying the conventions that would otherwise be re-derived per
+module and drift. `FrameManifest` sits one step earlier as the file-level input
+boundary:
 
 - **Units** — mesh vertices in mm; depth-unprojected points and output `t` in
   **metres** (BOP CSVs convert back to mm at the edge).
+- **Frame I/O** — `FrameManifest` is the file boundary for RGB/depth/K plus an
+  optional detections JSON. Detections remain 2D masks/scores; depth stays with
+  the frame loader and is converted to metres before `Scene` is constructed.
 - **Canonicalisation** — `CanonFrame` encodes `pts_canon = (pts - center) * scale`
   with `center = 0` and `scale = 1 / max_extent` of the query sampled cloud (NOT
   the BOP diameter): GeDi was trained at ~1 m, so the object is rescaled to ~1 m.
@@ -50,6 +55,13 @@ module and drift:
   (`DinoGeDiFusion(vis_weight=0.0 | 1.0 | ...)`) and lets query & target **share
   one fusion instance**, so the visual PCA fit on the query side is transparently
   reused on the target side.
+- **The geometric branch is a component too.** The FreeZe recipe uses GeDi, but
+  the encoders call only `PointDescriptor.compute(pts, pcd)`. That makes FPFH a
+  proper hand-crafted control and dGeDi a fast learned control without changing
+  query/target encoding, fusion, solving, or scoring. Descriptor radii are in
+  canonical units (object extent ~= 1.0), so GeDi's `r_lrf` and FPFH's radii are
+  comparable. Role-aware descriptors go through `descriptors.describe(...,
+  role="query"|"target")`; role-blind descriptors keep the two-argument form.
 - **Scoring is a stage, not baked into the refiner.** `PoseScorer` owns the whole
   feature-scoring concern (fine re-score + the `s_coarse·s_fine·s_icp`
   combination). `ICPRefiner` only moves geometry and reports `s_icp`. So a new
@@ -155,6 +167,28 @@ dep-light.
 Select with `freeze.recipes.stages_for_object(solver=...)` or `bop_eval --solver
 o3d|gpu|gpu-feat|teaser`. The default stays `o3d`, so the evaluated mainline is
 unperturbed; the non-default solvers are reported as independent configurations.
+
+## BOP runner invariants
+
+`examples/bop_eval.py` is a composition runner, not a new stage, but several
+of its rules are load-bearing for reproducible benchmark runs:
+
+- **One query encode per object.** Queries and fitted visual PCA are cached up
+  front. The target cache key includes the query key because target visual
+  features live in the query PCA basis.
+- **Feature extraction is pinned at w=1.** The visual-weight sweep reweights
+  cached `[vis|geo]` features at selection time, and `ChampionScorer`'s
+  `s_feat_1` really is a w=1 re-score.
+- **Completed targets emit exactly `inst_count` rows.** Champions are written
+  first and zero rows pad any missing instances. Resume is therefore a row-count
+  invariant: fewer rows means a partial target and those stale rows are dropped
+  before re-run.
+- **Candidate dumps are the offline interface.** `--cand-csv` records every
+  mask x visual-weight hypothesis with its score breakdown and solver name, so
+  selection rules can be replayed without re-running DINO/GeDi/FPFH.
+- **Confusable-object arbitration is explicit.** YCB-V clamp label pooling is
+  the formal path; `--size-select` and `--dual-assign` are score-affecting lab
+  paths and require fresh output files.
 
 ## File-based detection backends (CNOS / SAM-6D / NIDS)
 
@@ -273,3 +307,8 @@ Two invariants, both learned from real incidents (see ISSUES.md):
 2. **Content addressing, not positional indices.** A mask's identity is a
    hash of its pixels, never its index in a detection list. (Violation:
    pooling reorders the list and a *different* mask's features load.)
+3. **Every feature-changing knob is config.** The key records the effective
+   target grid, DINO layer, crop/fill/canon settings, render backend, geometric
+   backbone, dGeDi mode, GeDi path, and, when FPFH is active, the FPFH radii,
+   voxel, normal and orientation settings. Missing one turns a sweep into a
+   stale-feature replay.

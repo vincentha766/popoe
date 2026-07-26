@@ -20,7 +20,7 @@ Scene (RGB-D, K) ──┘            TargetEncoder ──┴─ PoseSolver ─ 
 
 The bundled reference implementation reproduces a FreeZe-v2-style pipeline
 (DINOv2 visual + GeDi geometric features → RANSAC → ICP → symmetry-aware scoring)
-and ships **two** `PoseSolver` implementations to demonstrate pluggability.
+and ships multiple `PoseSolver` implementations to demonstrate pluggability.
 
 > Status: research code, `v0.1`. The framework layer (contracts + fusion) is
 > covered by tests; the reference implementation runs on a CUDA GPU with the
@@ -106,9 +106,10 @@ pipe = Pipeline(segmentor=..., query_encoder=..., target_encoder=...,
 best = pipe.run(scene, obj)
 ```
 
-The two shipped solvers (`popoe.adapters.RansacSolver`,
-`popoe.solvers.Open3DFeatureRansacSolver`) are worked examples. A robust backend
-like TEASER++ or MAC would be added the same way — one file.
+The shipped solvers (`popoe.adapters.RansacSolver`,
+`popoe.solvers.Open3DFeatureRansacSolver`, `popoe.solvers.GPURansacSolver`,
+and `popoe.solvers.TeaserSolver`) are worked examples. Another robust backend
+like MAC would be added the same way — one file.
 
 A stage never hides a fallback: if its backend is missing (no package, no
 checkpoint, no GPU) it raises `BackendUnavailable` rather than quietly running a
