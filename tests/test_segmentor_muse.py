@@ -428,8 +428,65 @@ def test_out_of_memory_is_a_runtime_failure_not_unavailability():
 
     assert _is_runtime_failure(OutOfMemoryError("CUDA out of memory"))
     assert _is_runtime_failure(MemoryError())
+    # only torch >= 1.13 has the dedicated class; plenty of OOMs are bare
+    # RuntimeErrors, and those are the ones that would slip through a
+    # class-name-only check
+    assert _is_runtime_failure(
+        RuntimeError("CUDA out of memory. Tried to allocate 2.00 GiB"))
+    assert _is_runtime_failure(RuntimeError("CUDA error: an illegal memory access"))
     assert not _is_runtime_failure(OSError("checkpoint not found"))
     assert not _is_runtime_failure(ImportError("no module named transformers"))
+    assert not _is_runtime_failure(RuntimeError("config key missing"))
+
+
+def test_the_writer_refuses_prebuilt_records_claiming_the_official_name():
+    """The last gate before an artefact exists on disk: records can be built or
+    edited without going through the stamping helpers."""
+    with pytest.raises(ValueError, match="record 1"):
+        write_muse_detections(
+            [{"scene_id": 0, "source": MUSE_SOURCE},
+             {"scene_id": 0, "source": "muse"}],
+            "/tmp/never-written.json")
+
+
+def test_sam2_checkpoint_env_is_resolved_into_the_config(monkeypatch):
+    """`sam_ckpt_dir=None` means 'read POPOE_SAM2_CKPT at load time', so two
+    runs under different env values load different weights and must not share
+    a cache key."""
+    from popoe.segmentor_muse import SAM2BoxMaskRefiner
+
+    monkeypatch.setenv("POPOE_SAM2_CKPT", "/ckpt/a")
+    a = SAM2BoxMaskRefiner().config()
+    monkeypatch.setenv("POPOE_SAM2_CKPT", "/ckpt/b")
+    b = SAM2BoxMaskRefiner().config()
+
+    assert a["ckpt_dir"] == "/ckpt/a"
+    assert a != b
+
+
+def test_class_registration_order_is_part_of_the_config():
+    """Column order of the score matrix follows registration order, and the
+    `classes` dict alone is order-insensitive to the fingerprinter."""
+    forward = _segmentor(classes=[MuseClass(_obj(9), "/tpl/9"),
+                                  MuseClass(_obj(14), "/tpl/14")])
+    reversed_ = _segmentor(classes=[MuseClass(_obj(14), "/tpl/14"),
+                                    MuseClass(_obj(9), "/tpl/9")])
+
+    assert forward.config()["classes"] == reversed_.config()["classes"]
+    assert forward.config() != reversed_.config()
+    assert forward.config()["class_order"] == [9, 14]
+
+
+def test_negative_mask_counts_are_refused_not_reinterpreted():
+    """`dets[:-1]` drops the last detection instead of returning none."""
+    with pytest.raises(ValueError, match="n_masks"):
+        _segmentor(n_masks=-1)
+
+    seg = _segmentor()
+    with pytest.raises(ValueError, match="n_masks"):
+        seg.detections_for(_scene(), 9, n_masks=-1)
+
+    assert seg.detections_for(_scene(), 9, n_masks=0) == []
 
 
 def test_cli_class_spec_reads_diameters_in_metres(tmp_path):

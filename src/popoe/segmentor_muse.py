@@ -179,16 +179,39 @@ def _check_source(source: str) -> str:
     return source
 
 
+def _check_n_masks(n: int) -> int:
+    """Reject a negative mask count instead of letting `[:n]` reinterpret it.
+
+    `dets[:-1]` silently drops the LAST detection rather than returning none,
+    so a negative topk would quietly return a truncated ranking that looks
+    plausible.
+    """
+    n = int(n)
+    if n < 0:
+        raise ValueError(f"n_masks must be >= 0, got {n}")
+    return n
+
+
 def _is_runtime_failure(exc: BaseException) -> bool:
     """True for failures that must PROPAGATE rather than read as unavailability.
 
     A CUDA OOM during model load is a runtime failure: turning it into
     ``SegmentorUnavailable`` lets a ``FirstAvailableSegmentor`` chain quietly
     continue to a weaker method and buries the real cause (ARCHITECTURE.md,
-    "the availability contract"). Matched by name so this module never has to
-    import torch to define it.
+    "the availability contract"). Matched without importing torch.
+
+    Matching the class name alone is not enough: only torch >= 1.13 raises the
+    dedicated ``torch.cuda.OutOfMemoryError``, and plenty of allocation failures
+    still surface as a bare ``RuntimeError('CUDA out of memory. Tried to
+    allocate ...')`` — the exact shape that must not be mistaken for a missing
+    backend.
     """
-    return isinstance(exc, MemoryError) or type(exc).__name__ == "OutOfMemoryError"
+    if isinstance(exc, MemoryError) or type(exc).__name__ == "OutOfMemoryError":
+        return True
+    text = str(exc).lower()
+    return isinstance(exc, RuntimeError) and (
+        "out of memory" in text or "cuda error" in text
+        or "cublas_status_alloc_failed" in text)
 
 
 def _unit(v: np.ndarray) -> np.ndarray:
@@ -376,7 +399,13 @@ class SAM2BoxMaskRefiner:
         return self._predictor
 
     def config(self) -> dict:
-        return {"model_size": self.model_size, "ckpt_dir": self.sam_ckpt_dir}
+        # Resolve the checkpoint dir NOW rather than storing None: with
+        # sam_ckpt_dir unset, build_sam2_model reads POPOE_SAM2_CKPT at load
+        # time, so two runs under different env values would otherwise share a
+        # cache key while loading different weights.
+        from popoe.segmentor import default_ckpt_dir
+        return {"model_size": self.model_size,
+                "ckpt_dir": self.sam_ckpt_dir or default_ckpt_dir()}
 
     def masks_for_boxes(self, rgb: np.ndarray,
                         boxes: np.ndarray) -> list[tuple[np.ndarray, float]]:
@@ -600,7 +629,7 @@ class MuseSegmentor:
         self.beta = float(beta)
         self.tau = float(tau)
         self.gamma = float(gamma)
-        self.n_masks = int(n_masks)
+        self.n_masks = _check_n_masks(n_masks)
         self.cache_frames = int(cache_frames)
         self._frames: dict[str, MuseSceneResult] = {}
 
@@ -626,6 +655,11 @@ class MuseSegmentor:
             "n_masks": self.n_masks,
             "classes": {c.obj.obj_id: (c.template_dir, float(c.obj.diameter))
                         for c in self.classes},
+            # ORDERED, because the dict above is not: registration order fixes
+            # the column order of MuseSceneResult.s_* / obj_ids, so [9, 14] and
+            # [14, 9] must not share a key — an external cache serving one
+            # matrix for the other would swap every class's scores.
+            "class_order": [c.obj.obj_id for c in self.classes],
             "size_gate": _component_identity(self.size_gate),
             "proposer": _component_identity(self.proposer),
             "refiner": _component_identity(self.refiner),
@@ -736,7 +770,7 @@ class MuseSegmentor:
                 f"(have {sorted(self._index)}). MUSE scores classes jointly, so "
                 f"classes cannot be added per call.") from None
         result = self.scene_result(scene)
-        k = self.n_masks if n_masks is None else int(n_masks)
+        k = self.n_masks if n_masks is None else _check_n_masks(n_masks)
         order = np.argsort(-result.s_final[:, ci])[:k] if result.n_proposals else []
         dets = []
         for pi in order:
@@ -835,6 +869,18 @@ def muse_records(scene: Scene, segmentor: MuseSegmentor, *,
 
 
 def write_muse_detections(records: Sequence[dict], output_json: str) -> str:
+    """Write detection records to disk, refusing any that claim the official name.
+
+    The writer re-checks rather than trusting `muse_records`: it is the last gate
+    before an artefact exists on disk, and records can be built or edited by a
+    caller that never went through the stamping helpers.
+    """
+    for i, rec in enumerate(records):
+        if "source" in rec:
+            try:
+                _check_source(rec["source"])
+            except ValueError as e:
+                raise ValueError(f"detection record {i}: {e}") from None
     out_dir = os.path.dirname(os.path.abspath(output_json))
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)

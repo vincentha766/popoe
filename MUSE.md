@@ -157,7 +157,45 @@ Defaults (`alpha=0.5`, `beta=0.8`, `tau=0.02`, `gamma=0.1`, `gem_p=1.5`, prompt
 
 - Unit tests: `tests/test_segmentor_muse.py` — scoring core, cross-class
   ranking, per-frame memoisation, size-gate union, detections round-trip. GPU-free.
-- **Not yet done:** end-to-end parity against `gedi/scripts/muse_match.py` on the
-  same frame with the same parameters (masks pixel-identical, scores matching).
-  Until that runs on a GPU box, treat any number from this module as unverified
-  and do not register it in `REPRODUCTION.md`.
+- End-to-end parity against `gedi/scripts/muse_match.py`: **run 2026-07-26** on a
+  4090, same frame (`shots_0723/rgb_000000.png`), same parameters, popoe commit
+  `e07a129`. Artefacts: `gedi/muse_parity_20260726/`.
+
+| check | result |
+|---|---|
+| proposals surviving the size gate | 3 of 7, **both** |
+| mask SET produced (content-aligned) | **identical**, 3 of 3 |
+| same mask at every rank | **no** — `obj_000009`'s top-1/top-2 swapped |
+| max abs delta on `S_final` | 0.0168 |
+
+**Read this as: the port reproduces the method, not the arithmetic.** Proposal
+and gating are bit-identical — Grounding DINO, SAM2 and the depth gate select
+exactly the same three regions. Every difference is in scoring, and it comes
+from the two `square_crop` implementations, which are not the same function:
+
+| | reference (`cnos_match3.py:31`) | popoe (`segmentor_cnos_v3.py:41`) |
+|---|---|---|
+| bbox | inclusive (`ys.max()`) | exclusive (`ys.max() + 1`) |
+| half-width | `(hw + int(hw*2*pad)) // 2` | `round(side * (0.5 + pad))` |
+| resample | cv2 `INTER_LINEAR` | PIL `BICUBIC` |
+
+Measured on this frame's masks, the crop windows differ by 2 px in size and
+1 px in origin, which is enough to move `S_abs` by 0.003–0.017.
+
+`obj_000009`'s top-1 and top-2 sat 0.0031 apart in the reference run — below
+that sensitivity — so the ranking flipped. `obj_000014`, whose margin was
+0.0496, ranked identically. **Neither implementation is "right" here**: a
+0.003 margin means this frame does not discriminate between those two masks at
+all, in either version. Treat a sub-0.02 margin on this pipeline as a tie, not
+a decision.
+
+**Decision (2026-07-26): bit-parity is not pursued.** popoe's exclusive bbox is
+the geometrically correct one — the reference's inclusive bbox is an off-by-one
+— so aligning would mean freezing that off-by-one into this repo. The shared
+`square_crop` also serves CNOS-v3, an evaluated path, so changing it needs its
+own A/B rather than a drive-by edit. What matters is recorded instead: the two
+crop conventions differ, the resulting score sensitivity is ~0.017, and any
+margin below that is a tie.
+
+Nothing has been registered in `REPRODUCTION.md`: this run verifies the port
+against its reference, it does not produce a benchmark number.
