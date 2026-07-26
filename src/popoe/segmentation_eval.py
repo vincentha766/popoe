@@ -4,11 +4,18 @@ The BOP model-based 2D segmentation task evaluates records shaped like
 ``{scene_id, image_id, category_id, score, segmentation}`` against visible
 object masks. popoe already loads those detections for pose estimation; this
 module adds the thin COCOeval bridge needed to score the masks themselves.
+
+Ground truth built here targets stock PyPI ``pycocotools``: low-visibility BOP
+instances mirror the ``ignore`` bit into ``iscrowd`` because stock
+``COCOeval._prepare`` derives ignore from crowd. For exact BOP toolkit COCO-fork
+semantics, prefer toolkit-generated ``scene_gt_coco`` or reset ``iscrowd`` to
+0 while preserving ``ignore`` before scoring with that fork.
 """
 
 from __future__ import annotations
 
 import json
+import warnings
 from contextlib import nullcontext, redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -126,6 +133,15 @@ def load_bop_targets(path: str | Path | None) -> set[tuple[int, int, int]] | Non
     return out
 
 
+def load_bop_model_category_ids(bop_root: str | Path) -> set[int]:
+    """Return object ids from a BOP ``models/models_info.json`` file."""
+
+    path = Path(bop_root) / "models" / "models_info.json"
+    if not path.exists():
+        raise FileNotFoundError(f"BOP models_info.json not found: {path}")
+    return {int(obj_id) for obj_id in _read_json(path)}
+
+
 def _scene_dirs(bop_root: Path, split: str) -> list[Path]:
     split_dir = bop_root / split
     if not split_dir.exists():
@@ -140,6 +156,7 @@ def build_coco_gt_from_bop(
     split: str = "test",
     targets: set[tuple[int, int, int]] | None = None,
     category_ids: set[int] | None = None,
+    category_source_ids: Sequence[int] | None = None,
     image_id_factor: int = DEFAULT_IMAGE_ID_FACTOR,
     mask_kind: str = "mask_visib",
 ) -> dict:
@@ -150,17 +167,39 @@ def build_coco_gt_from_bop(
     local dataset only has sparse RGB + poses, this function fails loudly
     rather than reporting fake AP.
 
-    When ``category_ids`` is set and ``targets`` is not, every image present
-    in ``scene_gt`` is kept even if it has no annotation for the selected
-    categories. That preserves negative images so detector false positives
-    on those frames still affect precision.
+    ``targets`` follows the official BOP COCO evaluator semantics: it selects
+    target images, not target object triples. All GT instances on those images
+    stay in the COCO annotations, with ``ignore=True`` for instances whose
+    ``scene_gt_info.json`` visibility is below 10%. Missing
+    ``scene_gt_info.json`` triggers a warning and defaults instances in that
+    scene to non-ignored because visibility fractions are unavailable.
+
+    When ``category_ids`` is set, every selected image is kept even if it has
+    no annotation for the selected categories. That preserves negative images
+    so detector false positives on those frames still affect precision.
+
+    ``category_source_ids`` controls the full COCO category list when no
+    ``category_ids`` filter is set. Passing object ids from
+    ``models/models_info.json`` matches official BOP category construction more
+    closely than the default observed-from-``scene_gt`` fallback.
     """
 
     bop_root = Path(bop_root)
     category_filter = {int(cid) for cid in category_ids} if category_ids else None
+    category_source_filter = (
+        {int(cid) for cid in category_source_ids}
+        if category_source_ids is not None else None
+    )
     images: dict[int, dict] = {}
     annotations: list[dict] = []
+    observed_category_ids: set[int] = set()
     seen_category_ids: set[int] = set()
+    target_images = {
+        (int(scene_id), int(im_id)) for scene_id, im_id, _ in targets
+    } if targets is not None else None
+    target_scenes = {
+        int(scene_id) for scene_id, _, _ in targets
+    } if targets is not None else None
     ann_id = 1
 
     def _register_image(image_id: int, scene_id: int, im_id: int,
@@ -181,13 +220,32 @@ def build_coco_gt_from_bop(
         if not gt_path.exists():
             continue
         scene_gt = _read_json(gt_path)
+        info_path = scene_dir / "scene_gt_info.json"
+        if info_path.exists():
+            scene_gt_info = _read_json(info_path)
+        else:
+            scene_gt_info = {}
+            if target_scenes is None or scene_id in target_scenes:
+                warnings.warn(
+                    "missing BOP scene_gt_info.json for "
+                    f"scene={scene_dir.name}; low-visibility instances cannot "
+                    "be ignored",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
         for im_key, objs in scene_gt.items():
             im_id = int(im_key)
             image_id = bop_image_id(scene_id, im_id, image_id_factor)
+            for obj in objs:
+                observed_category_ids.add(int(obj["obj_id"]))
+            if target_images is not None and (scene_id, im_id) not in target_images:
+                continue
+            if (target_images is not None or category_filter is not None) \
+                    and image_id not in images:
+                height, width = _image_hw(scene_dir, im_id, objs, mask_kind)
+                _register_image(image_id, scene_id, im_id, height, width)
             for gt_idx, obj in enumerate(objs):
                 obj_id = int(obj["obj_id"])
-                if targets is not None and (scene_id, im_id, obj_id) not in targets:
-                    continue
                 if category_filter is not None and obj_id not in category_filter:
                     continue
                 mask = _read_mask(_mask_path(scene_dir, im_id, gt_idx, mask_kind))
@@ -199,6 +257,11 @@ def build_coco_gt_from_bop(
                 )
                 rle = _encode_coco_rle(mask)
                 bbox = _bbox_from_mask(mask)
+                info_rows = scene_gt_info.get(str(im_id), [])
+                ignore = False
+                if gt_idx < len(info_rows):
+                    ignore = float(info_rows[gt_idx].get(
+                        "visib_fract", 1.0)) < 0.1
                 annotations.append({
                     "id": ann_id,
                     "image_id": image_id,
@@ -206,22 +269,24 @@ def build_coco_gt_from_bop(
                     "segmentation": rle,
                     "area": int(mask.sum()),
                     "bbox": bbox,
-                    "iscrowd": 0,
+                    # Stock pycocotools overwrites `ignore` from `iscrowd`
+                    # during COCOeval._prepare(), so carry the low-vis ignore
+                    # bit in both fields.
+                    "iscrowd": int(ignore),
+                    "ignore": bool(ignore),
                 })
                 ann_id += 1
                 seen_category_ids.add(obj_id)
 
-            # Category-only filters must keep negative images so FPs on frames
-            # without the selected object (including empty scene_gt rows [])
-            # still affect COCO precision.
-            if (targets is None and category_filter is not None
-                    and image_id not in images):
-                height, width = _image_hw(scene_dir, im_id, objs, mask_kind)
-                _register_image(image_id, scene_id, im_id, height, width)
-
+    if category_filter is not None:
+        category_source = category_filter
+    elif category_source_filter is not None:
+        category_source = category_source_filter
+    else:
+        category_source = observed_category_ids or seen_category_ids
     categories = [
         {"id": int(cid), "name": f"obj_{int(cid):06d}"}
-        for cid in sorted(seen_category_ids)
+        for cid in sorted(category_source)
     ]
     kind_label = "visible" if mask_kind == "mask_visib" else mask_kind
     return {
@@ -259,7 +324,8 @@ def filter_coco_gt(
     + ``--targets`` / ``--objs`` behave the same as building GT from ``--bop``.
 
     When ``targets`` is set, every image must carry ``scene_id`` and
-    ``bop_image_id`` (as written by ``build_coco_gt_from_bop``).
+    ``bop_image_id`` (as written by ``build_coco_gt_from_bop``). Targets select
+    images, not object triples.
 
     Category-only filtering (``category_ids`` set, ``targets`` unset) keeps
     all original images so negative frames remain available for FP scoring.
@@ -276,6 +342,9 @@ def filter_coco_gt(
 
     category_filter = {int(cid) for cid in category_ids} if category_ids else None
     image_meta: dict[int, tuple[int, int]] | None = None
+    target_images = {
+        (int(scene_id), int(im_id)) for scene_id, im_id, _ in targets
+    } if targets is not None else None
     if targets is not None:
         image_meta = {}
         for im in coco_gt.get("images", []):
@@ -298,24 +367,31 @@ def filter_coco_gt(
             if image_id not in image_meta:
                 continue
             scene_id, im_id = image_meta[image_id]
-            if (scene_id, im_id, obj_id) not in targets:
+            if (scene_id, im_id) not in target_images:
                 continue
         annotations.append(dict(ann))
 
-    kept_cat_ids = {int(a["category_id"]) for a in annotations}
-    # Category-only: keep every original image (negatives for FP). With targets,
-    # keep only images that still have a surviving annotation.
-    if targets is None and category_filter is not None:
+    # Category filters and target filters both keep their selected negative
+    # images so false positives on frames without that category still count.
+    if image_meta is not None:
+        images = [
+            dict(im) for im in coco_gt.get("images", [])
+            if image_meta[int(im["id"])] in target_images
+        ]
+    elif category_filter is not None:
         images = [dict(im) for im in coco_gt.get("images", [])]
     else:
         kept_image_ids = {int(a["image_id"]) for a in annotations}
         images = [dict(im) for im in coco_gt.get("images", [])
                   if int(im["id"]) in kept_image_ids]
-    categories = [dict(c) for c in coco_gt.get("categories", [])
-                  if int(c["id"]) in kept_cat_ids]
-    have = {int(c["id"]) for c in categories}
-    for cid in sorted(kept_cat_ids - have):
-        categories.append({"id": int(cid), "name": f"obj_{int(cid):06d}"})
+    if category_filter is None:
+        categories = [dict(c) for c in coco_gt.get("categories", [])]
+    else:
+        categories = [dict(c) for c in coco_gt.get("categories", [])
+                      if int(c["id"]) in category_filter]
+        have = {int(c["id"]) for c in categories}
+        for cid in sorted(category_filter - have):
+            categories.append({"id": int(cid), "name": f"obj_{int(cid):06d}"})
     categories.sort(key=lambda c: int(c["id"]))
     return {
         "info": dict(coco_gt.get("info", {})),
@@ -334,17 +410,26 @@ def detections_to_coco_results(
     targets: set[tuple[int, int, int]] | None = None,
     category_ids: set[int] | None = None,
 ) -> list[dict]:
-    """Convert BOP-format detections to COCO results aligned to ``coco_gt``."""
+    """Convert BOP-format detections to COCO results aligned to ``coco_gt``.
+
+    ``targets`` restricts predictions to target images, matching the official
+    BOP COCO evaluator. It deliberately does *not* filter by target object
+    triple: wrong-category predictions on a target image are false positives
+    and must remain visible to COCOeval.
+    """
 
     gt_image_ids = {int(im["id"]) for im in coco_gt.get("images", [])}
     gt_cat_ids = {int(c["id"]) for c in coco_gt.get("categories", [])}
+    target_images = {
+        (int(scene_id), int(im_id)) for scene_id, im_id, _ in targets
+    } if targets is not None else None
     category_filter = {int(cid) for cid in category_ids} if category_ids else None
     out = []
     for rec in load_bop_detections(str(detections_json)):
         scene_id = int(rec["scene_id"])
         im_id = int(rec["image_id"])
         obj_id = int(rec["category_id"])
-        if targets is not None and (scene_id, im_id, obj_id) not in targets:
+        if target_images is not None and (scene_id, im_id) not in target_images:
             continue
         if category_filter is not None and obj_id not in category_filter:
             continue
