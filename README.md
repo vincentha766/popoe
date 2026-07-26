@@ -13,9 +13,9 @@ their own repositories and consume popoe as a dependency behind the
 `popoe.freeze.recipes` into its own pipeline).
 
 ```
-ObjectModel (CAD) ─┐
-                   ├─ Segmentor ─ QueryEncoder ─┐
-Scene (RGB-D, K) ──┘            TargetEncoder ──┴─ PoseSolver ─ PoseRefiner* ─ PoseScorer ─ Selector ─ (R, t)
+ObjectModel (CAD) ─┬─ QueryEncoder ──────────── q, CanonFrame ─┐
+                   ├─ Segmentor ─ Detection ─┐                 │
+Scene (RGB-D, K) ──┴─────────────────────────┴─ TargetEncoder ─┴─ PoseSolver ─ PoseRefiner* ─ PoseScorer ─ Selector ─ (R, t)
 ```
 
 The bundled reference implementation reproduces a FreeZe-v2-style pipeline

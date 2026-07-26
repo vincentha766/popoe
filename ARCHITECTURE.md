@@ -8,9 +8,9 @@ registration — so stages stay decoupled and any one can be re-implemented alon
 ## Stages
 
 ```
-ObjectModel (CAD) ─┐
-                   ├─ Segmentor ─ QueryEncoder ─┐
-Scene (RGB-D, K) ──┘            TargetEncoder ──┴─ PoseSolver ─ PoseRefiner* ─ PoseScorer ─ Selector ─ (R, t)
+ObjectModel (CAD) ─┬─ QueryEncoder ──────────── q, CanonFrame ─┐
+                   ├─ Segmentor ─ Detection ─┐                 │
+Scene (RGB-D, K) ──┴─────────────────────────┴─ TargetEncoder ─┴─ PoseSolver ─ PoseRefiner* ─ PoseScorer ─ Selector ─ (R, t)
 ```
 
 | Stage | Protocol | Reference implementation |
