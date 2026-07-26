@@ -133,6 +133,15 @@ def load_bop_targets(path: str | Path | None) -> set[tuple[int, int, int]] | Non
     return out
 
 
+def load_bop_model_category_ids(bop_root: str | Path) -> set[int]:
+    """Return object ids from a BOP ``models/models_info.json`` file."""
+
+    path = Path(bop_root) / "models" / "models_info.json"
+    if not path.exists():
+        raise FileNotFoundError(f"BOP models_info.json not found: {path}")
+    return {int(obj_id) for obj_id in _read_json(path)}
+
+
 def _scene_dirs(bop_root: Path, split: str) -> list[Path]:
     split_dir = bop_root / split
     if not split_dir.exists():
@@ -147,6 +156,7 @@ def build_coco_gt_from_bop(
     split: str = "test",
     targets: set[tuple[int, int, int]] | None = None,
     category_ids: set[int] | None = None,
+    category_source_ids: Sequence[int] | None = None,
     image_id_factor: int = DEFAULT_IMAGE_ID_FACTOR,
     mask_kind: str = "mask_visib",
 ) -> dict:
@@ -167,13 +177,22 @@ def build_coco_gt_from_bop(
     When ``category_ids`` is set, every selected image is kept even if it has
     no annotation for the selected categories. That preserves negative images
     so detector false positives on those frames still affect precision.
+
+    ``category_source_ids`` controls the full COCO category list when no
+    ``category_ids`` filter is set. Passing object ids from
+    ``models/models_info.json`` matches official BOP category construction more
+    closely than the default observed-from-``scene_gt`` fallback.
     """
 
     bop_root = Path(bop_root)
     category_filter = {int(cid) for cid in category_ids} if category_ids else None
+    category_source_filter = (
+        {int(cid) for cid in category_source_ids}
+        if category_source_ids is not None else None
+    )
     images: dict[int, dict] = {}
     annotations: list[dict] = []
-    all_category_ids: set[int] = set()
+    observed_category_ids: set[int] = set()
     seen_category_ids: set[int] = set()
     target_images = {
         (int(scene_id), int(im_id)) for scene_id, im_id, _ in targets
@@ -218,7 +237,7 @@ def build_coco_gt_from_bop(
             im_id = int(im_key)
             image_id = bop_image_id(scene_id, im_id, image_id_factor)
             for obj in objs:
-                all_category_ids.add(int(obj["obj_id"]))
+                observed_category_ids.add(int(obj["obj_id"]))
             if target_images is not None and (scene_id, im_id) not in target_images:
                 continue
             if (target_images is not None or category_filter is not None) \
@@ -261,8 +280,10 @@ def build_coco_gt_from_bop(
 
     if category_filter is not None:
         category_source = category_filter
+    elif category_source_filter is not None:
+        category_source = category_source_filter
     else:
-        category_source = all_category_ids or seen_category_ids
+        category_source = observed_category_ids or seen_category_ids
     categories = [
         {"id": int(cid), "name": f"obj_{int(cid):06d}"}
         for cid in sorted(category_source)

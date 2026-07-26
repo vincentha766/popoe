@@ -17,6 +17,7 @@ from popoe.segmentation_eval import (
     evaluate_coco_segm,
     evaluate_coco_segm_per_category,
     filter_coco_gt,
+    load_bop_model_category_ids,
     load_bop_targets,
     write_json,
 )
@@ -74,6 +75,30 @@ def test_build_coco_gt_from_bop_visible_masks(tmp_path):
     assert coco_gt["annotations"][0]["category_id"] == 5
     assert coco_gt["annotations"][0]["bbox"] == [10.0, 6.0, 14.0, 12.0]
     assert coco_gt["categories"] == [{"id": 5, "name": "obj_000005"}]
+
+
+def test_build_coco_gt_can_use_explicit_category_source(tmp_path):
+    gt_mask = _mask()
+    _write_bop_scene(tmp_path, gt_mask, obj_id=5)
+
+    coco_gt = build_coco_gt_from_bop(
+        tmp_path,
+        category_source_ids={5, 9},
+    )
+
+    assert [ann["category_id"] for ann in coco_gt["annotations"]] == [5]
+    assert [cat["id"] for cat in coco_gt["categories"]] == [5, 9]
+
+
+def test_load_bop_model_category_ids_reads_models_info(tmp_path):
+    models = tmp_path / "models"
+    models.mkdir()
+    (models / "models_info.json").write_text(json.dumps({
+        "5": {"diameter": 10},
+        "9": {"diameter": 20},
+    }))
+
+    assert load_bop_model_category_ids(tmp_path) == {5, 9}
 
 
 def test_convert_and_evaluate_perfect_segmentation(tmp_path):
@@ -642,3 +667,35 @@ def test_bop_seg_eval_cli_objs_keeps_target_negative_images(tmp_path):
     assert summary["gt_images"] == 2
     assert summary["gt_annotations"] == 1
     assert summary["predictions"] == 2
+
+
+def test_bop_seg_eval_cli_can_use_models_info_categories(tmp_path):
+    example = Path(__file__).resolve().parents[1] / "examples" / "bop_seg_eval.py"
+    spec = importlib.util.spec_from_file_location("bop_seg_eval", example)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    gt_mask = _mask()
+    _write_bop_scene(tmp_path, gt_mask, obj_id=5)
+    models = tmp_path / "models"
+    models.mkdir()
+    (models / "models_info.json").write_text(json.dumps({
+        "5": {"diameter": 10},
+        "9": {"diameter": 20},
+    }))
+    det_path = tmp_path / "detections.json"
+    _write_detections(det_path, gt_mask)
+    out_dir = tmp_path / "seg_eval_models_info"
+
+    rc = mod.main([
+        "--bop", str(tmp_path),
+        "--detections", str(det_path),
+        "--category-source", "models_info",
+        "--out-dir", str(out_dir),
+    ])
+
+    written_gt = json.loads((out_dir / "gt_coco.json").read_text())
+    summary = json.loads((out_dir / "summary.json").read_text())
+    assert rc == 0
+    assert [cat["id"] for cat in written_gt["categories"]] == [5, 9]
+    assert summary["category_source"] == "models_info"

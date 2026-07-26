@@ -27,6 +27,7 @@ from popoe.segmentation_eval import (
     evaluate_coco_segm,
     evaluate_coco_segm_per_category,
     filter_coco_gt,
+    load_bop_model_category_ids,
     load_bop_targets,
     write_json,
 )
@@ -68,6 +69,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--mask-kind", default="mask_visib",
                     choices=["mask_visib", "mask"],
                     help="BOP GT mask directory to use when building GT.")
+    ap.add_argument("--category-source", default="observed",
+                    choices=["observed", "models_info"],
+                    help="COCO categories source when building GT from --bop. "
+                         "models_info reads models/models_info.json for "
+                         "stricter BOP parity.")
     ap.add_argument("--image-id-factor", type=int,
                     default=DEFAULT_IMAGE_ID_FACTOR,
                     help="COCO image id = scene_id * factor + im_id.")
@@ -86,6 +92,8 @@ def main(argv: list[str] | None = None) -> int:
     targets = load_bop_targets(args.targets or None)
 
     if args.gt_coco:
+        if args.category_source != "observed":
+            raise SystemExit("--category-source requires building GT from --bop")
         coco_gt = _load_json(args.gt_coco)
         # Match build_coco_gt_from_bop filtering so --targets / --objs apply
         # to prebuilt GT, not only to detections.
@@ -102,11 +110,19 @@ def main(argv: list[str] | None = None) -> int:
         if not args.bop:
             raise SystemExit("pass --bop, or pass --gt-coco with matching image ids")
         try:
+            category_source_ids = (
+                load_bop_model_category_ids(args.bop)
+                if args.category_source == "models_info" else None
+            )
+        except FileNotFoundError as e:
+            raise SystemExit(str(e))
+        try:
             coco_gt = build_coco_gt_from_bop(
                 args.bop,
                 split=args.split,
                 targets=targets,
                 category_ids=obj_ids or None,
+                category_source_ids=category_source_ids,
                 image_id_factor=args.image_id_factor,
                 mask_kind=args.mask_kind,
             )
@@ -139,6 +155,7 @@ def main(argv: list[str] | None = None) -> int:
         "split": args.split,
         "targets": args.targets or None,
         "objs": sorted(obj_ids),
+        "category_source": args.category_source,
         "gt_images": len(coco_gt.get("images", [])),
         "gt_annotations": len(coco_gt.get("annotations", [])),
         "predictions": len(pred),
