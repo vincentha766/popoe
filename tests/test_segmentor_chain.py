@@ -175,7 +175,8 @@ def test_cuda_availability_errors_stay_routable():
     # ... while allocation failures in any spelling stay fatal
     for msg in ("CUDA out of memory. Tried to allocate 2.00 GiB",
                 "CUDA_ERROR_OUT_OF_MEMORY",
-                "CUBLAS_STATUS_ALLOC_FAILED when calling cublasCreate"):
+                "CUBLAS_STATUS_ALLOC_FAILED when calling cublasCreate",
+                "CUDA error: unspecified launch failure"):
         assert is_runtime_failure(RuntimeError(msg)), msg
 
 

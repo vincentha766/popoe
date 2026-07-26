@@ -64,6 +64,7 @@ def is_runtime_failure(exc: BaseException) -> bool:
         out of memory / alloc failed   the GPU is full
         illegal memory access          a kernel wrote out of bounds
         device-side assert             a kernel tripped an assertion
+        unspecified launch failure     a hard kernel fault after launch
 
     while these, which carry the same prefix, are ordinary unavailability and
     must stay routable — they are what a fallback chain exists for:
@@ -83,7 +84,8 @@ def is_runtime_failure(exc: BaseException) -> bool:
     text = str(exc).lower().replace("_", " ")
     return any(fault in text for fault in (
         "out of memory", "alloc failed", "illegal memory access",
-        "device-side assert", "device side assert"))
+        "device-side assert", "device side assert",
+        "unspecified launch failure"))
 
 
 # ════════════════════════════════════════════════════════════════════════
