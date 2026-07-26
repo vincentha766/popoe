@@ -338,6 +338,14 @@ def main():
         # a box without nvdiffrast was silently reused on one with it.
         "render_backend": q_enc.render_backend,
     }
+    # .lower() to match how load_gedi() resolves the backbone: POPOE_GEOM_BACKBONE
+    # =FPFH loads FPFH, and its knobs must reach the key or a radius sweep reuses
+    # the previous radius' features.
+    if enc_cfg["geom_backbone"].lower() == "fpfh":
+        # Added ONLY when FPFH is the active backbone: unconditional keys would
+        # change every existing GeDi key and throw away the pod-side cache.
+        from popoe.descriptors import fpfh_config
+        enc_cfg.update(fpfh_config())
     cache = StageCache(args.cache) if args.cache else None
 
     # Encode ALL queries up front (fail fast; PCA snapshots live in meta).

@@ -10,6 +10,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 from sklearn.decomposition import PCA
+from popoe.descriptors import describe
 from popoe.freeze.fusion import DinoGeDiFusion
 from popoe.interfaces import CanonFrame
 
@@ -72,8 +73,18 @@ class _TwoScaleGeDi:
 
 
 def load_gedi(device='cuda'):
+    """Build the geometric branch (a popoe.interfaces.PointDescriptor).
+
+    POPOE_GEOM_BACKBONE selects it: gedi (default) | fpfh | dgedi. The name is
+    historical — prefer the `load_geometric_descriptor` alias in new code.
+    """
     import os, sys
     backend = os.environ.get('POPOE_GEOM_BACKBONE', 'gedi').lower()
+    if backend == 'fpfh':
+        # Hand-crafted control: no training, no GPU, radii in the same canonical
+        # units as r_lrf below, so it sees the same neighbourhoods GeDi does.
+        from popoe.descriptors import load_fpfh
+        return load_fpfh()
     if backend == 'dgedi':
         sys.path.insert(0, '/workspace/freezev2')
         from dgedi_adapter import load_dgedi
@@ -86,6 +97,12 @@ def load_gedi(device='cuda'):
     if os.environ.get('POPOE_TWO_SCALE_GEDI', '1') == '0':
         return _make_gedi_single(0.5)
     return _TwoScaleGeDi(r_a=0.3, r_b=0.4)
+
+
+# Backend-neutral name. `load_gedi` predates dGeDi and FPFH and now returns
+# whichever descriptor POPOE_GEOM_BACKBONE names; both spellings are kept so
+# existing callers (recipes, monolith, eval scripts) stay valid.
+load_geometric_descriptor = load_gedi
 
 
 class QueryFeatureExtractor:
@@ -432,9 +449,14 @@ class QueryFeatureExtractor:
         extent_m = float(np.ptp(pts_np, axis=0).max())
         self._canon_scale = 1.0 / max(extent_m, 1e-6)
         geo_input = (pts_np * self._canon_scale).astype(np.float32)
-        geo_feats = self.gedi.compute(
+        # role="query": a CAD model sampled all around. Role-blind backbones
+        # (GeDi, dGeDi) ignore it; FPFH needs it to pick the normal convention,
+        # which cannot be inferred from the points (see popoe.descriptors).
+        geo_feats = describe(
+            self.gedi,
             torch.from_numpy(geo_input),
-            torch.from_numpy(geo_input)
+            torch.from_numpy(geo_input),
+            role="query",
         )  # (N, 32)
 
         # Visual features via DINOv2 on rendered views, aggregated per point
@@ -606,9 +628,12 @@ class TargetFeatureExtractor:
         pcd_dense = np.stack([X_all, Y_all, d_all], axis=1).astype(np.float32)
 
         canon = getattr(self, '_canon_scale', 1.0)
-        geo_feats = self.gedi.compute(
+        # role="target": a single-view depth cloud, camera at the origin.
+        geo_feats = describe(
+            self.gedi,
             torch.from_numpy((pts_sparse * canon).astype(np.float32)),
-            torch.from_numpy((pcd_dense * canon).astype(np.float32))
+            torch.from_numpy((pcd_dense * canon).astype(np.float32)),
+            role="target",
         )
 
         if pca_vis is not None:
