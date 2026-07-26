@@ -1,4 +1,4 @@
-"""Minimal BOP dataset helpers (test split) — find instances and load RGB-D + GT.
+"""Minimal BOP dataset helpers — find instances and load BOP RGB-D frames.
 
 Standard BOP layout under `bop_root`:
     test/000048/rgb/000001.png  depth/000001.png  mask_visib/000001_000002.png
@@ -6,11 +6,69 @@ Standard BOP layout under `bop_root`:
     models/obj_000005.ply
 Depth is returned in METRES (raw uint16 * depth_scale / 1000).
 """
-import os
 import glob
 import json
+import os
+from functools import lru_cache
+from pathlib import Path
+
 import numpy as np
-import cv2
+
+from popoe.datasets.frames import load_scene_from_manifest
+from popoe.interfaces import FrameManifest, Scene
+
+
+def _read_json(path):
+    with open(path) as f:
+        return json.load(f)
+
+
+def default_targets_path(bop_root, split="test") -> Path:
+    """Return the conventional BOP target file path for a split."""
+
+    root = Path(bop_root)
+    path = root / f"{split}_targets_bop19.json"
+    if path.exists():
+        return path
+    fallback = root / "test_targets_bop19.json"
+    if split.startswith("test_") and fallback.exists():
+        return fallback
+    return path
+
+
+def bop_frame_manifest(bop_root, split, scene_id, im_id) -> FrameManifest:
+    """Build a frame manifest for one BOP image.
+
+    BOP ``scene_camera.json`` stores ``depth_scale`` in millimetres per raw
+    depth unit. ``FrameManifest`` expects metres per raw unit, so divide by 1000.
+    """
+
+    root = str(Path(bop_root).expanduser())
+    scene_dir = Path(root) / split / f"{int(scene_id):06d}"
+    cameras = _scene_camera(root, split, int(scene_id))
+    cam = cameras[str(int(im_id))]
+    return FrameManifest(
+        rgb_path=str(scene_dir / "rgb" / f"{int(im_id):06d}.png"),
+        depth_path=str(scene_dir / "depth" / f"{int(im_id):06d}.png"),
+        K=cam["cam_K"],
+        depth_scale=float(cam.get("depth_scale", 1.0)) / 1000.0,
+        scene_id=int(scene_id),
+        im_id=int(im_id),
+    )
+
+
+@lru_cache(maxsize=256)
+def _scene_camera(bop_root: str, split: str, scene_id: int) -> dict:
+    scene_dir = Path(bop_root) / split / f"{int(scene_id):06d}"
+    return _read_json(scene_dir / "scene_camera.json")
+
+
+def load_bop_scene(bop_root, split, scene_id, im_id) -> Scene:
+    """Load one BOP RGB-D frame as a ``Scene`` with depth in metres."""
+
+    return load_scene_from_manifest(
+        bop_frame_manifest(bop_root, split, scene_id, im_id)
+    )
 
 
 def find_instances(bop_root, obj_id, n=5):
@@ -33,6 +91,8 @@ def find_instances(bop_root, obj_id, n=5):
 
 def load_inputs(bop_root, scene_id, im_id, gt_idx):
     """Return (rgb uint8 HxWx3, depth float32 metres, mask bool, K 3x3, intr dict)."""
+    import cv2
+
     sd = f"{bop_root}/test/{scene_id:06d}"
     cam = json.load(open(f"{sd}/scene_camera.json"))[str(im_id)]
     K = np.array(cam["cam_K"], np.float64).reshape(3, 3)

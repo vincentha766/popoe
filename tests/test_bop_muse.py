@@ -7,17 +7,17 @@ import numpy as np
 import pytest
 
 import popoe.bop_muse as bop_muse
+import popoe.datasets.bop as bop_dataset
 from popoe.bop_muse import (
     BOPTargetImage,
     _main,
     _write_muse_detections_atomic,
-    bop_frame_manifest,
     build_muse_classes,
-    default_targets_path,
     generate_bop_muse_detections,
     load_bop_target_images,
     target_object_ids_from_targets,
 )
+from popoe.datasets.bop import bop_frame_manifest, default_targets_path
 from popoe.interfaces import Detection, ObjectModel, Scene
 from popoe.segmentor_muse import MUSE_SOURCE, MuseClass
 
@@ -165,8 +165,8 @@ def test_bop_frame_manifest_caches_scene_camera_per_scene(tmp_path, monkeypatch)
             "depth_scale": 1.0,
         },
     })
-    bop_muse._scene_camera.cache_clear()
-    real_read_json = bop_muse._read_json
+    bop_dataset._scene_camera.cache_clear()
+    real_read_json = bop_dataset._read_json
     reads = []
 
     def counting_read_json(path):
@@ -174,13 +174,13 @@ def test_bop_frame_manifest_caches_scene_camera_per_scene(tmp_path, monkeypatch)
             reads.append(Path(path))
         return real_read_json(path)
 
-    monkeypatch.setattr(bop_muse, "_read_json", counting_read_json)
+    monkeypatch.setattr(bop_dataset, "_read_json", counting_read_json)
 
     bop_frame_manifest(tmp_path, "test", scene_id=2, im_id=3)
     bop_frame_manifest(tmp_path, "test", scene_id=2, im_id=4)
 
     assert len(reads) == 1
-    bop_muse._scene_camera.cache_clear()
+    bop_dataset._scene_camera.cache_clear()
 
 
 def test_build_muse_classes_from_bop_metadata_and_template_root(tmp_path):

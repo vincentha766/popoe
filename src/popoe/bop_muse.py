@@ -14,13 +14,16 @@ import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
 from popoe.cache import fingerprint
-from popoe.datasets.frames import load_scene_from_manifest
-from popoe.interfaces import FrameManifest, ObjectModel, Scene
+from popoe.datasets.bop import (
+    bop_frame_manifest,
+    default_targets_path,
+    load_bop_scene,
+)
+from popoe.interfaces import ObjectModel, Scene
 from popoe.segmentor_muse import (
     DEFAULT_ALPHA,
     DEFAULT_BETA,
@@ -88,19 +91,6 @@ def _parse_template_overrides(spec: str | None) -> dict[int, str]:
             raise ValueError(f"duplicate template override for obj_id {obj_id}")
         out[obj_id] = path.strip()
     return out
-
-
-def default_targets_path(bop_root: str | os.PathLike, split: str = "test") -> Path:
-    """Return the conventional BOP target file path for a split."""
-
-    root = Path(bop_root)
-    path = root / f"{split}_targets_bop19.json"
-    if path.exists():
-        return path
-    fallback = root / "test_targets_bop19.json"
-    if split.startswith("test_") and fallback.exists():
-        return fallback
-    return path
 
 
 def load_bop_target_images(
@@ -235,51 +225,6 @@ def build_muse_classes(
             ),
         ))
     return out
-
-
-def bop_frame_manifest(
-    bop_root: str | os.PathLike,
-    split: str,
-    scene_id: int,
-    im_id: int,
-) -> FrameManifest:
-    """Build a frame manifest for one BOP image.
-
-    BOP ``scene_camera.json`` stores ``depth_scale`` in millimetres per raw
-    depth unit. ``FrameManifest`` expects metres per raw unit, so divide by 1000.
-    """
-
-    root = str(Path(bop_root).expanduser())
-    scene_dir = Path(root) / split / f"{int(scene_id):06d}"
-    cameras = _scene_camera(root, split, int(scene_id))
-    cam = cameras[str(int(im_id))]
-    return FrameManifest(
-        rgb_path=str(scene_dir / "rgb" / f"{int(im_id):06d}.png"),
-        depth_path=str(scene_dir / "depth" / f"{int(im_id):06d}.png"),
-        K=cam["cam_K"],
-        depth_scale=float(cam.get("depth_scale", 1.0)) / 1000.0,
-        scene_id=int(scene_id),
-        im_id=int(im_id),
-    )
-
-
-@lru_cache(maxsize=256)
-def _scene_camera(bop_root: str, split: str, scene_id: int) -> dict:
-    scene_dir = Path(bop_root) / split / f"{int(scene_id):06d}"
-    return _read_json(scene_dir / "scene_camera.json")
-
-
-def load_bop_scene(
-    bop_root: str | os.PathLike,
-    split: str,
-    scene_id: int,
-    im_id: int,
-) -> Scene:
-    """Load one BOP RGB-D frame as a ``Scene`` with depth in metres."""
-
-    return load_scene_from_manifest(
-        bop_frame_manifest(bop_root, split, scene_id, im_id)
-    )
 
 
 def _segmentor_config(segmentor) -> dict:
