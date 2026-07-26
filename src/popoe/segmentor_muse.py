@@ -432,8 +432,8 @@ class DinoV2ClsGemEmbedder:
                  model_name: str = "dinov2_vitg14_reg",
                  grid: int = GRID, gem_p: float = DEFAULT_GEM_P,
                  fg_threshold: float = 0.4,
-                 mask_rgb: bool = False,
-                 gem_tokens: str = "fg"):
+                 mask_rgb: bool = True,
+                 gem_tokens: str = "all"):
         self.device = device
         self.model_name = model_name
         self.grid = int(grid)
@@ -844,8 +844,8 @@ def build_muse_segmentor(classes: Sequence[MuseClass],
                          size_gate_enabled: bool = True,
                          min_extent_ratio: float = 0.25,
                          max_extent_ratio: float = 1.1,
-                         mask_rgb: bool = False,
-                         gem_tokens: str = "fg",
+                         mask_rgb: bool = True,
+                         gem_tokens: str = "all",
                          **kwargs) -> MuseSegmentor:
     """Wire the real GPU components. Construction stays lazy — nothing loads
     until the first ``segment``, so an unavailable backend surfaces at the call
@@ -853,7 +853,8 @@ def build_muse_segmentor(classes: Sequence[MuseClass],
 
     ``size_gate_enabled=False`` keeps every non-empty SAM mask (paper / BOP RGB
     proposal regime). Relaxed ratios only apply when the gate is enabled.
-    ``mask_rgb`` / ``gem_tokens`` control proposal embedding (G3 paper sec 4.1).
+    Defaults (G3 2026-07-26): ``mask_rgb=True`` + ``gem_tokens="all"`` —
+    paper sec 4.1 object-region embedding; lifts LMO AP 0.23→0.39, YCB-V→0.68.
     """
     embedder = DinoV2ClsGemEmbedder(
         device=device, model_name=dinov2_model,
@@ -1044,10 +1045,10 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
                     help="class-token similarity in S_abs")
     ap.add_argument("--patch-sim", default="tanimoto", choices=("cosine", "tanimoto"),
                     help="GeM patch similarity in S_abs (paper Eqs. 2–3 use cosine)")
-    ap.add_argument("--mask-rgb", action="store_true",
-                    help="zero RGB outside mask before DINOv2 (paper: object region only)")
-    ap.add_argument("--gem-tokens", default="fg", choices=("fg", "all"),
-                    help="GeM over foreground patches only, or all patch tokens")
+    ap.add_argument("--mask-rgb", action=argparse.BooleanOptionalAction, default=True,
+                    help="zero RGB outside mask before DINOv2 (default on; G3)")
+    ap.add_argument("--gem-tokens", default="all", choices=("fg", "all"),
+                    help="GeM token set (default all; historical was fg-only)")
     ap.add_argument("--allow-single-class", action="store_true")
     args = ap.parse_args(argv)
 

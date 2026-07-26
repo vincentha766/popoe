@@ -364,7 +364,9 @@ CLI flags from code, light CPU tests. GPU parity numbers still ☐.
 
 ## Segmentation AP ledger (2026-07-26)
 
-> **Status**: offline measurements from `outputs/seg_ap_20260725T223014Z/`.  
+> **Status**: official-source offline measurements from
+> `outputs/seg_ap_20260725T223014Z/`; `muse-repro` G3 rows from the
+> 2026-07-26 default-promotion campaign.
 > **Not** a pose parity row. Pose headline #1/#2 filled above from the same day's campaign.  
 > PRs #3/#4/#5/#6 are merged; evaluator semantics from #5 apply to future re-scores.
 
@@ -385,6 +387,22 @@ Detail: `outputs/seg_ap_20260725T223014Z/LEADERBOARD_ALIGNMENT.md`.
 | LM-O | `sam6d` (local ISM) | 0.4411 | — | — | local file |
 | LM-O | `muse` (official BOP sub 29108) | 0.4713 | 0.4770 | −0.0057 | same residual class |
 
+### `muse-repro` G3 AP (default-promotion evidence)
+
+These are **reimplementation** rows (`source='muse-repro'`), not official
+`muse` artefacts and not a pose-promotion line. Recipe:
+`--mask-rgb --gem-tokens all`, default depth gate, default similarity
+`(class_sim=cosine, patch_sim=tanimoto)`, full test split.
+
+| Dataset | Official `muse` AP | Pre-G3 `muse-repro` AP | G3 `muse-repro` AP | Δ vs official | popoe commit | Artefacts | Verdict |
+|---|---:|---:|---:|---:|---|---|---|
+| LM-O | 0.471 | 0.228 | **0.388** | −0.083 | `e57cf03` | `outputs/g3_muse_mask_rgb_20260726/` | recovers most of the AP gap; residual remains |
+| YCB-V | 0.690 | 0.326 | **0.684** | −0.006 | `b8614c1` | `outputs/g3_muse_ycbv_mask_rgb_20260726/` | parity-level with official |
+
+PR #10 promotes this G3 recipe as the default for `build_muse_segmentor`,
+`popoe-muse`, and `popoe-bop-muse`. Historical reproduction remains available
+with `--no-mask-rgb --gem-tokens fg`.
+
 With BOP toolkit's declared COCO fork, YCB-V CNOS/NIDS match public AP to
 machine precision; LM-O sits ~0.006 **above** public (ignore-threshold
 sensitivity — see `LEADERBOARD_ALIGNMENT.md` ignore sweep).
@@ -397,13 +415,12 @@ sensitivity — see `LEADERBOARD_ALIGNMENT.md` ignore sweep).
 | `muse-repro` | `popoe.segmentor_muse` / `popoe-bop-muse` reimplementation |
 | `cnos-v3` / `cnos-live` | Self-built CNOS tracks (lab / live) — not paper headline |
 
-### Still open (after PR merge)
+### Remaining follow-up
 
 | Item | Depends on | Notes |
 |---|---|---|
-| Full-split `muse-repro` JSON + seg-AP vs `muse` | PR #3 | Expect gap (depth gate + GeM/Tanimoto vs paper vMF); attribute, do not relabel |
-| Re-run ledger under merged evaluator | PR #5 | Optional confirmation |
-| Pose parity #1/#2 | PR #4 recommended; GPU 4090 | ~3–5 h LM-O, ~15–22 h YCB-V |
+| G3 `muse-repro` pose-impact rerun | PR #10 | Optional; segmentation AP is ledgered above, but pose promotion still uses official four-way `muse` JSON |
+| Re-run official-source ledger under merged evaluator | PR #5 | Optional confirmation |
 | Human review panels | `scripts/export_bop_seg_review.py` | CPU; works on existing JSONs |
 
 ### Human review exporter
