@@ -43,6 +43,9 @@ def main():
     ap.add_argument("--obj", type=int, default=5)
     ap.add_argument("-n", "--n-instances", type=int, default=5)
     ap.add_argument("--n-points", type=int, default=5000)
+    ap.add_argument("--seed", type=int, default=None,
+                    help="seed Open3D's global RANSAC RNG; without it the two "
+                         "open3d rows are not reproducible run-to-run")
     args = ap.parse_args()
 
     mesh_path = f"{args.bop}/models/obj_{args.obj:06d}.ply"
@@ -54,9 +57,13 @@ def main():
     refiner, scorer, selector = ICPRefiner(fz.tau_icp), FreeZeScorer(fz.tau_inlier), BestScoreSelector()
     solvers = {
         "freeze_ransac": RansacSolver(n_ransac=fz.n_ransac, tau_inlier=fz.tau_inlier, k=fz.k_corr),
-        "open3d_1shot": Open3DFeatureRansacSolver(tau_inlier=fz.tau_inlier, n_restarts=1),
-        "open3d_rerank": Open3DFeatureRansacSolver(tau_inlier=fz.tau_inlier, n_restarts=8),
+        "open3d_1shot": Open3DFeatureRansacSolver(tau_inlier=fz.tau_inlier, n_restarts=1,
+                                                  seed=args.seed),
+        "open3d_rerank": Open3DFeatureRansacSolver(tau_inlier=fz.tau_inlier, n_restarts=8,
+                                                   seed=args.seed),
     }
+    print(f"instances={args.n_instances} seed={args.seed} "
+          f"({'reproducible' if args.seed is not None else 'UNSEEDED — open3d rows will vary'})")
 
     fz.precompute_query(mesh_path, n_points=args.n_points)
     q = PointFeatures(pts=fz._pts_query, feats=fz._feats_query,
