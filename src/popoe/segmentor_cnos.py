@@ -48,7 +48,7 @@ from typing import Optional
 
 import numpy as np
 
-from popoe.interfaces import Detection, ObjectModel, Scene
+from popoe.interfaces import Detection, ObjectModel, Scene, is_runtime_failure
 from popoe.segmentor import (
     AMG_PARAMS, SegmentorUnavailable, _disable_cudnn, build_sam2_model,
 )
@@ -92,6 +92,8 @@ class DinoV2Backbone:
                     'facebookresearch/dinov2', self.name, pretrained=True
                 ).to(self.device).eval()
             except Exception as e:                    # no network / no hub cache
+                if is_runtime_failure(e):             # but an OOM is not that
+                    raise
                 raise SegmentorUnavailable(f"DINOv2 ({self.name}) load failed: {e}") from e
         return self._model
 

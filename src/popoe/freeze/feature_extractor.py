@@ -176,6 +176,12 @@ class QueryFeatureExtractor:
             self._nvd_ctx = dr.RasterizeCudaContext(device=self.device)
             return True
         except Exception as e:
+            from popoe.interfaces import is_runtime_failure
+            if is_runtime_failure(e):
+                # A full GPU is not a missing rasteriser. Degrading to the CPU
+                # ray-caster here would silently change the rendered views, and
+                # therefore every query feature, on an 'auto' run.
+                raise
             self._nvd_ctx = None
             if self._render_backend_pref == 'nvdiffrast':
                 from popoe.renderer import RendererUnavailable

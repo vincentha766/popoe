@@ -44,6 +44,28 @@ class BackendUnavailable(RuntimeError):
     real bugs get buried."""
 
 
+def is_runtime_failure(exc: BaseException) -> bool:
+    """True for failures a backend-load guard must RE-RAISE, not convert.
+
+    The guards around model loading are broad (`except Exception`) because the
+    ways a checkpoint can be unreachable are many and boring. That breadth also
+    catches out-of-memory, and an OOM reported as `BackendUnavailable` is the
+    worst case the availability contract exists to prevent: a fallback chain
+    routes around it, a weaker method answers, and the run looks fine.
+
+    Matching the exception CLASS alone is not enough. Only torch >= 1.13 raises
+    the dedicated `torch.cuda.OutOfMemoryError`; plenty of allocation failures
+    still arrive as a bare `RuntimeError('CUDA out of memory. Tried to allocate
+    ...')`. Matched by name and message so this module stays torch-free.
+    """
+    if isinstance(exc, MemoryError) or type(exc).__name__ == "OutOfMemoryError":
+        return True
+    text = str(exc).lower()
+    return isinstance(exc, RuntimeError) and (
+        "out of memory" in text or "cuda error" in text
+        or "cublas_status_alloc_failed" in text)
+
+
 # ════════════════════════════════════════════════════════════════════════
 # 1. Cross-cutting data — constructed once, threaded through every stage.
 #    These carry the conventions (units, canonicalisation) that were

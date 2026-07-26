@@ -21,7 +21,7 @@ from typing import Callable, Mapping, Optional, Sequence
 
 import numpy as np
 
-from popoe.interfaces import Detection, ObjectModel, Scene
+from popoe.interfaces import Detection, ObjectModel, Scene, is_runtime_failure
 from popoe.segmentor import AMG_PARAMS, SegmentorUnavailable, build_sam2_model
 
 
@@ -205,6 +205,8 @@ class DinoV2ForegroundPatchExtractor:
                     "facebookresearch/dinov2", self.model_name, pretrained=True
                 ).to(self.device).eval()
             except Exception as e:
+                if is_runtime_failure(e):    # an OOM is not "backend missing"
+                    raise
                 raise SegmentorUnavailable(
                     f"DINOv2 ({self.model_name}) load failed: {e}"
                 ) from e

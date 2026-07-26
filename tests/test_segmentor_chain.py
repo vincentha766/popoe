@@ -111,3 +111,48 @@ def test_depth_segmentor_runs_with_no_deps_and_scores_by_area():
 def test_segmentors_satisfy_the_stage_protocol():
     assert isinstance(DepthSegmentor(), Segmentor)
     assert isinstance(FirstAvailableSegmentor([DepthSegmentor()]), Segmentor)
+
+
+def test_an_oom_during_model_load_is_not_treated_as_unavailability(monkeypatch):
+    """The load guards are broad on purpose (`except Exception`), because the
+    ways a checkpoint can be unreachable are many. That breadth also catches
+    out-of-memory — and an OOM reported as SegmentorUnavailable is the worst
+    case the contract exists to prevent: the chain routes around it, a weaker
+    method answers, and the run looks fine.
+
+    Only torch >= 1.13 raises the dedicated `torch.cuda.OutOfMemoryError`; a
+    bare RuntimeError carrying the message is the shape that used to slip
+    through.
+    """
+    torch = pytest.importorskip("torch")
+
+    def _oom(*a, **kw):
+        raise RuntimeError("CUDA out of memory. Tried to allocate 2.00 GiB")
+
+    monkeypatch.setattr(torch.hub, "load", _oom)
+
+    from popoe.segmentor_cnos import DinoV2Backbone
+    from popoe.segmentor_cnos_v3 import DinoV2ForegroundPatchExtractor
+
+    for loader in (lambda: DinoV2Backbone(device="cpu").model,
+                   lambda: DinoV2ForegroundPatchExtractor(device="cpu").model):
+        with pytest.raises(RuntimeError) as excinfo:
+            loader()
+        assert not isinstance(excinfo.value, SegmentorUnavailable)
+        assert "out of memory" in str(excinfo.value).lower()
+
+
+def test_a_missing_hub_cache_is_still_unavailability(monkeypatch):
+    """The other half of the same guard: a genuinely absent backend must stay
+    routable, or the chain has nothing left to do."""
+    torch = pytest.importorskip("torch")
+
+    def _no_network(*a, **kw):
+        raise OSError("Couldn't reach the hub and no cache entry exists")
+
+    monkeypatch.setattr(torch.hub, "load", _no_network)
+
+    from popoe.segmentor_cnos import DinoV2Backbone
+
+    with pytest.raises(SegmentorUnavailable):
+        DinoV2Backbone(device="cpu").model

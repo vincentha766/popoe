@@ -72,7 +72,7 @@ from typing import Callable, Mapping, Optional, Sequence
 import numpy as np
 
 from popoe.cache import fingerprint
-from popoe.interfaces import Detection, ObjectModel, Scene
+from popoe.interfaces import Detection, ObjectModel, Scene, is_runtime_failure
 from popoe.segmentor import SegmentorUnavailable, build_sam2_model
 from popoe.segmentor_detections import BOPDetectionsSegmentor
 from popoe.segmentor_cnos_v3 import (
@@ -190,28 +190,6 @@ def _check_n_masks(n: int) -> int:
     if n < 0:
         raise ValueError(f"n_masks must be >= 0, got {n}")
     return n
-
-
-def _is_runtime_failure(exc: BaseException) -> bool:
-    """True for failures that must PROPAGATE rather than read as unavailability.
-
-    A CUDA OOM during model load is a runtime failure: turning it into
-    ``SegmentorUnavailable`` lets a ``FirstAvailableSegmentor`` chain quietly
-    continue to a weaker method and buries the real cause (ARCHITECTURE.md,
-    "the availability contract"). Matched without importing torch.
-
-    Matching the class name alone is not enough: only torch >= 1.13 raises the
-    dedicated ``torch.cuda.OutOfMemoryError``, and plenty of allocation failures
-    still surface as a bare ``RuntimeError('CUDA out of memory. Tried to
-    allocate ...')`` — the exact shape that must not be mistaken for a missing
-    backend.
-    """
-    if isinstance(exc, MemoryError) or type(exc).__name__ == "OutOfMemoryError":
-        return True
-    text = str(exc).lower()
-    return isinstance(exc, RuntimeError) and (
-        "out of memory" in text or "cuda error" in text
-        or "cublas_status_alloc_failed" in text)
 
 
 def _unit(v: np.ndarray) -> np.ndarray:
@@ -337,7 +315,7 @@ class GroundingDinoBoxProposer:
                 self._model = AutoModelForZeroShotObjectDetection.from_pretrained(
                     self.model_id).to(self.device).eval()
             except Exception as e:
-                if _is_runtime_failure(e):
+                if is_runtime_failure(e):
                     raise
                 raise SegmentorUnavailable(
                     f"Grounding DINO ({self.model_id}) load failed: {e}") from e
@@ -455,7 +433,7 @@ class DinoV2ClsGemEmbedder:
                     "facebookresearch/dinov2", self.model_name, pretrained=True
                 ).to(self.device).eval()
             except Exception as e:
-                if _is_runtime_failure(e):
+                if is_runtime_failure(e):
                     raise
                 raise SegmentorUnavailable(
                     f"DINOv2 ({self.model_name}) load failed: {e}") from e

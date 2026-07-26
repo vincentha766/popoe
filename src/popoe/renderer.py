@@ -14,7 +14,7 @@ import torch
 import math
 from typing import Tuple, Optional
 
-from popoe.interfaces import BackendUnavailable
+from popoe.interfaces import BackendUnavailable, is_runtime_failure
 
 _NVDIFFRAST_AVAILABLE = None
 
@@ -89,6 +89,8 @@ class NvdiffrastRenderer:
             import nvdiffrast.torch as dr
             self.ctx = dr.RasterizeCudaContext(device=device)
         except Exception as e:      # no package, no CUDA context, no driver
+            if is_runtime_failure(e):   # ... but not a full GPU: that propagates
+                raise
             raise RendererUnavailable(
                 f"nvdiffrast unusable ({type(e).__name__}: {e}). Install with:\n"
                 f"  pip install --no-build-isolation "

@@ -421,22 +421,22 @@ def test_the_reserved_official_source_name_cannot_be_written(tmp_path):
 def test_out_of_memory_is_a_runtime_failure_not_unavailability():
     """A fallback chain may route around a missing backend; routing around a
     CUDA OOM would bury it under a weaker method's results."""
-    from popoe.segmentor_muse import _is_runtime_failure
+    from popoe.interfaces import is_runtime_failure
 
     class OutOfMemoryError(RuntimeError):    # torch.cuda.OutOfMemoryError's shape
         pass
 
-    assert _is_runtime_failure(OutOfMemoryError("CUDA out of memory"))
-    assert _is_runtime_failure(MemoryError())
+    assert is_runtime_failure(OutOfMemoryError("CUDA out of memory"))
+    assert is_runtime_failure(MemoryError())
     # only torch >= 1.13 has the dedicated class; plenty of OOMs are bare
     # RuntimeErrors, and those are the ones that would slip through a
     # class-name-only check
-    assert _is_runtime_failure(
+    assert is_runtime_failure(
         RuntimeError("CUDA out of memory. Tried to allocate 2.00 GiB"))
-    assert _is_runtime_failure(RuntimeError("CUDA error: an illegal memory access"))
-    assert not _is_runtime_failure(OSError("checkpoint not found"))
-    assert not _is_runtime_failure(ImportError("no module named transformers"))
-    assert not _is_runtime_failure(RuntimeError("config key missing"))
+    assert is_runtime_failure(RuntimeError("CUDA error: an illegal memory access"))
+    assert not is_runtime_failure(OSError("checkpoint not found"))
+    assert not is_runtime_failure(ImportError("no module named transformers"))
+    assert not is_runtime_failure(RuntimeError("config key missing"))
 
 
 def test_the_writer_refuses_prebuilt_records_claiming_the_official_name():
