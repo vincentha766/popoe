@@ -185,3 +185,128 @@ def test_arrays_without_sidecar_is_fatal(bop_eval, tmp_path):
 
     with pytest.raises(SystemExit, match="INCOMPLETE"):
         bop_eval.load_cached_query(cache, "k3")
+
+
+# ── dataset layout / merge resolution (the seven-set portability fixes) ──
+
+def test_resolve_layout_from_bop_basename(bop_eval, tmp_path):
+    name, lay = bop_eval.resolve_layout(tmp_path / "ycbv")
+    assert (name, lay["split"], lay["models_dir"]) == ("ycbv", "test", "models")
+
+
+def test_resolve_layout_tless_gets_primesense_and_cad(bop_eval, tmp_path):
+    name, lay = bop_eval.resolve_layout(tmp_path / "tless")
+    assert lay["split"] == "test_primesense"
+    assert lay["models_dir"] == "models_cad"
+
+
+def test_resolve_layout_unknown_basename_is_fatal(bop_eval, tmp_path):
+    """A wrong layout does not crash downstream — it completes as an all-zero
+    CSV — so the guess has to be refused up front."""
+    with pytest.raises(SystemExit, match="--dataset"):
+        bop_eval.resolve_layout(tmp_path / "bop_data_v2")
+
+
+def test_resolve_layout_dataset_flag_beats_basename(bop_eval, tmp_path):
+    name, lay = bop_eval.resolve_layout(tmp_path / "itodd_copy", dataset="itodd")
+    assert name == "itodd"
+    assert (lay["img_dir"], lay["img_ext"]) == ("gray", ".tif")
+
+
+def test_resolve_layout_overrides_apply(bop_eval, tmp_path):
+    _, lay = bop_eval.resolve_layout(tmp_path / "hb", split="test_kinect",
+                                     models_dir="models_reconst")
+    assert (lay["split"], lay["models_dir"]) == ("test_kinect", "models_reconst")
+
+
+def test_merge_auto_pools_only_on_ycbv(bop_eval):
+    """Obj ids 19/20 exist on tless/itodd/hb too; the former literal 'ycbv'
+    default silently pooled two unrelated objects there AND gave them the
+    clamp-specific size-aware scorer."""
+    from popoe.freeze.recipes import YCBV_MERGE_LABELS
+    assert bop_eval.resolve_merge("auto", "ycbv") == YCBV_MERGE_LABELS
+    for ds in ("tless", "itodd", "hb", "lmo", "tudl", "icbin"):
+        assert bop_eval.resolve_merge("auto", ds) == {}
+
+
+def test_merge_explicit_values_survive_any_dataset(bop_eval):
+    from popoe.freeze.recipes import YCBV_MERGE_LABELS
+    assert bop_eval.resolve_merge("ycbv", "tless") == YCBV_MERGE_LABELS
+    assert bop_eval.resolve_merge("none", "ycbv") == {}
+    assert bop_eval.resolve_merge("3:7", "tless") == {3: [3, 7], 7: [3, 7]}
+
+
+# ── frame reading: fail loud, gray->3ch replication ──────────────────────
+
+def _frame_dir(tmp_path, lay, im_id=3, gray=False):
+    import cv2
+    sdir = tmp_path / "000001"
+    (sdir / "depth").mkdir(parents=True)
+    (sdir / lay["img_dir"]).mkdir(exist_ok=True)
+    cv2.imwrite(str(sdir / "depth" / f"{im_id:06d}{lay['depth_ext']}"),
+                np.full((8, 8), 1000, np.uint16))
+    img = np.full((8, 8), 128, np.uint8) if gray else \
+        np.full((8, 8, 3), 128, np.uint8)
+    cv2.imwrite(str(sdir / lay["img_dir"] / f"{im_id:06d}{lay['img_ext']}"), img)
+    return sdir
+
+
+def test_read_frame_images_rgb_png(bop_eval, tmp_path):
+    from popoe.datasets.bop import bop_layout
+    lay = bop_layout("ycbv")
+    sdir = _frame_dir(tmp_path, lay)
+    bgr, depth = bop_eval.read_frame_images(sdir, 3, lay)
+    assert bgr.shape == (8, 8, 3)
+    assert depth.dtype == np.uint16     # IMREAD_UNCHANGED keeps raw units
+
+
+def test_read_frame_images_itodd_gray_tif_is_3ch(bop_eval, tmp_path):
+    """Single-channel gray/*.tif must reach the visual branch replicated to
+    3 channels (cv2's IMREAD_COLOR does this) — not crash, not stay 2-D."""
+    from popoe.datasets.bop import bop_layout
+    lay = bop_layout("itodd")
+    sdir = _frame_dir(tmp_path, lay, gray=True)
+    bgr, depth = bop_eval.read_frame_images(sdir, 3, lay)
+    assert bgr.shape == (8, 8, 3)
+    assert depth.dtype == np.uint16
+
+
+def test_read_frame_images_names_the_missing_file(bop_eval, tmp_path):
+    """The old code answered a missing image with inst_count zero rows and
+    'done' — on itodd that meant a whole dataset of fabricated zeros. The
+    reader now raises, naming the exact path, and the caller only writes
+    zeros under an explicit --allow-missing-images."""
+    from popoe.datasets.bop import bop_layout
+    lay = bop_layout("ycbv")
+    sdir = _frame_dir(tmp_path, lay)
+    with pytest.raises(FileNotFoundError, match="000099.png"):
+        bop_eval.read_frame_images(sdir, 99, lay)
+    # depth missing (rgb present) names the depth file
+    (sdir / "depth" / "000003.png").unlink()
+    with pytest.raises(FileNotFoundError, match="depth"):
+        bop_eval.read_frame_images(sdir, 3, lay)
+
+
+def test_read_frame_images_16bit_gray_is_fatal(bop_eval, tmp_path):
+    """IMREAD_COLOR would shift a 16-bit gray image to its top 8 bits and
+    hand a near-black frame to the visual branch with no error anywhere.
+    The gray path reads UNCHANGED and refuses non-uint8 instead."""
+    import cv2
+    from popoe.datasets.bop import bop_layout
+    lay = bop_layout("itodd")
+    sdir = tmp_path / "000001"
+    (sdir / "depth").mkdir(parents=True)
+    (sdir / "gray").mkdir()
+    cv2.imwrite(str(sdir / "depth" / "000003.tif"),
+                np.full((8, 8), 1000, np.uint16))
+    cv2.imwrite(str(sdir / "gray" / "000003.tif"),
+                np.full((8, 8), 30000, np.uint16))
+    with pytest.raises(SystemExit, match="uint8"):
+        bop_eval.read_frame_images(sdir, 3, lay)
+
+
+def test_resolve_layout_blames_the_flag_that_was_passed(bop_eval, tmp_path):
+    """A typo'd --dataset must not be answered with 'pass --dataset
+    explicitly' — that hint belongs to the basename-inference path only."""
+    with pytest.raises(SystemExit, match="--dataset 'tles' is not"):
+        bop_eval.resolve_layout(tmp_path / "bop", dataset="tles")

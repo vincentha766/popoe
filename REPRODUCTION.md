@@ -340,7 +340,11 @@ CLI flags from code, light CPU tests. GPU parity numbers still ☐.
 ### CLI flags verified from code (not memory)
 
 - `examples/bop_eval.py`: mutually exclusive `--detections` / `--sources`;
-  defaults `--topk 2`, `--grid 32`, `--solver o3d`, `--merge ycbv`,
+  defaults `--topk 2`, `--grid 32`, `--solver o3d`, `--merge ycbv`
+  (2026-07-27: default is now `auto` — ycbv pooling on ycbv, none elsewhere;
+  dataset layout from `--dataset`/`BOP_LAYOUTS`, missing images fatal unless
+  `--allow-missing-images`, and server submissions need
+  `examples/bop_time_normalize.py` on the raw CSV first),
   `--weights` = recipes.WEIGHTS `(1.0,0.7,0.5,0.3,0.2)`,
   `--render-backend nvdiffrast|trimesh|auto`; Champion rule via
   `ChampionScorer` / `stages_for_object` (see `src/popoe/scoring.py`,

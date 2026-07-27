@@ -17,6 +17,16 @@ Workflow features (the experiment accelerators):
     score breakdown, so selection rules can be swapped OFFLINE (zero GPU).
   * Resumable: rows already in --out are skipped on relaunch.
 
+Dataset layout is resolved from the dataset name (default: the --bop
+basename) via ``popoe.datasets.bop.BOP_LAYOUTS`` — split dir (tless/hb:
+test_primesense), image modality (itodd: gray/*.tif), models dir (tless:
+models_cad) — with --split / --models-dir overrides. An unknown name is
+fatal, never guessed.
+
+The ``time`` column holds the RAW per-target wall time. A BOP submission
+requires one shared per-image total instead — run
+``examples/bop_time_normalize.py`` on the CSV before uploading.
+
 Per-object visual PCA is snapshotted at query encoding and re-installed
 before each target encode (install_pca) — the image-major loop interleaves
 objects, and the shared fusion instance would otherwise leak one object's
@@ -44,6 +54,7 @@ import numpy as np
 from popoe.adapters import (BestScoreSelector, resolve_resume,
                             select_top_instances)
 from popoe.cache import StageCache, file_fingerprint, fingerprint
+from popoe.datasets.bop import bop_layout, default_targets_path
 from popoe.interfaces import ObjectModel, PointFeatures, PoseHypothesis, Scene
 from popoe.confusable_select import dual_assign_hyps, partner_id
 from popoe.freeze.recipes import (
@@ -79,6 +90,75 @@ def cand_csv_header(score_coarse):
              "metric_fit", "score", "R", "t"]
             + (["s_coarse"] if score_coarse else [])
             + ["solver"])
+
+
+def resolve_layout(bop: Path, dataset=None, split=None, models_dir=None):
+    """Dataset name + directory layout for --bop, name defaulting to the --bop
+    basename. Both feed correctness-relevant decisions (split dir, image
+    modality, models dir, the 'auto' merge), so an unrecognised name is fatal
+    rather than defaulted: the rgb/png guess on itodd would not crash — it
+    would complete the whole dataset as a clean-looking all-zero CSV."""
+    name = (dataset or bop.name).lower()
+    try:
+        return name, bop_layout(name, split=split, models_dir=models_dir)
+    except ValueError as e:
+        # Two ways to get here deserve two hints: telling someone who already
+        # passed --dataset to "pass --dataset explicitly" answers nothing.
+        hint = (f"--dataset {dataset!r} is not a known dataset" if dataset
+                else f"--bop basename {bop.name!r} does not name a dataset; "
+                     f"pass --dataset explicitly")
+        raise SystemExit(
+            f"{e}\n{hint} (layout and the 'auto' merge depend on it).")
+
+
+def resolve_merge(merge_arg, dataset):
+    """Resolve --merge. 'auto' (the default) applies the YCB-V clamp pooling
+    on ycbv and nothing elsewhere: obj ids 19/20 also exist on tless, itodd
+    and hb, where the former literal 'ycbv' default silently pooled two
+    unrelated objects — and handed them the clamp-specific size-aware scorer
+    (stages_for_object's `size_aware=obj_id in merge`)."""
+    if merge_arg == "auto":
+        return dict(YCBV_MERGE_LABELS) if dataset == "ycbv" else {}
+    if merge_arg == "ycbv":
+        return dict(YCBV_MERGE_LABELS)
+    if merge_arg == "none":
+        return {}
+    merge = {}
+    for grp in merge_arg.split(","):
+        ids = [int(x) for x in grp.split(":")]
+        for a in ids:
+            merge[a] = ids
+    return merge
+
+
+def read_frame_images(sdir: Path, im_id: int, layout):
+    """Read one image's (bgr, raw depth), or raise FileNotFoundError naming
+    the file (cv2.imread returns None for missing and unreadable files alike,
+    so the None check must sit this close to the read — the message says so).
+
+    A gray modality (itodd) is read UNCHANGED and replicated to 3 channels
+    explicitly. IMREAD_COLOR would do the replication too, but it also
+    silently shifts a 16-bit image down to its top 8 bits — near-black input
+    reaching the visual branch with no error anywhere. Until someone chooses
+    a tone mapping deliberately, a non-uint8 gray image is fatal."""
+    depth_path = sdir / "depth" / f"{im_id:06d}{layout['depth_ext']}"
+    img_path = sdir / layout["img_dir"] / f"{im_id:06d}{layout['img_ext']}"
+    depth_raw = cv2.imread(str(depth_path), cv2.IMREAD_UNCHANGED)
+    gray = layout["img_dir"] == "gray"
+    img = cv2.imread(str(img_path),
+                     cv2.IMREAD_UNCHANGED if gray else cv2.IMREAD_COLOR)
+    if depth_raw is None or img is None:
+        missing = depth_path if depth_raw is None else img_path
+        raise FileNotFoundError(str(missing))
+    if gray:
+        if img.dtype != np.uint8:
+            raise SystemExit(
+                f"{img_path} decodes to {img.dtype}, not uint8 — a 16-bit "
+                f"gray image needs a deliberate tone-mapping choice; refusing "
+                f"to shift to the top 8 bits implicitly.")
+        if img.ndim == 2:
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+    return img, depth_raw
 
 
 def floored_topk(user_topk, max_inst):
@@ -162,6 +242,26 @@ def resolve_segmentor(detections, sources, topk, merge_labels,
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--bop", required=True)
+    ap.add_argument("--dataset", default=None,
+                    help="BOP dataset name (lmo|tless|tudl|icbin|itodd|hb|"
+                         "ycbv). Default: the basename of --bop. Drives the "
+                         "split dir, image modality/extension, models dir and "
+                         "the 'auto' merge default; an unknown name is fatal, "
+                         "never guessed.")
+    ap.add_argument("--split", default=None,
+                    help="override the split dir from the dataset layout "
+                         "(e.g. test_kinect on hb; tless/hb default to "
+                         "test_primesense)")
+    ap.add_argument("--models-dir", default=None,
+                    help="override the models dir from the dataset layout "
+                         "(tless defaults to models_cad — it has no models/)")
+    ap.add_argument("--allow-missing-images", action="store_true",
+                    help="write zero rows (counted as load_image failures in "
+                         "the end-of-run summary) for images whose image/depth "
+                         "files cannot be read, instead of aborting. Default "
+                         "aborts: under a wrong layout every image is missing "
+                         "and the run would complete as a clean-looking "
+                         "all-zero CSV.")
     ap.add_argument("--detections", default=None,
                     help="single BOP detections JSON. Mutually exclusive with "
                          "--sources; pass exactly one.")
@@ -221,8 +321,11 @@ def main():
                          "solvers' own default 42. Feature caches are NOT affected "
                          "— the seed moves poses, not features, so it is "
                          "deliberately absent from the encoder cache key.")
-    ap.add_argument("--merge", default="ycbv",
-                    help="'ycbv' for the clamp pair, 'none', or '19:20,...'")
+    ap.add_argument("--merge", default="auto",
+                    help="'auto' (default: the ycbv clamp pooling on ycbv, "
+                         "none elsewhere — obj ids 19/20 exist on tless/itodd/"
+                         "hb too and must not be pooled there), 'ycbv', "
+                         "'none', or '19:20,...'")
     ap.add_argument("--size-select", default="none",
                     choices=["none", "soft", "nearest"],
                     help="opt-in mask-stage size arbitration for confusable "
@@ -256,18 +359,19 @@ def main():
     validate_source_args(args.detections, args.sources)
 
     bop = Path(args.bop)
+    ds_name, layout = resolve_layout(bop, args.dataset, args.split,
+                                     args.models_dir)
+    # Provenance line for the layout: like the solver line below, what the run
+    # resolved belongs in the log next to the numbers it produced.
+    print(f"dataset={ds_name} split={layout['split']} "
+          f"images={layout['img_dir']}/*{layout['img_ext']} "
+          f"models={layout['models_dir']}", flush=True)
     weights = [float(w) for w in args.weights.split(",")]
     obj_filter = {int(x) for x in args.objs.split(",") if x.strip()}
-    if args.merge == "ycbv":
-        merge = YCBV_MERGE_LABELS
-    elif args.merge == "none":
-        merge = {}
-    else:
-        merge = {}
-        for grp in args.merge.split(","):
-            ids = [int(x) for x in grp.split(":")]
-            for a in ids:
-                merge[a] = ids
+    merge = resolve_merge(args.merge, ds_name)
+    if args.merge == "auto":
+        print("--merge auto -> "
+              + ("ycbv clamp pooling" if merge else "none"), flush=True)
     size_select = None if args.size_select == "none" else args.size_select
     confusable_diameters = None
     if size_select is not None:
@@ -289,7 +393,7 @@ def main():
     if args.cache:
         os.makedirs(args.cache, exist_ok=True)
 
-    targets = json.load(open(bop / "test_targets_bop19.json"))
+    targets = json.load(open(default_targets_path(bop, layout["split"])))
     if obj_filter:
         targets = [t for t in targets if t["obj_id"] in obj_filter]
     by_img: dict = {}
@@ -431,7 +535,8 @@ def main():
     query_cache: dict = {}
     for obj_id in sorted({o for objs in by_img.values() for o, _n in objs}):
         obj = ObjectModel(obj_id=obj_id,
-                          mesh_path=str(bop / "models" / f"obj_{obj_id:06d}.ply"),
+                          mesh_path=str(bop / layout["models_dir"]
+                                        / f"obj_{obj_id:06d}.ply"),
                           diameter=0.0)
         t0 = time.time()
         qkey = (fingerprint("query", enc_cfg, file_fingerprint(obj.mesh_path),
@@ -512,11 +617,11 @@ def main():
     # and the run ends with a summary instead of a clean-looking "done".
     failures: dict = {}
 
-    def note_failure(stage, obj_id, e):
+    def note_failure(stage, label, e):
         import traceback
         key = (stage, type(e).__name__)
         failures[key] = failures.get(key, 0) + 1
-        print(f"[FAIL {stage}] obj{obj_id}: {type(e).__name__}: {e}", flush=True)
+        print(f"[FAIL {stage}] {label}: {type(e).__name__}: {e}", flush=True)
         if failures[key] == 1:
             traceback.print_exc()
 
@@ -530,18 +635,38 @@ def main():
                        if (scene_id, im_id, o) not in done]
             if not pending:
                 continue
-            sdir = bop / "test" / f"{scene_id:06d}"
-            cam = json.load(open(sdir / "scene_camera.json"))[str(im_id)]
-            K = np.array(cam["cam_K"]).reshape(3, 3)
-            depth_raw = cv2.imread(str(sdir / "depth" / f"{im_id:06d}.png"),
-                                   cv2.IMREAD_UNCHANGED)
-            rgb_bgr = cv2.imread(str(sdir / "rgb" / f"{im_id:06d}.png"))
-            # None-check BEFORE cvtColor: cv2.cvtColor(None) raises, which made
-            # this branch dead code when the RGB file was the missing one.
-            if depth_raw is None or rgb_bgr is None:
-                # The completion invariant applies here too: inst_count rows
+            sdir = bop / layout["split"] / f"{scene_id:06d}"
+            try:
+                # scene_camera.json inside the try: a missing SCENE (wrong
+                # --split, partial download) must hit the same fatal-or-skip
+                # policy as a missing image, not leak a bare traceback.
+                cams = json.load(open(sdir / "scene_camera.json"))
+                if str(im_id) not in cams:
+                    raise SystemExit(
+                        f"im_id {im_id} absent from {sdir}/scene_camera.json "
+                        f"— the targets file and the data tree disagree; not "
+                        f"skippable.")
+                cam = cams[str(im_id)]
+                K = np.array(cam["cam_K"]).reshape(3, 3)
+                rgb_bgr, depth_raw = read_frame_images(sdir, im_id, layout)
+            except FileNotFoundError as e:
+                # An unreadable image is FATAL by default. Writing zero rows
+                # here (the old behaviour) has the property that a wrong
+                # layout — every image "missing" — completes the entire
+                # dataset as a clean-looking all-zero CSV instead of crashing.
+                if not args.allow_missing_images:
+                    raise SystemExit(
+                        f"cannot read {e} (file missing or undecodable).\n"
+                        f"Aborting rather than writing zero rows "
+                        f"(--allow-missing-images opts back in). If EVERY "
+                        f"image fails, the layout is wrong — check the "
+                        f"dataset/split/models line printed at startup; a "
+                        f"single failure is more likely a corrupt file.")
+                # Opt-in skip keeps the completion invariant: inst_count rows
                 # per target, or resume classifies this as a mid-target crash
                 # and re-runs it forever (the image will still be missing).
+                # Counted, so the run cannot end with a clean-looking "done".
+                note_failure("load_image", f"im {scene_id}/{im_id}", e)
                 for o, n in pending:
                     for _ in range(n):
                         wr.writerow([scene_id, im_id, o, 0.0, IDN, ZT, "0.0"])
@@ -567,7 +692,7 @@ def main():
                 try:
                     dets = segmentor.segment(scene, obj)
                 except Exception as e:
-                    note_failure("segment", obj_id, e)
+                    note_failure("segment", f"obj{obj_id}", e)
                     dets = []
                 for ci, det in enumerate(dets):
                     try:
@@ -576,7 +701,7 @@ def main():
                     except Exception as e:
                         # Often a degenerate mask cloud (e.g. GeDi LRF) — but
                         # logged, because "often" is not "always".
-                        note_failure("encode_target", obj_id, e)
+                        note_failure("encode_target", f"obj{obj_id}", e)
                         continue
                     if len(tgt.pts) < 4:
                         continue
@@ -601,7 +726,7 @@ def main():
                                            if args.score_coarse else [])
                                         + [args.solver])
                         except Exception as e:
-                            note_failure("solve/refine/score", obj_id, e)
+                            note_failure("solve/refine/score", f"obj{obj_id}", e)
                             continue
                 elapsed = f"{time.time()-t_start:.3f}"
                 buffered[obj_id] = (inst_count, hyps_by_det, elapsed)
