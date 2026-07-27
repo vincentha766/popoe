@@ -409,6 +409,18 @@ def main():
         # change every existing GeDi key and throw away the pod-side cache.
         from popoe.descriptors import fpfh_config
         enc_cfg.update(fpfh_config())
+    # Where the [vis | geo] boundary sits, for the selection-time weight sweep.
+    # Taken from the SAME value the cache key records, so the split can never
+    # disagree with the features it is applied to: a different POPOE_VIS_DIM is
+    # a different key, hence a different entry. "geo-matched" (the default, and
+    # what every published number ran under) means equal halves, which
+    # scale_vis derives itself.
+    vis_split = (None if enc_cfg["vis_dim"] == "geo-matched"
+                 else int(enc_cfg["vis_dim"]))
+    if vis_split is not None:
+        print(f"vis_dim={vis_split} (NOT geo-matched — the fused halves are "
+              f"unequal and the weight sweep splits at {vis_split})", flush=True)
+
     cache = StageCache(args.cache) if args.cache else None
 
     # Encode ALL queries up front (fail fast; PCA snapshots live in meta).
@@ -569,8 +581,8 @@ def main():
                     if len(tgt.pts) < 4:
                         continue
                     for w in weights:
-                        qw = q if w == 1.0 else _reweighted(q, w)
-                        tw = tgt if w == 1.0 else _reweighted(tgt, w)
+                        qw = q if w == 1.0 else _reweighted(q, w, vis_split)
+                        tw = tgt if w == 1.0 else _reweighted(tgt, w, vis_split)
                         try:
                             for h in solver.solve(qw, tw, frame):
                                 h = refiner.refine(h, scene, obj, qw, tw)
@@ -638,8 +650,11 @@ def main():
         print(f"done -> {args.out}", flush=True)
 
 
-def _reweighted(pf, w: float):
-    return PointFeatures(pts=pf.pts, feats=scale_vis(pf.meta["feats_w1"], w),
+def _reweighted(pf, w: float, vis_dim: int | None = None):
+    # vis_dim is passed explicitly rather than inferred: the visual part is
+    # `vis_dim` wide, not necessarily half (see recipes.scale_vis).
+    return PointFeatures(pts=pf.pts,
+                         feats=scale_vis(pf.meta["feats_w1"], w, vis_dim),
                          pts_dense=pf.pts_dense, meta=pf.meta)
 
 

@@ -44,12 +44,44 @@ WEIGHTS = (1.0, 0.7, 0.5, 0.3, 0.2)
 TAU_FRAC = 0.03          # RANSAC/ICP threshold as a fraction of object extent
 
 
-def scale_vis(feats: np.ndarray, w: float) -> np.ndarray:
-    """Rescale the visual half of [vis | geo] fused features extracted at w=1.
-    Extracting once and rescaling reproduces any weight exactly."""
-    vd = feats.shape[1] // 2
+def scale_vis(feats: np.ndarray, w: float,
+              vis_dim: int | None = None) -> np.ndarray:
+    """Rescale the VISUAL part of [vis | geo] fused features extracted at w=1.
+    Extracting once and rescaling reproduces any weight exactly.
+
+    The split is `vis_dim` wide, NOT necessarily half. `feats.shape[1] // 2` is
+    right only while the visual branch is geo-matched — the default, and what
+    every published number ran under (64-D GeDi -> 64-D visual -> 128-D fused).
+    Set `POPOE_VIS_DIM` to anything else and the halves stop being equal: 1536-D
+    visual against 64-D GeDi fuses to 1600-D, where `// 2` puts the boundary at
+    800 and a weight sweep would scale 800 of the 1536 visual channels and leave
+    the other 736 at w=1 — a sweep silently running a different weighting than
+    its label says, the same shape as the "w=1 was never w=1" defect
+    (ISSUES.md 2026-07-14).
+
+    `vis_dim=None` resolves it from `POPOE_VIS_DIM`, the same source of truth
+    `DinoGeDiFusion.fuse` reads, falling back to the geo-matched halves. That is
+    safe because the knob is part of the encoder cache key (`enc_cfg['vis_dim']`
+    in bop_eval), so features built under a different setting live under a
+    different key and can never be paired with the wrong split. Pass `vis_dim`
+    explicitly when the caller already knows it — bop_eval does.
+
+    Since PR #12 the fused visual width IS `vis_dim` on every surviving path
+    (PCA projects to `n_components=vis_dim`; the identity path requires
+    `n_vis == vis_dim`), so this is the whole story — there is no third case.
+    """
+    if vis_dim is None:
+        env = os.environ.get("POPOE_VIS_DIM")
+        vis_dim = (feats.shape[1] // 2 if env in (None, "", "geo-matched")
+                   else int(env))
+    if not 0 < vis_dim < feats.shape[1]:
+        raise ValueError(
+            f"vis_dim {vis_dim} is not a valid split of {feats.shape[1]}-D "
+            f"fused features — the visual part must be a proper prefix. "
+            f"Scaling with a wrong boundary silently reweights the wrong "
+            f"channels, so this refuses rather than guesses.")
     out = feats.astype(np.float64).copy()
-    out[:, :vd] *= w
+    out[:, :vis_dim] *= w
     return out
 
 
