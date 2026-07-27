@@ -41,6 +41,12 @@ from popoe.solvers import Open3DFeatureRansacSolver
 from popoe.datasets.bop import find_instances, load_inputs, load_gt
 
 
+# MSSD recall thresholds, as fractions of object diameter. 0.2d and 0.5d are
+# the two ARCHITECTURE.md's Pluggability table quotes; 0.05d/0.1d bound the
+# strict end (all three solvers score 0.000 at 0.1d on obj 5).
+RECALL_FRACS = (0.05, 0.10, 0.20, 0.50)
+
+
 def load_eval_model(bop_root, obj_id):
     """models_eval vertices (mm) + BOP symmetry transformations + diameter.
 
@@ -146,10 +152,14 @@ def main():
         if not errs:
             continue
         m = np.array([e[0] for e in errs])
-        rec = [(m < f * diameter).mean() for f in (0.05, 0.10, 0.20)]
+        # 0.2d and 0.5d are the columns ARCHITECTURE.md's table quotes, so the
+        # summary must print them: they were previously recoverable only by
+        # re-deriving them from the per-instance rows above. Built from one
+        # tuple so the labels cannot drift from the thresholds.
+        rec = "  ".join(f"@{f:g}d {(m < f * diameter).mean():.3f}"
+                        for f in RECALL_FRACS)
         print(f"  {name:>16}: median {np.median(m):7.1f}mm ({np.median(m)/diameter:.3f}d)  "
-              f"recall@0.05d {rec[0]:.3f} @0.1d {rec[1]:.3f} @0.2d {rec[2]:.3f}  "
-              f"({len(errs)}/{len(insts)})")
+              f"recall {rec}  ({len(errs)}/{len(insts)})")
     print("\n--- symmetry-BLIND rotation, for continuity only; do NOT rank on this ---")
     for name, errs in agg.items():
         if errs:
