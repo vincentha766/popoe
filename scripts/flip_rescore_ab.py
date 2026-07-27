@@ -51,7 +51,39 @@ from popoe.freeze.recipes import (YCBV_MERGE_LABELS, best_segmentor,
                                   stages_for_object)
 from popoe.interfaces import (CanonFrame, ObjectModel, PointFeatures,
                               PoseHypothesis, Scene)
-from popoe.registration import feature_aware_score
+
+
+def slice_cosines(R, t, pts_q, pts_t, fq, ft, tau):
+    """Cosine sums over the SAME inlier set for the fused vector and for its
+    visual / geometric halves separately.
+
+    The fused vector is `concat([1.0 * l2norm(vis), l2norm(geo)])` at w=1
+    (fusion.py), so each half already carries unit norm and the fused cosine
+    is EXACTLY the mean of the two half cosines. For a flip on a
+    geometrically ambiguous object the geometric half barely moves, so it
+    contributes half the similarity while carrying almost none of the signal.
+    Splitting the halves is what tells us whether the visual features hold a
+    preference that the fused average is drowning.
+
+    The inlier set is geometric, hence identical across the three sums —
+    they differ only in which dimensions are compared.
+    """
+    from sklearn.neighbors import KDTree
+    tq = (R @ pts_q.T).T + t
+    d, nn = KDTree(tq).query(pts_t, k=1)
+    inl = d[:, 0] < tau
+    n_inl = int(inl.sum())
+    if n_inl == 0:
+        return 0.0, 0.0, 0.0, 0
+    A, B = ft[inl], fq[nn[:, 0][inl]]
+    h = A.shape[1] // 2
+
+    def csum(x, y):
+        xn = x / (np.linalg.norm(x, axis=1, keepdims=True) + 1e-8)
+        yn = y / (np.linalg.norm(y, axis=1, keepdims=True) + 1e-8)
+        return float((xn * yn).sum())
+
+    return csum(A, B), csum(A[:, :h], B[:, :h]), csum(A[:, h:], B[:, h:]), n_inl
 
 
 def rot_about(axis, deg):
@@ -172,7 +204,7 @@ def main():
         wr = csv.writer(f)
         wr.writerow(["scene_id", "im_id", "obj_id", "variant", "score",
                      "s_icp", "s_feat_1", "n_inliers", "n_target", "cos_sum",
-                     "R", "t"])
+                     "cos_sum_vis", "cos_sum_geo", "R", "t"])
         for (scene_id, im_id), objs in sorted(by_img.items()):
             sdir = bop / layout["split"] / f"{scene_id:06d}"
             cam = json.load(open(sdir / "scene_camera.json"))[str(im_id)]
@@ -221,16 +253,15 @@ def main():
                     # offline without another pod trip: the live score divides
                     # the cosine sum by |I|, the paper's Eq.5 divides by the
                     # fixed |P_T|, and both are recoverable from these.
-                    s_mean, inl = feature_aware_score(
+                    c_all, c_vis, c_geo, n_inl = slice_cosines(
                         h.R, h.t, q.pts, tgt.pts,
                         q.meta["feats_w1"], tgt.meta["feats_w1"], tau)
-                    n_inl = int(inl.sum())
                     wr.writerow([scene_id, im_id, obj_id, name,
                                  f"{h.score:.6f}",
                                  f"{h.breakdown.get('s_icp', 0):.4f}",
                                  f"{h.breakdown.get('s_feat_1', 0):.4f}",
                                  n_inl, len(tgt.pts),
-                                 f"{s_mean * n_inl:.6f}",
+                                 f"{c_all:.6f}", f"{c_vis:.6f}", f"{c_geo:.6f}",
                                  " ".join(f"{v:.6f}" for v in h.R.flatten()),
                                  " ".join(f"{v:.4f}" for v in (h.t * 1000.0))])
                     n_rows += 1
