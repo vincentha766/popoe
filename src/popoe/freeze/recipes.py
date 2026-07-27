@@ -59,21 +59,27 @@ def scale_vis(feats: np.ndarray, w: float,
     its label says, the same shape as the "w=1 was never w=1" defect
     (ISSUES.md 2026-07-14).
 
-    `vis_dim=None` resolves it from `POPOE_VIS_DIM`, the same source of truth
-    `DinoGeDiFusion.fuse` reads, falling back to the geo-matched halves. That is
-    safe because the knob is part of the encoder cache key (`enc_cfg['vis_dim']`
-    in bop_eval), so features built under a different setting live under a
-    different key and can never be paired with the wrong split. Pass `vis_dim`
-    explicitly when the caller already knows it — bop_eval does.
+    `vis_dim=None` keeps the historical equal-halves answer, so no existing
+    caller changes behaviour. The split is NOT inferred from `POPOE_VIS_DIM`:
+    that env var is only the fusion's *default*, and a caller that passes
+    `DinoGeDiFusion(vis_dim=...)` or a pre-fit `pca_vis` overrides it — the real
+    width is then `pca_vis.n_components`, and reading the env would give a
+    boundary the features never had. (Measured: with a 64-component PCA
+    supplied and `POPOE_VIS_DIM=1536` in the environment, the env answer tries
+    to split a 128-D vector at 1536.)
+
+    So the caller that knows must say so. `bop_eval` does, from
+    `enc_cfg['vis_dim']` — the same value its encoder cache key records, which
+    is what guarantees the split matches the features it is applied to:
+    a different setting is a different key, hence a different entry.
 
     Since PR #12 the fused visual width IS `vis_dim` on every surviving path
     (PCA projects to `n_components=vis_dim`; the identity path requires
-    `n_vis == vis_dim`), so this is the whole story — there is no third case.
+    `n_vis == vis_dim`), so a caller can always determine it — there is no
+    third case where the width is whatever a raw slice produced.
     """
     if vis_dim is None:
-        env = os.environ.get("POPOE_VIS_DIM")
-        vis_dim = (feats.shape[1] // 2 if env in (None, "", "geo-matched")
-                   else int(env))
+        vis_dim = feats.shape[1] // 2
     if not 0 < vis_dim < feats.shape[1]:
         raise ValueError(
             f"vis_dim {vis_dim} is not a valid split of {feats.shape[1]}-D "

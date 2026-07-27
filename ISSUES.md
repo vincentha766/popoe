@@ -518,13 +518,35 @@ requires `n_vis == vis_dim`). Before that there was a third case where the
 width was whatever a raw slice happened to produce, and no rule would have
 held. Removing the fallbacks is what made the split derivable at all.
 
-So `scale_vis(feats, w, vis_dim=None)` now splits at `vis_dim`, resolving it
-from the same `POPOE_VIS_DIM` the fusion reads when not told, and refusing a
-boundary that is not a proper prefix rather than guessing. Verified
-byte-identical on the geo-matched mainline; under `POPOE_VIS_DIM=1536` all 1536
-visual channels are now scaled where 736 were previously left at w=1.
+So `scale_vis(feats, w, vis_dim=None)` splits at `vis_dim`, refusing a boundary
+that is not a proper prefix rather than guessing, and `bop_eval` passes the
+value from `enc_cfg`. `None` keeps the historical equal-halves answer, so no
+existing caller moves. Verified byte-identical on the geo-matched mainline;
+under `POPOE_VIS_DIM=1536` all 1536 visual channels are now scaled where 736
+were previously left at w=1.
+
+A first attempt had `scale_vis` resolve the split from `POPOE_VIS_DIM` itself
+"since that is what the fusion reads". **That was wrong**, and the suite caught
+it under a non-default environment: the env var is only the fusion's DEFAULT,
+and a caller passing `DinoGeDiFusion(vis_dim=...)` or a pre-fit `pca_vis`
+overrides it — the real width is then `n_components`. With a 64-component PCA
+supplied and `POPOE_VIS_DIM=1536` exported, the env answer tried to split a
+128-D vector at 1536. The split has to come from the caller that knows, not
+from a variable that merely influences it.
+
+Fallout worth keeping: `tests/test_fusion.py` had been inheriting the
+developer's shell. `POPOE_VIS_DIM=1536` alone flipped four of its tests on
+`main` — including `test_output_dims`, which predates all of this work —
+because the env changes the width the fused vector actually has. The module now
+clears the fusion knobs in an autouse fixture and sets them explicitly where a
+test wants one, so the suite passes under a dirty environment too.
 
 Estimating-lesson: "this touches the hot path" was wrong, and wrong in the
 direction that defers work. The knob was already keyed, so the information
 needed to fix it safely was present the whole time — the cost was in reading
 the cache-key construction, not in threading new state.
+
+Review-lesson: the env-fallback error was invisible under the default
+environment and only surfaced from deliberately running the suite with the very
+knob the change was about. A test suite that never varies the variable under
+discussion cannot falsify a claim about it.
