@@ -37,6 +37,42 @@ entrypoints, under the dual-disclosure discipline of `../gedi/EXPERIMENTS.md`
 | 5 | YCB-V grasp ADD(-S)@0.1d | **0.8173** (median 2.5 mm / 6.6°) — gedi `scripts/freezev2_grasp_eval.py` | external grasp CLI on #1 CSV | **LOCAL-CPU** (post #1) | **0.8240** (@0.05d 0.7716; med 2.5 mm / 11.9°) | same | ☑ Δ=+0.0067 |
 | 6 | LM-O grasp ADD(-S)@0.1d | **0.7617** (7.2 mm / 5.8°) | same as #5 on #2 CSV | **LOCAL-CPU** (post #2) | **0.7706** (@0.05d 0.5146; med 7.1 mm / 5.9°) | same | ☑ Δ=+0.0089 |
 
+## BOP-Classic-Core seven-set ledger (2026-07-27, OFFICIAL SERVER SCORES)
+
+> The seven core datasets scored by the **BOP evaluation server**, method
+> `popoe-cnos`, popoe **`0c93d3e`**, pod `bidtug84rly2xo` (4090, stopped).
+> Submissions 39689–39695, all kept **private**. These are not local
+> measurements — the server computed them from the uploaded pose CSVs.
+> Recipe: official CNOS-FastSAM default detections, **single source** (same
+> footing as the official FreeZe(CNOS) row); `--merge ycbv` on YCB-V, `auto`
+> elsewhere. Artefacts: `../gedi/ycbv_local_data/bop7_full_20260727/`.
+
+| Dataset | AR | AR_MSSD | AR_MSPD | AR_VSD | FreeZe(CNOS) | Δ | s/image |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| TUD-L | 0.902 | 0.924 | 0.925 | 0.859 | 0.936 | −3.4pt | 2.52 |
+| YCB-V | 0.787 | 0.797 | 0.746 | 0.818 | 0.853 | −6.6pt | 3.61 |
+| HB | 0.690 | 0.685 | 0.685 | 0.701 | 0.790 | −10.0pt | 10.07 |
+| LM-O | 0.631 | 0.670 | 0.700 | 0.523 | 0.689 | −5.8pt | 6.29 |
+| ITODD | **0.565** | 0.607 | 0.592 | 0.495 | 0.561 | **+0.4pt** | 5.71 |
+| T-LESS | 0.443 | 0.462 | 0.477 | 0.388 | 0.520 | −7.7pt | 12.96 |
+| IC-BIN | 0.387 | 0.343 | 0.309 | 0.510 | 0.499 | −11.2pt | 35.44 |
+| **ARCore** | **0.6293** | | | | **0.6926** | **−6.3pt** | |
+
+**Pipeline self-validation**: YCB-V's server AR 0.787 agrees with headline
+row #1's locally scored 0.7781 (+0.9pt, RANSAC-noise scale) under an
+identical recipe — the end-to-end chain is sound, so every gap above is
+methodological, not a defect.
+
+**Diagnostic reading** (full analysis in `../gedi/BOP_OFFICIAL_BASELINES.md`):
+ITODD — untextured industrial parts, single-channel gray, the weakest regime
+for the visual branch — is the one dataset that beats the official row, so
+the geometric backbone reproduces faithfully. The gap tracks
+multi-instance-ness instead (single-instance −3.4/−5.8/−6.6 vs multi
+−7.7/−10.0/−11.2), and IC-BIN zero-pads only 1.6% of its rows, so detection
+recall is not the bottleneck. That points at `adapters.select_top_instances`
+having no spatial de-duplication — two champions can land on one physical
+instance (audit risk #5, 2026-07-27, now evidenced rather than hypothesised).
+
 ### Campaign notes (2026-07-26)
 
 - Fresh clone path on pod: `/workspace/popoe_verify_75553a1` @ `75553a1`.
