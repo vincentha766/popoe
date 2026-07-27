@@ -476,3 +476,33 @@ Lesson, second order: "I could not find it" is not "it does not exist". A
 provenance complaint is itself a claim about artefacts and needs the same
 standard of evidence it demands — check the host that produced the run before
 telling someone their numbers are unverified.
+
+### Left open: `scale_vis` assumes equal halves (pre-existing)
+
+Found by codex round 3 on PR #12, verified **pre-existing** and deliberately
+not fixed there — the PR's identity branch is byte-identical to what `main`
+already did for this configuration, so it is not a regression.
+
+`recipes.scale_vis` splits fused `[vis|geo]` features with
+`vd = feats.shape[1] // 2`, i.e. it assumes the two halves are equal width.
+That holds for the evaluated mainline, where `vis_dim` is geo-matched by
+construction (64-D GeDi -> 64-D visual -> 128-D fused), and every published
+number is unaffected.
+
+It does NOT hold when `POPOE_VIS_DIM` is set to something other than the
+geometric width — a real, cache-keyed knob (`enc_cfg` records it). With
+`POPOE_VIS_DIM=1536` against 64-D GeDi the fused vector is 1600-D, `vd`
+computes to 800, and the selection-time weight sweep scales only the first 800
+visual channels while the remaining 736 stay at w=1. Confirmed on `main` and
+on the PR: same widths, same mis-scaling, byte-identical output.
+
+So a weight sweep under a non-geo-matched `POPOE_VIS_DIM` silently runs a
+different weighting than its label says — the same shape as the 07-14 "w=1 was
+never w=1" defect, in the one knob that was not swept then.
+
+Fix direction: `scale_vis` cannot infer the split from the array alone, so the
+visual width has to be carried rather than guessed — either recorded in
+`PointFeatures.meta` at fuse time and passed through `_reweighted`, or read
+from the same `POPOE_VIS_DIM` the fusion itself consults. Untangling it touches
+the evaluated weight-sweep path, which is why it was kept out of a PR whose
+point was that the mainline does not move.
