@@ -48,7 +48,8 @@ from popoe.interfaces import ObjectModel, PointFeatures, PoseHypothesis, Scene
 from popoe.confusable_select import dual_assign_hyps, partner_id
 from popoe.freeze.recipes import (
     WEIGHTS, YCBV_CLAMP_DIAMETERS_M, YCBV_MERGE_LABELS,
-    best_encoders, best_segmentor, scale_vis, stages_for_object,
+    best_encoders, best_segmentor, scale_vis, solver_provenance,
+    stages_for_object,
 )
 
 IDN = " ".join(f"{v:.6f}" for v in np.eye(3).flatten())
@@ -87,6 +88,50 @@ def floored_topk(user_topk, max_inst):
     every backend can still supply enough candidates for a multi-instance
     target — it is not a shared global cap one source could exhaust."""
     return max(user_topk, max_inst)
+
+
+def load_cached_query(cache, qkey):
+    """Return a cached query entry's arrays, or None for a clean miss.
+
+    A query entry is BOTH files: the arrays and the PCA sidecar whose basis
+    their visual half lives in. Half an entry is not a hit.
+
+    An INCOMPLETE entry (arrays present, sidecar missing) is fatal, not
+    repairable. Re-encoding the query would restore a correct basis, but the
+    target key is `fingerprint("target", ..., qkey)` and `qkey` is derived from
+    config + mesh content only — so it does not change, and every target entry
+    written earlier stays reachable under it. Those targets may have been
+    encoded by the pre-fix code that let the target side fit its OWN basis
+    (see FreeZeTargetEncoder.install_pca), and nothing in a cached entry says
+    which basis produced it. Repairing the query alone would therefore leave
+    poisoned targets matched against a corrected query — the same silent
+    cross-basis comparison, now harder to spot.
+
+    Under the current write order (sidecar first, arrays second) a crash can
+    only ever leave an ORPHAN SIDECAR, never this state. So arrays-without-
+    sidecar means a pre-fix cache or a hand-deleted `.pkl`, and in both cases
+    the dependent targets are suspect and unidentifiable. Fail fast — this runs
+    in the up-front query loop, before any real work.
+    """
+    if cache is None or qkey is None:
+        return None
+    arrays = cache.get_arrays("query", qkey)
+    if arrays is None:
+        return None
+    pca_vis = cache.get_pickle("query", qkey)
+    if pca_vis is None:
+        raise SystemExit(
+            f"query cache entry {qkey} is INCOMPLETE: arrays present, PCA "
+            f"sidecar missing.\n"
+            f"This cannot be repaired in place. Target entries are keyed by "
+            f"this same qkey, so re-encoding the query would not invalidate "
+            f"them, and any of them may hold features in a target-fitted "
+            f"basis written by the pre-fix code — cached features do not "
+            f"record which basis produced them.\n"
+            f"Use a fresh --cache directory (or delete this one) and re-run. "
+            f"Under the current write order this state cannot arise from a "
+            f"crash, so the cache predates the fix or a .pkl was deleted.")
+    return arrays, pca_vis
 
 
 def resolve_segmentor(detections, sources, topk, merge_labels,
@@ -164,6 +209,18 @@ def main():
                          "solver changes score/R/t, so use a FRESH --out and "
                          "--cand-csv: resume/append are keyed by rows, not "
                          "config (as with --use-s-coarse/--merge/--weights).")
+    ap.add_argument("--seed", type=int, default=None,
+                    help="seed the solver's RNG. Default None = the historical "
+                         "UNSEEDED mainline: Open3D's RANSAC draws from a global "
+                         "RNG it never seeds, so --solver o3d runs are not "
+                         "reproducible run-to-run. Pass a seed for anything whose "
+                         "numbers get cited — REPRODUCTION.md's acceptance rule "
+                         "tightens to bit-identical for seeded runs. Seeding "
+                         "changes score/R/t, so use a FRESH --out and --cand-csv. "
+                         "Ignored by --solver teaser (no RNG); overrides the gpu "
+                         "solvers' own default 42. Feature caches are NOT affected "
+                         "— the seed moves poses, not features, so it is "
+                         "deliberately absent from the encoder cache key.")
     ap.add_argument("--merge", default="ycbv",
                     help="'ycbv' for the clamp pair, 'none', or '19:20,...'")
     ap.add_argument("--size-select", default="none",
@@ -300,6 +357,12 @@ def main():
         if not merge:
             raise SystemExit("--dual-assign requires --merge with a confusable pair")
         print(f"dual_assign=ON merge={merge}", flush=True)
+    # Provenance: reproducibility is a property of the RUN, so it belongs in the
+    # log next to the numbers, not only in the shell history that produced them.
+    # Built by recipes so it reports the EFFECTIVE seed per solver family — the
+    # gpu solvers are deterministic by default and teaser has no RNG, so a flat
+    # "UNSEEDED" would be a false claim in a cited run's log.
+    print(solver_provenance(args.solver, args.seed), flush=True)
     q_enc, t_enc = best_encoders(target_grid=args.grid,
                                  render_backend=args.render_backend)
     selector = BestScoreSelector()
@@ -361,24 +424,31 @@ def main():
         t0 = time.time()
         qkey = (fingerprint("query", enc_cfg, file_fingerprint(obj.mesh_path),
                             obj_id) if cache else None)
-        hit = cache.get_arrays("query", qkey) if cache else None
-        if hit is not None:
+        # Both files or nothing; an incomplete entry is fatal (the dependent
+        # target entries share this qkey and may hold a target-fitted basis).
+        entry = load_cached_query(cache, qkey)
+        if entry is not None:
+            hit, pca_hit = entry
             q = PointFeatures(pts=hit["pts"], feats=hit["feats"],
-                              meta={"pca_vis": cache.get_pickle("query", qkey)})
+                              meta={"pca_vis": pca_hit})
             from popoe.interfaces import CanonFrame
             q.meta["canon_frame"] = CanonFrame.from_points(q.pts)
         else:
             q = q_enc.encode_query(obj)
             if cache:
-                cache.put_arrays("query", qkey, pts=q.pts, feats=q.feats)
+                # Sidecar FIRST, arrays second: the .npz is the commit marker,
+                # so a crash between the two writes leaves an orphan .pkl (a
+                # miss, harmless) rather than arrays with no basis (the silent
+                # corruption above). Neither write is atomic with the other.
                 cache.put_pickle("query", qkey, q.meta.get("pca_vis"))
+                cache.put_arrays("query", qkey, pts=q.pts, feats=q.feats)
         q.meta["qkey"] = qkey
         q.meta["feats_w1"] = q.feats   # genuinely w=1: extraction is pinned
         extent = float(np.ptp(q.pts, axis=0).max())
         stages = stages_for_object(extent, size_aware=obj_id in merge,
                                    score_coarse=args.score_coarse,
                                    use_s_coarse=args.use_s_coarse,
-                                   solver=args.solver)
+                                   solver=args.solver, seed=args.seed)
         query_cache[obj_id] = (obj, q, stages)
         print(f"  obj{obj_id}: extent={extent*1000:.0f}mm "
               f"encode={time.time()-t0:.1f}s", flush=True)

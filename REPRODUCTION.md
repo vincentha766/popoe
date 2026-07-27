@@ -355,7 +355,7 @@ CLI flags from code, light CPU tests. GPU parity numbers still ☐.
 
 | Command | Est. | Result (review run, 2026-07-22) |
 |---|---|---|
-| `uv run pytest tests/` | <5 min | **120 passed**, 12.5 s |
+| `uv run pytest tests/` | <5 min | **281 passed, 0 skipped**, 19 s (2026-07-27, local `.venv`). Was 120 on 2026-07-22. Zero skips needs the full local env: `torch` (CPU build), `open3d`, `pycocotools`, `opencv-python-headless`, `scipy`, `pandas`, `pytest`, plus source-built `teaserpp_python` — without torch and teaserpp the same suite reports 257 passed / 7 skipped. |
 | `uv run python examples/union_smoke.py --dataset ycbv --source sam6d=data/detections/sam6d/sam6d_ism_ycbv.json` | <2 min | **OK** end-to-end (3-way union, 746 champions) |
 | `uv run python examples/union_smoke.py --dataset lmo --source sam6d=data/detections/sam6d/sam6d_ism_lmo.json` | <2 min | **OK** end-to-end (393 champions) |
 | `uv run python examples/rule_replay.py …/popoe_ycbv_formal_A_cands.csv --rule "s_icp*s_feat_1" --rule "s_icp*s_feat_1*metric_fit" --rule "s_icp*s_feat_1*metric_fit*s_coarse" --out-dir …` | <1 min | **OK** — 21 800 hyps / 1 669 targets; ×metric_fit flips 44.0% vs formal baseline; +s_coarse flips 0.2% (formal baseline is itself s_coarse-arbitrated — consistency check ✓). Original plan referenced `popoe_ycbv_union2_cands.csv` which does not exist; corrected to `popoe_ycbv_formal_A_cands.csv`. |
@@ -438,3 +438,45 @@ uv run python scripts/export_bop_seg_review.py \
 
 Produces per-source `*_overlay.png` / `*_mask.png` / `*_crop.png` plus
 `INDEX.md` (IoU vs `mask_visib` when GT is on disk).
+
+## Solver A/B ledger (2026-07-26)
+
+**Not a parity row and not a performance claim.** ARCHITECTURE.md's
+Pluggability section quotes these to rank three `PoseSolver` implementations
+against *each other* through one identical chain; it states outright that the
+table "is not a performance claim for popoe". `solver_swap_demo` is not the
+evaluated pipeline (it runs `FreeZeScorer` on GT masks at fixed thresholds) and
+obj 5 is a known-weak registration case — `recall@0.1d` is 0.000 for all three.
+Ledgered here because the previous version of this table was withdrawn for
+being unverifiable (ISSUES.md 2026-07-26), so its replacement should be
+reachable from the ledger rather than from prose alone.
+
+Metric: MSSD via bop_toolkit `pose_error.mssd`, symmetries expanded from
+`models_eval/models_info.json` (obj 5 -> 1 transform, identity: BOP declares the
+mustard bottle NOT symmetric). Seeded, `--seed 42`. 140 of obj 5's 150 test
+instances — the pod died at 140; the missing 10 are all scene 52, so the
+population is scene 50 complete + scene 52 partial.
+
+| Solver | median MSSD | @0.2d | @0.5d | popoe commit | Artefacts | Verdict |
+|---|---:|---:|---:|---|---|---|
+| `RansacSolver` (freeze_ransac) | **42.9 mm** (0.218 d) | **0.371** | **0.600** | `63c5e7d` | `outputs/solver_swap_20260726/` | best of the three |
+| `Open3DFeatureRansacSolver` 1-shot | 111.2 mm (0.566 d) | 0.271 | 0.457 | same | same | baseline for the composition |
+| `Open3DFeatureRansacSolver(n_restarts=8)` | 62.7 mm (0.319 d) | 0.343 | 0.521 | same | same | composition helps, parity NOT reached |
+
+Reading: handing several hypotheses to the scorer nearly halves 1-shot's median
+MSSD and wins head-to-head 72:33 (35 tied), closing roughly two thirds of the
+gap to `freeze_ransac` — but not reaching it. Ordering is stable at every
+threshold.
+
+Artefacts: `outputs/solver_swap_20260726/` (gitignored, local + pod) holds
+`mssd140_run.log` with all 140 per-instance rows, `mssd140_PROVENANCE.txt`
+(commit, pod `oqxijvj1cytc7m`, fresh-clone path, exact cmd), the earlier
+`seeded150_*` and `unseeded5_*` runs, and a README recording the withdrawal.
+The run log has **no summary block** — the pod died before it printed — so
+every figure above was derived post-hoc from the per-instance rows.
+
+**Recompute check (2026-07-27, LOCAL-CPU):** all three medians, all six
+recalls, `recall@0.1d = 0.000` for all three, and the 72/33/35 head-to-head
+reproduce exactly from `mssd140_run.log`. `solver_swap_demo` now prints the
+`@0.5d` column itself (`698ffd5`); before that it emitted only
+@0.05/0.1/0.2d and this row's `@0.5d` had to be re-derived.

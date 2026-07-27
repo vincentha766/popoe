@@ -375,3 +375,134 @@ registration case, so these are relative numbers only.
 Lessons: a number with no surviving raw artefact is unverified; a median over a
 bimodal near-50/50 distribution hides behind a plausible value; and check the
 dataset's own symmetry declaration before invoking symmetry as an explanation.
+
+## 2026-07-27 · Review sweep: the fallback rule was never applied to fusion
+
+Status: FIXES LANDED (`5615c68`, `1df3266`, `4ccbd13`); 254-test suite green on
+the Python-3.12 venv. **Nothing here was measured against a run** — these are
+read-and-repro findings, so no published number is retracted or restated.
+
+The 07-14 campaign generalised "no hidden fallbacks" into a platform rule and
+swept the segmentors and the renderer, where the rule was born. It never
+reached `freeze/fusion.py` — which sits upstream of every number the study
+reports, not inside one stage's output. Three defects, all of the same shape:
+
+1. **`install_pca(None)` re-fitted the basis on TARGET data.** `pca_vis is
+   None` reads like "no snapshot to install", but `fuse()` treats it as "fit
+   one here", and a target cloud has plenty of valid points to succeed with. So
+   the targets ended up in a basis fitted from target features while the cached
+   query features stayed in the query basis — cosines compared across two
+   unrelated bases, silently. This is the 07-11 PCA-basis incoherence (obj8: AR
+   0.16-0.25 vs 0.79-0.85) arriving through a second door: the sign
+   canonicalisation fixed *disagreeing* fits, not a *missing* one.
+
+   Live trigger: `bop_eval` wrote a query entry as two non-atomic files and the
+   hit path passed `get_pickle()` through unchecked, so a run killed between the
+   writes — or any `rm *.pkl` prune — left arrays with no basis. Now: the guard
+   raises, arrays-without-sidecar is not a hit, and the sidecar is written FIRST
+   so the `.npz` is the commit marker.
+
+2. **`fuse()` truncated instead of projecting.** With no fittable PCA, or a
+   width disagreement, it fell back to `vis_feats[:, :vis_dim]` — the raw first
+   64 DINO dims standing in for a PCA projection, under the same name, absent
+   from the cache key. Both fallbacks now raise. The one surviving non-PCA path
+   substitutes nothing: `n_vis == vis_dim` means there is no reduction to do.
+
+   Order mattered: (1) had to land first. The PCA is always installed on the
+   target side now, so this change does not turn small masks into failures — a
+   12-point target with 9 NaN geo rows still fuses. Alone it would have.
+
+3. **`feature_aware_score`'s docstring claimed Eq.5 and computed the mean.**
+   Documented as `(1/|P_T^sparse|) * Σcos`, implemented as `cos_sims.mean()` —
+   the inlier count, a different quantity and a different ranking. The
+   codebase already knew: `gpu_ransac` warns about exactly this at its call
+   site, having measured the confusion at -31 pt. But the function four solvers
+   and ChampionScorer all call still advertised the fixed denominator, so the
+   warning sat where a reader does not need it and the misleading formula where
+   they do. No behaviour change — mean-over-inliers is the correct half here,
+   with the count term arriving separately as `s_icp` — only the docstring, plus
+   a test whose two normalisations are 0.75 vs 0.375 so they cannot be confused
+   again.
+
+Reachability was checked, not assumed: the evaluated shapes (query 3000 /
+target 1024, two-scale GeDi 64-D and FPFH 66-D) all take the projection branch,
+and reaching the query-side raise needs >2936 of 3000 points to carry NaN
+geometric features.
+
+Lesson: a platform rule is only enforced where someone went and enforced it.
+The contract had been stated, tested at the segmentor boundary, and cited in
+`ARCHITECTURE.md` for two weeks while the layer feeding every reported number
+still had three fallbacks in it.
+
+The same sweep found three smaller things, all since fixed (`d691349`,
+`698ffd5`, `05baa0a`):
+
+4. **The seed knob was unreachable.** `Open3DFeatureRansacSolver(seed=...)`
+   landed in `42c916e`, but `_build_solver` never passed one and `bop_eval` had
+   no flag — so it could only be set by constructing the solver by hand, and
+   the mainline `--solver o3d` stayed non-reproducible. `bop_eval --seed` now
+   wires it through (default `None` = historical unseeded, nothing shifts). The
+   seed stays OUT of the encoder cache key on purpose: it moves poses, not
+   features, so keying it would invalidate every pod cache for nothing.
+5. **`solver_swap_demo` could not print one of its own quoted columns.** The
+   summary emitted recall @0.05/0.1/0.2d while the ARCHITECTURE.md table quotes
+   @0.2d and @0.5d. Thresholds and labels now come from one tuple.
+6. **`registration._geometric_prune` was dead** — zero references;
+   `ransac_pose_estimation` inlines a simpler two-point check instead.
+
+### A withdrawn finding, and why it was wrong
+
+The sweep also claimed the 07-26 solver A/B numbers had "no surviving raw
+artefact" and so shared the status of the table they replaced. **That is
+withdrawn.** It came from checking a worktree where `outputs/` — correctly
+gitignored — simply did not exist, and was never verified against the machine
+that ran the campaign.
+
+The artefacts are intact and properly stamped: `outputs/solver_swap_20260726/`
+carries PROVENANCE files with commit hash (`63c5e7d`), pod, fresh-clone path
+and timestamp, the run logs, and a README recording the withdrawal. Every cited
+number was recomputed from the 140 per-instance rows of `mssd140_run.log` and
+reproduces exactly — all three medians, all six recalls, `recall@0.1d = 0.000`
+for all three, and the 72/33/35 head-to-head. The run log has no summary block
+because the pod died at 140, which is why the figures were derived post-hoc;
+that is a recorded circumstance, not a missing artefact.
+
+What remains is only that REPRODUCTION.md has no cross-reference row pointing
+at them — and whether the ledger rule even applies is a judgement call, since
+ARCHITECTURE.md states outright that the table "is not a performance claim for
+popoe". Left open deliberately.
+
+Lesson, second order: "I could not find it" is not "it does not exist". A
+provenance complaint is itself a claim about artefacts and needs the same
+standard of evidence it demands — check the host that produced the run before
+telling someone their numbers are unverified.
+
+### Left open: `scale_vis` assumes equal halves (pre-existing)
+
+Found by codex round 3 on PR #12, verified **pre-existing** and deliberately
+not fixed there — the PR's identity branch is byte-identical to what `main`
+already did for this configuration, so it is not a regression.
+
+`recipes.scale_vis` splits fused `[vis|geo]` features with
+`vd = feats.shape[1] // 2`, i.e. it assumes the two halves are equal width.
+That holds for the evaluated mainline, where `vis_dim` is geo-matched by
+construction (64-D GeDi -> 64-D visual -> 128-D fused), and every published
+number is unaffected.
+
+It does NOT hold when `POPOE_VIS_DIM` is set to something other than the
+geometric width — a real, cache-keyed knob (`enc_cfg` records it). With
+`POPOE_VIS_DIM=1536` against 64-D GeDi the fused vector is 1600-D, `vd`
+computes to 800, and the selection-time weight sweep scales only the first 800
+visual channels while the remaining 736 stay at w=1. Confirmed on `main` and
+on the PR: same widths, same mis-scaling, byte-identical output.
+
+So a weight sweep under a non-geo-matched `POPOE_VIS_DIM` silently runs a
+different weighting than its label says — the same shape as the 07-14 "w=1 was
+never w=1" defect, in the one knob that was not swept then.
+
+Fix direction: `scale_vis` cannot infer the split from the array alone, so the
+visual width has to be carried rather than guessed — either recorded in
+`PointFeatures.meta` at fuse time and passed through `_reweighted`, or read
+from the same `POPOE_VIS_DIM` the fusion itself consults. Untangling it touches
+the evaluated weight-sweep path, which is why it was kept out of a PR whose
+point was that the mainline does not move.

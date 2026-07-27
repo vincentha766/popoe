@@ -63,8 +63,12 @@ class Open3DFeatureRansacSolver:
         # subsampling below is already deterministic (default_rng(1000+restart));
         # this is the other half. `seed=None` keeps the historical unseeded
         # behaviour so the evaluated mainline is not silently perturbed; set it
-        # for anything whose numbers get cited. It changes results, so it is
-        # stage config and belongs in the cache key like any other knob.
+        # for anything whose numbers get cited (`bop_eval --seed`).
+        # It changes RESULTS but not FEATURES, so — unlike the encoder knobs —
+        # it deliberately stays OUT of the feature cache key: the cache stores
+        # query/target features, which no solver touches, and keying it there
+        # would invalidate every existing cache for nothing. It belongs in the
+        # run's provenance instead, which is where bop_eval prints it.
         self.seed = seed
 
     def solve(self, query: PointFeatures, target: PointFeatures,

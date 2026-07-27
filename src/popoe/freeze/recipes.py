@@ -139,27 +139,64 @@ def ycbv_lab_segmentor(detections_json: str | None = None, topk: int = 2,
 SOLVERS = ("o3d", "gpu", "gpu-feat", "teaser")   # o3d is the evaluated mainline default
 
 
-def _build_solver(name: str, tau: float, n_ransac: int):
+def _build_solver(name: str, tau: float, n_ransac: int, seed: int | None = None):
     """o3d (default, mainline) | gpu (ported RANSAC, geometric fitness) |
     gpu-feat (gpu with the Eq.5 feature-aware fitness — the B layer) |
     teaser (TEASER++ certifiable registration; deterministic, so n_ransac
-    does not apply — needs teaserpp_python, see popoe.solvers.teaser)."""
+    does not apply — needs teaserpp_python, see popoe.solvers.teaser).
+
+    ``seed`` reaches the two stochastic solvers only:
+
+      * o3d — ``seed=None`` (default) leaves Open3D's global RNG unseeded,
+        which is the historical behaviour every evaluated number was produced
+        under. Passing a seed makes the run reproducible and IS a different
+        configuration; REPRODUCTION.md's acceptance rule ("tighten to
+        bit-identical if the run is seeded") is what it exists for.
+      * gpu / gpu-feat — already deterministic (their own default is 42); a
+        seed here overrides that, ``None`` keeps it.
+      * teaser — no RNG at all, so the seed is not applicable and is ignored.
+    """
     if name == "o3d":
         from popoe.solvers import Open3DFeatureRansacSolver
-        return Open3DFeatureRansacSolver(tau_inlier=tau, max_iteration=n_ransac)
+        return Open3DFeatureRansacSolver(tau_inlier=tau, max_iteration=n_ransac,
+                                         seed=seed)
     if name in ("gpu", "gpu-feat"):
         from popoe.solvers import GPURansacSolver
+        kw = {} if seed is None else {"seed": seed}   # else keep its own default
         return GPURansacSolver(tau_inlier=tau, iters=n_ransac,
-                               fitness="feature" if name == "gpu-feat" else "geometric")
+                               fitness="feature" if name == "gpu-feat" else "geometric",
+                               **kw)
     if name == "teaser":
         from popoe.solvers import TeaserSolver
         return TeaserSolver(tau_inlier=tau)
     raise ValueError(f"solver must be one of {SOLVERS}, got {name!r}")
 
 
+def solver_provenance(name: str, seed: int | None) -> str:
+    """One log line describing the run's solver determinism.
+
+    Reads the EFFECTIVE seed off a throwaway solver rather than restating the
+    defaults, so the answer cannot drift from `_build_solver`. Construction is
+    dep-light (torch/open3d/teaserpp all import inside `.solve`).
+
+    Only o3d is genuinely unseeded by default; the gpu solvers carry their own
+    deterministic default and teaser has no RNG at all. Saying "UNSEEDED" for
+    all of them would put a false claim in the provenance of a cited run.
+    """
+    if name == "teaser":
+        return f"solver={name} seed=n/a (deterministic — TEASER++ has no RNG)"
+    effective = getattr(_build_solver(name, tau=1.0, n_ransac=1, seed=seed),
+                        "seed", None)
+    if effective is None:
+        return (f"solver={name} seed=None (UNSEEDED — Open3D's global RNG is "
+                f"never seeded, so poses vary run-to-run)")
+    return f"solver={name} seed={effective} (deterministic)"
+
+
 def stages_for_object(extent_m: float, size_aware: bool = False,
                       n_ransac: int = 10000, score_coarse: bool = False,
-                      use_s_coarse: bool = False, solver: str = "o3d"):
+                      use_s_coarse: bool = False, solver: str = "o3d",
+                      seed: int | None = None):
     """Per-object solver/refiner/scorer with thresholds scaled to the object.
     ``extent_m``: max bounding-box side of the sampled query cloud (metres).
 
@@ -169,11 +206,14 @@ def stages_for_object(extent_m: float, size_aware: bool = False,
       * ``use_s_coarse=True`` USES it as an arbitration factor (score *=
         max(s_coarse, 0)) — a per-DATASET switch (helps YCB-V, hurts LM-O).
     Either wires the coarse pose through (ICPRefiner(keep_coarse=True)); with
-    both off the config is byte-identical."""
+    both off the config is byte-identical.
+
+    ``seed`` is forwarded to the solver (see :func:`_build_solver`); ``None``
+    is the historical, unseeded mainline."""
     from popoe.adapters import ICPRefiner
     from popoe.scoring import ChampionScorer
     tau = TAU_FRAC * extent_m
-    solver = _build_solver(solver, tau, n_ransac)
+    solver = _build_solver(solver, tau, n_ransac, seed=seed)
     refiner = ICPRefiner(tau_icp=tau, keep_coarse=score_coarse or use_s_coarse)
     # use_s_coarse implies s_coarse IS computed and emitted, so compute_s_coarse
     # reflects reality (an inspector reading the flag sees the truth).

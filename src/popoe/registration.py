@@ -50,32 +50,27 @@ def _svd_pose(src, dst):
     return R, t
 
 
-def _geometric_prune(pts_q, pts_t, q_idxs, t_idxs, thr=0.05):
-    """
-    Prune triplet correspondences where geometry is inconsistent.
-    Keep triplets where relative edge lengths roughly match.
-    """
-    n = len(q_idxs)
-    if n < 3:
-        return list(range(n))
-
-    kept = []
-    for i in range(n):
-        for j in range(i+1, n):
-            dq = np.linalg.norm(pts_q[q_idxs[i]] - pts_q[q_idxs[j]])
-            dt = np.linalg.norm(pts_t[t_idxs[i]] - pts_t[t_idxs[j]])
-            if dq < 1e-6 or dt < 1e-6:
-                continue
-            ratio = dq / dt
-            if 0.5 < ratio < 2.0:
-                kept.extend([i, j])
-    return list(set(kept)) if kept else list(range(min(3, n)))
-
-
 def feature_aware_score(R, t, pts_query, pts_target, feats_query, feats_target, tau_inlier):
-    """
-    Eq. (5): S_feat^coarse = (1/|P_T^sparse|) * sum cos(f_T^j, f_Q^i)
-    for inlier set I where ||R*p_Q^i + t - p_T^j|| < tau_inlier.
+    """MEAN cosine over the inlier set — NOT the paper's Eq.5 normalisation.
+
+        score = (1/|I|) * sum_{j in I} cos(f_T^j, f_Q^nn(j))
+        I = { j : ||R*p_Q^nn(j) + t - p_T^j|| < tau_inlier }
+
+    The denominator is the INLIER count |I|. Eq.5 divides by the FIXED sparse
+    target count |P_T^sparse| instead, which is a different quantity and a
+    different ranking: mean cosine lets a handful of high-similarity spurious
+    correspondences outrank many true ones. That substitution was measured at
+    -31 pt in the study, so the distinction is not pedantic. The genuine
+    fixed-|P_T| Eq.5 score is `fitness="feature"` inside
+    popoe.solvers.gpu_ransac, which is where hypothesis RANKING needs it.
+
+    This function is deliberately the mean-cosine form, and every caller wants
+    that form: it is the A-layer signal — `s_coarse` for all four solvers and
+    `s_feat_1` for ChampionScorer — where the count term arrives separately as
+    `s_icp`, so the product recovers quantity x quality. Do not "fix" the
+    denominator here; a caller that needs Eq.5 should use the solver's fitness.
+
+    Returns (score, inlier_mask_over_pts_target). Empty inlier set -> 0.0.
     """
     transformed_q = (R @ pts_query.T).T + t  # (N_Q, 3)
     tree = KDTree(transformed_q)

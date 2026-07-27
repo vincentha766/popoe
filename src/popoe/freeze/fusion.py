@@ -21,6 +21,32 @@ import numpy as np
 from sklearn.decomposition import PCA
 
 
+class IdentityReduction:
+    """Explicit "this visual branch needs no reduction" marker for `pca_vis`.
+
+    `pca_vis = None` has to keep meaning UNKNOWN / MISSING, because that is what
+    a lost cache sidecar looks like and it must be refused at the install
+    boundary. But when `n_vis` already equals `vis_dim` there is genuinely
+    nothing to reduce (e.g. `POPOE_VIS_DIM=1536` against 1536-D DINOv2), and
+    that is a legitimate configuration — it needs its own value so the target
+    side can be TOLD "identity" instead of being handed a `None` it cannot
+    distinguish from a lost sidecar.
+
+    Compared by TYPE, not by identity: this round-trips through the query
+    cache's pickle sidecar, and unpickling yields a new instance.
+    """
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "IdentityReduction()"
+
+    def __eq__(self, other) -> bool:
+        return isinstance(other, IdentityReduction)
+
+    def __hash__(self) -> int:
+        return hash(IdentityReduction)
+
+
 class DinoGeDiFusion:
     """FreeZe v2 default fusion (paper Eq. 1/2):
 
@@ -88,12 +114,52 @@ class DinoGeDiFusion:
             signs[signs == 0] = 1.0
             self.pca_vis.components_ = comps * signs[:, None]
 
-        if self.pca_vis is not None and n_vis == self.pca_vis.n_features_in_:
+        # Reduction is PCA projection or nothing. It used to fall back to a raw
+        # slice of the first vis_dim DINO dims (or zero-padding) whenever the
+        # PCA was absent or its width disagreed — a materially different visual
+        # representation served under the same name, with nothing recorded in
+        # the cache key. That is the substitution popoe.interfaces'
+        # availability contract exists to forbid, and the one place it would
+        # bias every number in the study rather than one stage's output.
+        if isinstance(self.pca_vis, IdentityReduction):
+            # The query side recorded "no reduction needed"; the target must
+            # follow it, not quietly do something else.
+            if n_vis != vis_dim:
+                raise ValueError(
+                    f"identity reduction was recorded, but these features are "
+                    f"{n_vis}-D against vis_dim {vis_dim}. Identity is only "
+                    f"valid when the two agree — the query and target sides "
+                    f"disagree about the visual width.")
+            vis_reduced = vis_feats
+        elif self.pca_vis is not None:
+            if n_vis != self.pca_vis.n_features_in_:
+                raise ValueError(
+                    f"visual features are {n_vis}-D but the installed PCA was "
+                    f"fitted on {self.pca_vis.n_features_in_}-D. This is the "
+                    f"wrong basis for these features (a stale snapshot, or a "
+                    f"changed DINO layer); slicing to {vis_dim}-D instead would "
+                    f"quietly swap PCA projection for raw DINO dims. Install "
+                    f"the matching PCA, or re-encode.")
             vis_reduced = self.pca_vis.transform(vis_feats)
-        elif n_vis >= vis_dim:
-            vis_reduced = vis_feats[:, :vis_dim]
+        elif n_vis == vis_dim:
+            # Nothing to reduce: the visual branch already has the target width,
+            # so passing it through is the identity — not a substituted method.
+            # RECORD it, so the snapshot handed to the target side says
+            # "identity" rather than None (which means a missing basis).
+            self.pca_vis = IdentityReduction()
+            vis_reduced = vis_feats
         else:
-            vis_reduced = np.pad(vis_feats, ((0, 0), (0, vis_dim - n_vis)))
+            why = (f"only {int(valid.sum())} of {len(valid)} points have valid "
+                   f"geometric features, which is not more than vis_dim "
+                   f"{vis_dim}" if n_vis > vis_dim else
+                   f"vis_dim {vis_dim} exceeds the {n_vis}-D visual features")
+            raise ValueError(
+                f"cannot reduce {n_vis}-D visual features to {vis_dim}-D: no "
+                f"PCA could be fitted ({why}). Truncating or zero-padding here "
+                f"would substitute a different visual representation under the "
+                f"same name and leave no trace in the cache key. Fix the input "
+                f"(a cloud this degenerate is not describable), or install a "
+                f"fitted PCA.")
 
         def l2norm(x):
             norms = np.linalg.norm(x, axis=1, keepdims=True) + 1e-8
