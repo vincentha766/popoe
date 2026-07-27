@@ -375,3 +375,68 @@ registration case, so these are relative numbers only.
 Lessons: a number with no surviving raw artefact is unverified; a median over a
 bimodal near-50/50 distribution hides behind a plausible value; and check the
 dataset's own symmetry declaration before invoking symmetry as an explanation.
+
+## 2026-07-27 · Review sweep: the fallback rule was never applied to fusion
+
+Status: FIXES LANDED (`5615c68`, `1df3266`, `4ccbd13`); 254-test suite green on
+the Python-3.12 venv. **Nothing here was measured against a run** — these are
+read-and-repro findings, so no published number is retracted or restated.
+
+The 07-14 campaign generalised "no hidden fallbacks" into a platform rule and
+swept the segmentors and the renderer, where the rule was born. It never
+reached `freeze/fusion.py` — which sits upstream of every number the study
+reports, not inside one stage's output. Three defects, all of the same shape:
+
+1. **`install_pca(None)` re-fitted the basis on TARGET data.** `pca_vis is
+   None` reads like "no snapshot to install", but `fuse()` treats it as "fit
+   one here", and a target cloud has plenty of valid points to succeed with. So
+   the targets ended up in a basis fitted from target features while the cached
+   query features stayed in the query basis — cosines compared across two
+   unrelated bases, silently. This is the 07-11 PCA-basis incoherence (obj8: AR
+   0.16-0.25 vs 0.79-0.85) arriving through a second door: the sign
+   canonicalisation fixed *disagreeing* fits, not a *missing* one.
+
+   Live trigger: `bop_eval` wrote a query entry as two non-atomic files and the
+   hit path passed `get_pickle()` through unchecked, so a run killed between the
+   writes — or any `rm *.pkl` prune — left arrays with no basis. Now: the guard
+   raises, arrays-without-sidecar is not a hit, and the sidecar is written FIRST
+   so the `.npz` is the commit marker.
+
+2. **`fuse()` truncated instead of projecting.** With no fittable PCA, or a
+   width disagreement, it fell back to `vis_feats[:, :vis_dim]` — the raw first
+   64 DINO dims standing in for a PCA projection, under the same name, absent
+   from the cache key. Both fallbacks now raise. The one surviving non-PCA path
+   substitutes nothing: `n_vis == vis_dim` means there is no reduction to do.
+
+   Order mattered: (1) had to land first. The PCA is always installed on the
+   target side now, so this change does not turn small masks into failures — a
+   12-point target with 9 NaN geo rows still fuses. Alone it would have.
+
+3. **`feature_aware_score`'s docstring claimed Eq.5 and computed the mean.**
+   Documented as `(1/|P_T^sparse|) * Σcos`, implemented as `cos_sims.mean()` —
+   the inlier count, a different quantity and a different ranking. The
+   codebase already knew: `gpu_ransac` warns about exactly this at its call
+   site, having measured the confusion at -31 pt. But the function four solvers
+   and ChampionScorer all call still advertised the fixed denominator, so the
+   warning sat where a reader does not need it and the misleading formula where
+   they do. No behaviour change — mean-over-inliers is the correct half here,
+   with the count term arriving separately as `s_icp` — only the docstring, plus
+   a test whose two normalisations are 0.75 vs 0.375 so they cannot be confused
+   again.
+
+Reachability was checked, not assumed: the evaluated shapes (query 3000 /
+target 1024, two-scale GeDi 64-D and FPFH 66-D) all take the projection branch,
+and reaching the query-side raise needs >2936 of 3000 points to carry NaN
+geometric features.
+
+Lesson: a platform rule is only enforced where someone went and enforced it.
+The contract had been stated, tested at the segmentor boundary, and cited in
+`ARCHITECTURE.md` for two weeks while the layer feeding every reported number
+still had three fallbacks in it.
+
+Open (not addressed here): `bop_eval` has no `--seed`, so
+`Open3DFeatureRansacSolver(seed=...)` is reachable only from the demo and
+REPRODUCTION.md's "tighten to bit-identical if the run is seeded" is
+unreachable; the 07-26 solver A/B numbers still have no ledger row; and
+`solver_swap_demo` prints recall@0.05/0.1/0.2d while both doc tables quote
+@0.2d and @0.5d.
