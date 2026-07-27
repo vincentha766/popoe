@@ -50,28 +50,6 @@ def _svd_pose(src, dst):
     return R, t
 
 
-def _geometric_prune(pts_q, pts_t, q_idxs, t_idxs, thr=0.05):
-    """
-    Prune triplet correspondences where geometry is inconsistent.
-    Keep triplets where relative edge lengths roughly match.
-    """
-    n = len(q_idxs)
-    if n < 3:
-        return list(range(n))
-
-    kept = []
-    for i in range(n):
-        for j in range(i+1, n):
-            dq = np.linalg.norm(pts_q[q_idxs[i]] - pts_q[q_idxs[j]])
-            dt = np.linalg.norm(pts_t[t_idxs[i]] - pts_t[t_idxs[j]])
-            if dq < 1e-6 or dt < 1e-6:
-                continue
-            ratio = dq / dt
-            if 0.5 < ratio < 2.0:
-                kept.extend([i, j])
-    return list(set(kept)) if kept else list(range(min(3, n)))
-
-
 def feature_aware_score(R, t, pts_query, pts_target, feats_query, feats_target, tau_inlier):
     """MEAN cosine over the inlier set — NOT the paper's Eq.5 normalisation.
 
