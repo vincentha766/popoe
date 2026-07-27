@@ -1,5 +1,6 @@
 """Fusion tests — GPU-free (numpy + scikit-learn only)."""
 import numpy as np
+import pytest
 from sklearn.decomposition import PCA
 
 import popoe
@@ -55,6 +56,76 @@ def test_vis_weight_zero_is_pure_geometric():
     # visual half (first 64 dims) is zeroed out
     assert np.allclose(fused[:, :64], 0.0)
     assert not np.allclose(fused[:, 64:], 0.0)
+
+
+# ── The PCA basis must never be silently re-fitted ──────────────────────
+
+class _FusionOnlyExtractor:
+    """Stand-in for TargetFeatureExtractor: install_pca touches only .fusion."""
+    def __init__(self):
+        self.fusion = DinoGeDiFusion(vis_weight=1.0)
+
+
+def test_pca_none_means_FIT_not_skip():
+    """The premise behind install_pca's guard.
+
+    `pca_vis is None` reads like "no projection to apply", but fuse() treats it
+    as "fit one here" — and a target cloud has plenty of valid points to
+    succeed with. So a None snapshot on the target side does not degrade
+    gracefully; it manufactures a second, unrelated basis.
+    """
+    rng = np.random.default_rng(7)
+    vis = rng.standard_normal((900, 1536)).astype(np.float32)
+    geo = rng.standard_normal((900, 64)).astype(np.float32)
+
+    fu = DinoGeDiFusion(vis_weight=1.0)
+    assert fu.pca_vis is None
+    fu.fuse(vis, geo)
+    assert fu.pca_vis is not None, "fuse() fitted a PCA from the data it was given"
+
+
+def test_install_pca_refuses_none():
+    """Regression: install_pca(None) used to hand the target side a blank
+    fusion, which then fitted its OWN basis from target features while the
+    cached query features stayed in the query basis — cosines compared across
+    two unrelated bases, silently. The live trigger is a query cache entry
+    whose PCA sidecar is missing (examples/bop_eval.py)."""
+    from popoe.freeze.adapters import FreeZeTargetEncoder
+
+    rng = np.random.default_rng(11)
+    pca = PCA(n_components=4).fit(rng.standard_normal((80, 16)))
+    enc = FreeZeTargetEncoder(_FusionOnlyExtractor())
+
+    enc.install_pca(pca)
+    assert enc.ex.fusion.pca_vis is pca
+
+    with pytest.raises(ValueError, match="install_pca"):
+        enc.install_pca(None)
+    # and it must not have half-applied the bad install
+    assert enc.ex.fusion.pca_vis is pca
+
+
+def test_installed_pca_is_reused_verbatim_on_the_target_side():
+    """The positive half: a real snapshot is reused, never re-fitted."""
+    from popoe.freeze.adapters import FreeZeTargetEncoder
+
+    rng = np.random.default_rng(13)
+    vis_q = rng.standard_normal((3000, 1536)).astype(np.float32)
+    geo_q = rng.standard_normal((3000, 64)).astype(np.float32)
+    vis_t = (rng.standard_normal((900, 1536)) + 0.4).astype(np.float32)
+    geo_t = rng.standard_normal((900, 64)).astype(np.float32)
+
+    q_fusion = DinoGeDiFusion(vis_weight=1.0)
+    q_fusion.fuse(vis_q, geo_q)
+    snapshot = q_fusion.pca_vis
+
+    enc = FreeZeTargetEncoder(_FusionOnlyExtractor())
+    enc.install_pca(snapshot)
+    got = enc.ex.fusion.fuse(vis_t, geo_t)
+
+    assert enc.ex.fusion.pca_vis is snapshot, "the basis was replaced"
+    assert np.array_equal(got, DinoGeDiFusion(pca_vis=snapshot,
+                                              vis_weight=1.0).fuse(vis_t, geo_t))
 
 
 def test_output_dims():

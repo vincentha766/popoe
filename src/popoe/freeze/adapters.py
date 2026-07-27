@@ -90,7 +90,29 @@ class FreeZeTargetEncoder:
     def install_pca(self, pca_vis) -> None:
         """Install a query's visual-PCA snapshot (PointFeatures.meta['pca_vis'])
         before encoding its targets. Required whenever queries for multiple
-        objects are encoded before their targets — see FreeZeQueryEncoder."""
+        objects are encoded before their targets — see FreeZeQueryEncoder.
+
+        `None` is REFUSED, loudly. It reads like "no snapshot to install", but
+        DinoGeDiFusion.fuse treats `pca_vis is None` as "fit one now" — and the
+        target side has enough valid points to succeed, so the targets end up
+        projected in a basis fitted from TARGET data while the cached query
+        features live in the query basis. Cosines are then compared across two
+        unrelated bases: no exception, no warning, just scrambled similarity.
+        That is the PCA-basis incoherence ISSUES.md root-caused (measured AR
+        0.16-0.25 vs 0.79-0.85 on YCB-V obj8), arriving through a second door.
+
+        The live caller is an incomplete cache entry — query arrays present, PCA
+        sidecar missing (examples/bop_eval.py). A degenerate query whose PCA
+        genuinely never fitted lands here too, and must also raise: its features
+        were built by truncation, so a target that fits a real PCA is just as
+        incoherent. Either way the answer is re-encode, never substitute."""
+        if pca_vis is None:
+            raise ValueError(
+                "install_pca(None): the target side must REUSE the query's "
+                "visual PCA, never fit its own. A None snapshot means the query "
+                "features are unusable (incomplete cache entry, or a query whose "
+                "PCA never fitted) — re-encode the query instead of installing "
+                "nothing. See the availability contract in popoe.interfaces.")
         self.ex.fusion.pca_vis = pca_vis
 
     def encode_target(self, scene: Scene, det: Detection,

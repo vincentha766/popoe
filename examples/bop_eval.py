@@ -362,16 +362,30 @@ def main():
         qkey = (fingerprint("query", enc_cfg, file_fingerprint(obj.mesh_path),
                             obj_id) if cache else None)
         hit = cache.get_arrays("query", qkey) if cache else None
+        # A query entry is BOTH files: the arrays and the PCA sidecar whose
+        # basis their visual half lives in. Half an entry is not a hit — with
+        # the sidecar gone, install_pca(None) used to let the target side fit
+        # its OWN basis and silently scramble every cosine (see
+        # FreeZeTargetEncoder.install_pca). Re-encode instead.
+        pca_hit = cache.get_pickle("query", qkey) if hit is not None else None
+        if hit is not None and pca_hit is None:
+            print(f"  obj{obj_id}: query cache entry incomplete "
+                  f"(arrays without PCA sidecar) — re-encoding", flush=True)
+            hit = None
         if hit is not None:
             q = PointFeatures(pts=hit["pts"], feats=hit["feats"],
-                              meta={"pca_vis": cache.get_pickle("query", qkey)})
+                              meta={"pca_vis": pca_hit})
             from popoe.interfaces import CanonFrame
             q.meta["canon_frame"] = CanonFrame.from_points(q.pts)
         else:
             q = q_enc.encode_query(obj)
             if cache:
-                cache.put_arrays("query", qkey, pts=q.pts, feats=q.feats)
+                # Sidecar FIRST, arrays second: the .npz is the commit marker,
+                # so a crash between the two writes leaves an orphan .pkl (a
+                # miss, harmless) rather than arrays with no basis (the silent
+                # corruption above). Neither write is atomic with the other.
                 cache.put_pickle("query", qkey, q.meta.get("pca_vis"))
+                cache.put_arrays("query", qkey, pts=q.pts, feats=q.feats)
         q.meta["qkey"] = qkey
         q.meta["feats_w1"] = q.feats   # genuinely w=1: extraction is pinned
         extent = float(np.ptp(q.pts, axis=0).max())
