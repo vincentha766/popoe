@@ -138,3 +138,50 @@ def test_topk_is_per_source_AND_label_under_merge(bop_eval, tmp_path):
     out = seg.segment(_scene(), ObjectModel(obj_id=19, mesh_path="x", diameter=0.1))
     # 2 from label 19 + 2 from label 20, all one source -> 4 (not 2)
     assert Counter(d.source for d in out) == {"cnos": 4}
+
+
+# ── Query cache entries are both files, or nothing ──────────────────────
+
+def _stage_cache(tmp_path):
+    from popoe.cache import StageCache
+    return StageCache(str(tmp_path / "cache"))
+
+
+def test_complete_query_entry_is_a_hit(bop_eval, tmp_path):
+    from sklearn.decomposition import PCA
+    cache = _stage_cache(tmp_path)
+    pca = PCA(n_components=2).fit(np.random.default_rng(0).standard_normal((30, 8)))
+    cache.put_pickle("query", "k1", pca)
+    cache.put_arrays("query", "k1", pts=np.zeros((5, 3)), feats=np.zeros((5, 4)))
+
+    arrays, pca_hit = bop_eval.load_cached_query(cache, "k1")
+    assert arrays["pts"].shape == (5, 3)
+    assert pca_hit is not None
+
+
+def test_absent_query_entry_is_a_clean_miss(bop_eval, tmp_path):
+    assert bop_eval.load_cached_query(_stage_cache(tmp_path), "nope") is None
+    assert bop_eval.load_cached_query(None, "k1") is None       # cache disabled
+
+
+def test_orphan_sidecar_is_a_clean_miss(bop_eval, tmp_path):
+    """The only state the current write order can leave behind on a crash:
+    sidecar written, arrays not. Harmless — re-encode and overwrite."""
+    from sklearn.decomposition import PCA
+    cache = _stage_cache(tmp_path)
+    pca = PCA(n_components=2).fit(np.random.default_rng(1).standard_normal((30, 8)))
+    cache.put_pickle("query", "k2", pca)
+    assert bop_eval.load_cached_query(cache, "k2") is None
+
+
+def test_arrays_without_sidecar_is_fatal(bop_eval, tmp_path):
+    """Regression (codex review round 2): re-encoding the query here is NOT a
+    repair. Target entries are keyed by the same qkey, which config+mesh
+    content alone determine, so they stay reachable — and any of them may hold
+    a target-fitted basis written by the pre-fix code, which a cached entry
+    does not record. Must stop the run, not quietly continue."""
+    cache = _stage_cache(tmp_path)
+    cache.put_arrays("query", "k3", pts=np.zeros((5, 3)), feats=np.zeros((5, 4)))
+
+    with pytest.raises(SystemExit, match="INCOMPLETE"):
+        bop_eval.load_cached_query(cache, "k3")

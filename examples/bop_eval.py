@@ -90,6 +90,50 @@ def floored_topk(user_topk, max_inst):
     return max(user_topk, max_inst)
 
 
+def load_cached_query(cache, qkey):
+    """Return a cached query entry's arrays, or None for a clean miss.
+
+    A query entry is BOTH files: the arrays and the PCA sidecar whose basis
+    their visual half lives in. Half an entry is not a hit.
+
+    An INCOMPLETE entry (arrays present, sidecar missing) is fatal, not
+    repairable. Re-encoding the query would restore a correct basis, but the
+    target key is `fingerprint("target", ..., qkey)` and `qkey` is derived from
+    config + mesh content only — so it does not change, and every target entry
+    written earlier stays reachable under it. Those targets may have been
+    encoded by the pre-fix code that let the target side fit its OWN basis
+    (see FreeZeTargetEncoder.install_pca), and nothing in a cached entry says
+    which basis produced it. Repairing the query alone would therefore leave
+    poisoned targets matched against a corrected query — the same silent
+    cross-basis comparison, now harder to spot.
+
+    Under the current write order (sidecar first, arrays second) a crash can
+    only ever leave an ORPHAN SIDECAR, never this state. So arrays-without-
+    sidecar means a pre-fix cache or a hand-deleted `.pkl`, and in both cases
+    the dependent targets are suspect and unidentifiable. Fail fast — this runs
+    in the up-front query loop, before any real work.
+    """
+    if cache is None or qkey is None:
+        return None
+    arrays = cache.get_arrays("query", qkey)
+    if arrays is None:
+        return None
+    pca_vis = cache.get_pickle("query", qkey)
+    if pca_vis is None:
+        raise SystemExit(
+            f"query cache entry {qkey} is INCOMPLETE: arrays present, PCA "
+            f"sidecar missing.\n"
+            f"This cannot be repaired in place. Target entries are keyed by "
+            f"this same qkey, so re-encoding the query would not invalidate "
+            f"them, and any of them may hold features in a target-fitted "
+            f"basis written by the pre-fix code — cached features do not "
+            f"record which basis produced them.\n"
+            f"Use a fresh --cache directory (or delete this one) and re-run. "
+            f"Under the current write order this state cannot arise from a "
+            f"crash, so the cache predates the fix or a .pkl was deleted.")
+    return arrays, pca_vis
+
+
 def resolve_segmentor(detections, sources, topk, merge_labels,
                       size_select=None, confusable_diameters=None,
                       size_select_fallback=True):
@@ -380,18 +424,11 @@ def main():
         t0 = time.time()
         qkey = (fingerprint("query", enc_cfg, file_fingerprint(obj.mesh_path),
                             obj_id) if cache else None)
-        hit = cache.get_arrays("query", qkey) if cache else None
-        # A query entry is BOTH files: the arrays and the PCA sidecar whose
-        # basis their visual half lives in. Half an entry is not a hit — with
-        # the sidecar gone, install_pca(None) used to let the target side fit
-        # its OWN basis and silently scramble every cosine (see
-        # FreeZeTargetEncoder.install_pca). Re-encode instead.
-        pca_hit = cache.get_pickle("query", qkey) if hit is not None else None
-        if hit is not None and pca_hit is None:
-            print(f"  obj{obj_id}: query cache entry incomplete "
-                  f"(arrays without PCA sidecar) — re-encoding", flush=True)
-            hit = None
-        if hit is not None:
+        # Both files or nothing; an incomplete entry is fatal (the dependent
+        # target entries share this qkey and may hold a target-fitted basis).
+        entry = load_cached_query(cache, qkey)
+        if entry is not None:
+            hit, pca_hit = entry
             q = PointFeatures(pts=hit["pts"], feats=hit["feats"],
                               meta={"pca_vis": pca_hit})
             from popoe.interfaces import CanonFrame
