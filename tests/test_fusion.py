@@ -4,7 +4,7 @@ import pytest
 from sklearn.decomposition import PCA
 
 import popoe
-from popoe.freeze.fusion import DinoGeDiFusion
+from popoe.freeze.fusion import DinoGeDiFusion, IdentityReduction
 
 
 def _reference(vis, geo, pca, vis_w):
@@ -97,10 +97,50 @@ def test_no_reduction_needed_is_identity_not_substitution():
     fu = DinoGeDiFusion(vis_weight=1.0)
     fused = fu.fuse(vis, geo)
 
-    assert fu.pca_vis is None, "nothing to fit when no reduction is needed"
+    # RECORDED as identity, not left as None: None means "missing basis" and is
+    # refused at the install boundary, so an identity query must be able to say
+    # so. (Regression: leaving it None broke POPOE_VIS_DIM=n_vis end to end.)
+    assert fu.pca_vis == IdentityReduction()
+    assert fu.pca_vis is not None
     assert fused.shape == (50, 128)
     l2 = lambda x: x / (np.linalg.norm(x, axis=1, keepdims=True) + 1e-8)
     assert np.allclose(fused[:, :64], l2(vis), atol=1e-6)
+
+
+def test_identity_query_survives_the_cache_sidecar_and_installs():
+    """End-to-end for the no-reduction config (POPOE_VIS_DIM == n_vis): the
+    query records identity, it pickles through the cache sidecar as bop_eval
+    stores it, and install_pca accepts it — where a None would be refused."""
+    import pickle
+    from popoe.freeze.adapters import FreeZeTargetEncoder
+
+    rng = np.random.default_rng(29)
+    vis_q = rng.standard_normal((300, 64)).astype(np.float32)
+    geo_q = rng.standard_normal((300, 64)).astype(np.float32)
+
+    q_fusion = DinoGeDiFusion(vis_weight=1.0)
+    q_fusion.fuse(vis_q, geo_q)
+    snapshot = pickle.loads(pickle.dumps(q_fusion.pca_vis))   # via the .pkl
+    assert snapshot == IdentityReduction(), "compared by type, not identity"
+
+    enc = FreeZeTargetEncoder(_FusionOnlyExtractor())
+    enc.install_pca(snapshot)                                  # must not raise
+
+    vis_t = rng.standard_normal((80, 64)).astype(np.float32)
+    geo_t = rng.standard_normal((80, 64)).astype(np.float32)
+    fused = enc.ex.fusion.fuse(vis_t, geo_t)
+
+    l2 = lambda x: x / (np.linalg.norm(x, axis=1, keepdims=True) + 1e-8)
+    assert np.allclose(fused[:, :64], l2(vis_t), atol=1e-6)
+
+
+def test_identity_marker_rejects_a_width_disagreement():
+    """Identity is only valid while the two sides agree on the visual width."""
+    rng = np.random.default_rng(31)
+    fu = DinoGeDiFusion(vis_weight=1.0, pca_vis=IdentityReduction())
+    with pytest.raises(ValueError, match="identity reduction was recorded"):
+        fu.fuse(rng.standard_normal((40, 128)).astype(np.float32),
+                rng.standard_normal((40, 64)).astype(np.float32))
 
 
 # ── The PCA basis must never be silently re-fitted ──────────────────────

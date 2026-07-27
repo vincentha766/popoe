@@ -21,6 +21,32 @@ import numpy as np
 from sklearn.decomposition import PCA
 
 
+class IdentityReduction:
+    """Explicit "this visual branch needs no reduction" marker for `pca_vis`.
+
+    `pca_vis = None` has to keep meaning UNKNOWN / MISSING, because that is what
+    a lost cache sidecar looks like and it must be refused at the install
+    boundary. But when `n_vis` already equals `vis_dim` there is genuinely
+    nothing to reduce (e.g. `POPOE_VIS_DIM=1536` against 1536-D DINOv2), and
+    that is a legitimate configuration — it needs its own value so the target
+    side can be TOLD "identity" instead of being handed a `None` it cannot
+    distinguish from a lost sidecar.
+
+    Compared by TYPE, not by identity: this round-trips through the query
+    cache's pickle sidecar, and unpickling yields a new instance.
+    """
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "IdentityReduction()"
+
+    def __eq__(self, other) -> bool:
+        return isinstance(other, IdentityReduction)
+
+    def __hash__(self) -> int:
+        return hash(IdentityReduction)
+
+
 class DinoGeDiFusion:
     """FreeZe v2 default fusion (paper Eq. 1/2):
 
@@ -95,7 +121,17 @@ class DinoGeDiFusion:
         # the cache key. That is the substitution popoe.interfaces'
         # availability contract exists to forbid, and the one place it would
         # bias every number in the study rather than one stage's output.
-        if self.pca_vis is not None:
+        if isinstance(self.pca_vis, IdentityReduction):
+            # The query side recorded "no reduction needed"; the target must
+            # follow it, not quietly do something else.
+            if n_vis != vis_dim:
+                raise ValueError(
+                    f"identity reduction was recorded, but these features are "
+                    f"{n_vis}-D against vis_dim {vis_dim}. Identity is only "
+                    f"valid when the two agree — the query and target sides "
+                    f"disagree about the visual width.")
+            vis_reduced = vis_feats
+        elif self.pca_vis is not None:
             if n_vis != self.pca_vis.n_features_in_:
                 raise ValueError(
                     f"visual features are {n_vis}-D but the installed PCA was "
@@ -108,6 +144,9 @@ class DinoGeDiFusion:
         elif n_vis == vis_dim:
             # Nothing to reduce: the visual branch already has the target width,
             # so passing it through is the identity — not a substituted method.
+            # RECORD it, so the snapshot handed to the target side says
+            # "identity" rather than None (which means a missing basis).
+            self.pca_vis = IdentityReduction()
             vis_reduced = vis_feats
         else:
             why = (f"only {int(valid.sum())} of {len(valid)} points have valid "

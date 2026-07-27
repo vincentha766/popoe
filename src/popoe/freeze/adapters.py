@@ -105,14 +105,23 @@ class FreeZeTargetEncoder:
         sidecar missing (examples/bop_eval.py). A degenerate query whose PCA
         genuinely never fitted lands here too, and must also raise: its features
         were built by truncation, so a target that fits a real PCA is just as
-        incoherent. Either way the answer is re-encode, never substitute."""
+        incoherent. Either way the answer is re-encode, never substitute.
+
+        A query that legitimately needed NO reduction (`n_vis == vis_dim`, e.g.
+        `POPOE_VIS_DIM=1536` against 1536-D DINOv2) is a different thing and is
+        accepted: it hands over `fusion.IdentityReduction()`, not `None`. That
+        distinction is the whole reason the marker exists — `None` has to stay
+        reserved for "missing", or a lost sidecar becomes indistinguishable
+        from a deliberate configuration."""
         if pca_vis is None:
             raise ValueError(
                 "install_pca(None): the target side must REUSE the query's "
-                "visual PCA, never fit its own. A None snapshot means the query "
-                "features are unusable (incomplete cache entry, or a query whose "
-                "PCA never fitted) — re-encode the query instead of installing "
-                "nothing. See the availability contract in popoe.interfaces.")
+                "visual reduction, never fit its own. A None snapshot means the "
+                "query features are unusable (incomplete cache entry, or a query "
+                "whose PCA never fitted) — re-encode the query instead of "
+                "installing nothing. A query that genuinely needed no reduction "
+                "passes fusion.IdentityReduction(), not None. See the "
+                "availability contract in popoe.interfaces.")
         self.ex.fusion.pca_vis = pca_vis
 
     def encode_target(self, scene: Scene, det: Detection,

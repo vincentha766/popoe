@@ -63,6 +63,26 @@ def test_teaser_ignores_the_seed():
     assert isinstance(solver, TeaserSolver)
 
 
+def test_provenance_reports_the_effective_seed_per_solver():
+    """Regression: a flat "UNSEEDED" for every seed=None run was a false claim
+    in the provenance of a cited run — only o3d is genuinely unseeded by
+    default. gpu* carry their own deterministic default; teaser has no RNG."""
+    from popoe.freeze.recipes import solver_provenance
+
+    assert "UNSEEDED" in solver_provenance("o3d", None)
+    assert "seed=7 (deterministic)" in solver_provenance("o3d", 7)
+
+    for gpu in ("gpu", "gpu-feat"):
+        line = solver_provenance(gpu, None)
+        assert "UNSEEDED" not in line, line
+        assert "seed=42 (deterministic)" in line, line
+        assert "seed=7 (deterministic)" in solver_provenance(gpu, 7)
+
+    for seed in (None, 7):
+        line = solver_provenance("teaser", seed)
+        assert "no RNG" in line and "UNSEEDED" not in line, line
+
+
 def test_unknown_solver_raises():
     with pytest.raises(ValueError, match="solver must be"):
         stages_for_object(0.1, solver="bogus")

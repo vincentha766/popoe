@@ -172,6 +172,27 @@ def _build_solver(name: str, tau: float, n_ransac: int, seed: int | None = None)
     raise ValueError(f"solver must be one of {SOLVERS}, got {name!r}")
 
 
+def solver_provenance(name: str, seed: int | None) -> str:
+    """One log line describing the run's solver determinism.
+
+    Reads the EFFECTIVE seed off a throwaway solver rather than restating the
+    defaults, so the answer cannot drift from `_build_solver`. Construction is
+    dep-light (torch/open3d/teaserpp all import inside `.solve`).
+
+    Only o3d is genuinely unseeded by default; the gpu solvers carry their own
+    deterministic default and teaser has no RNG at all. Saying "UNSEEDED" for
+    all of them would put a false claim in the provenance of a cited run.
+    """
+    if name == "teaser":
+        return f"solver={name} seed=n/a (deterministic — TEASER++ has no RNG)"
+    effective = getattr(_build_solver(name, tau=1.0, n_ransac=1, seed=seed),
+                        "seed", None)
+    if effective is None:
+        return (f"solver={name} seed=None (UNSEEDED — Open3D's global RNG is "
+                f"never seeded, so poses vary run-to-run)")
+    return f"solver={name} seed={effective} (deterministic)"
+
+
 def stages_for_object(extent_m: float, size_aware: bool = False,
                       n_ransac: int = 10000, score_coarse: bool = False,
                       use_s_coarse: bool = False, solver: str = "o3d",

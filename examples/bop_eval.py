@@ -48,7 +48,8 @@ from popoe.interfaces import ObjectModel, PointFeatures, PoseHypothesis, Scene
 from popoe.confusable_select import dual_assign_hyps, partner_id
 from popoe.freeze.recipes import (
     WEIGHTS, YCBV_CLAMP_DIAMETERS_M, YCBV_MERGE_LABELS,
-    best_encoders, best_segmentor, scale_vis, stages_for_object,
+    best_encoders, best_segmentor, scale_vis, solver_provenance,
+    stages_for_object,
 )
 
 IDN = " ".join(f"{v:.6f}" for v in np.eye(3).flatten())
@@ -314,9 +315,10 @@ def main():
         print(f"dual_assign=ON merge={merge}", flush=True)
     # Provenance: reproducibility is a property of the RUN, so it belongs in the
     # log next to the numbers, not only in the shell history that produced them.
-    print(f"solver={args.solver} seed={args.seed} "
-          f"({'reproducible' if args.seed is not None else 'UNSEEDED — o3d poses vary run-to-run'})",
-          flush=True)
+    # Built by recipes so it reports the EFFECTIVE seed per solver family — the
+    # gpu solvers are deterministic by default and teaser has no RNG, so a flat
+    # "UNSEEDED" would be a false claim in a cited run's log.
+    print(solver_provenance(args.solver, args.seed), flush=True)
     q_enc, t_enc = best_encoders(target_grid=args.grid,
                                  render_backend=args.render_backend)
     selector = BestScoreSelector()
