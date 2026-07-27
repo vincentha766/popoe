@@ -51,6 +51,7 @@ from popoe.freeze.recipes import (YCBV_MERGE_LABELS, best_segmentor,
                                   stages_for_object)
 from popoe.interfaces import (CanonFrame, ObjectModel, PointFeatures,
                               PoseHypothesis, Scene)
+from popoe.registration import feature_aware_score
 
 
 def rot_about(axis, deg):
@@ -170,7 +171,8 @@ def main():
     with open(args.out, "w", newline="") as f:
         wr = csv.writer(f)
         wr.writerow(["scene_id", "im_id", "obj_id", "variant", "score",
-                     "s_icp", "s_feat_1", "R", "t"])
+                     "s_icp", "s_feat_1", "n_inliers", "n_target", "cos_sum",
+                     "R", "t"])
         for (scene_id, im_id), objs in sorted(by_img.items()):
             sdir = bop / layout["split"] / f"{scene_id:06d}"
             cam = json.load(open(sdir / "scene_camera.json"))[str(im_id)]
@@ -207,14 +209,28 @@ def main():
                     continue
                 tgt = PointFeatures(pts=hit["pts"], feats=hit["feats"],
                                     meta={"feats_w1": hit["feats"]})
+                # tau exactly as ChampionScorer derives it (scoring.py), so the
+                # re-derived ingredients describe the same inlier set the live
+                # score used — not a near-miss reimplementation.
+                tau = 0.03 * float(np.ptp(q.pts, axis=0).max())
                 for name, Rv in variants(ch["R"], q.pts):
                     h = PoseHypothesis(R=Rv, t=ch["t"], score=0.0)
                     h = refiner.refine(h, scene, obj, q, tgt)
                     h = scorer.score(h, q, tgt)
+                    # Raw ingredients, so any normalisation can be compared
+                    # offline without another pod trip: the live score divides
+                    # the cosine sum by |I|, the paper's Eq.5 divides by the
+                    # fixed |P_T|, and both are recoverable from these.
+                    s_mean, inl = feature_aware_score(
+                        h.R, h.t, q.pts, tgt.pts,
+                        q.meta["feats_w1"], tgt.meta["feats_w1"], tau)
+                    n_inl = int(inl.sum())
                     wr.writerow([scene_id, im_id, obj_id, name,
                                  f"{h.score:.6f}",
                                  f"{h.breakdown.get('s_icp', 0):.4f}",
                                  f"{h.breakdown.get('s_feat_1', 0):.4f}",
+                                 n_inl, len(tgt.pts),
+                                 f"{s_mean * n_inl:.6f}",
                                  " ".join(f"{v:.6f}" for v in h.R.flatten()),
                                  " ".join(f"{v:.4f}" for v in (h.t * 1000.0))])
                     n_rows += 1
