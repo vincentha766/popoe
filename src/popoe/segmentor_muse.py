@@ -8,7 +8,7 @@ not a footnote. The authors' *masks*, unlike their method, are obtainable —
 their BOP submissions are public (see MUSE.md, Upstream Status) — so ``muse``
 names real downloaded files, never anything this module writes.
 
-Naming (same discipline as CNOS's ``cnos`` / ``cnos-v3`` / ``cnos-live`` split):
+Naming (same discipline as CNOS's ``cnos`` / ``cnos-lab`` / ``cnos-live`` split):
 
 ============  ==============================================================
 ``muse``      RESERVED for official MUSE artefacts. Nothing here writes it.
@@ -24,7 +24,7 @@ Two halves, because MUSE has to be both kinds of segmentor at once
 (see ARCHITECTURE.md, "Segmentation backends"):
 
 * **live** — ``MuseSegmentor`` computes masks from pixels, like
-  ``CNOSv3Segmentor``. This is what runs on a freshly captured frame.
+  ``CNOSLabSegmentor``. This is what runs on a freshly captured frame.
 * **producer** — ``muse_records`` / ``write_muse_detections`` dump the same
   masks to a BOP-format detections JSON, so the result becomes a file-backed
   source like every other backend: it can join a ``BOPDetectionsSegmentor``
@@ -50,7 +50,7 @@ numbers being read as an exact replication):
 * A depth-based 3D-extent size gate runs after proposal. MUSE has none (its BOP
   results are RGB-only); we keep it because it is cheap and directly targets the
   printed-text confuser failure mode seen on this project's real shots.
-* No union-bbox box-prompt refinement pass (CNOS-v3 has one); the GD+SAM2
+* No union-bbox box-prompt refinement pass (CNOS-lab has one); the GD+SAM2
   cascade is the paper's single largest ablation lever and should not need it.
 * Matching defaults to cosine(class token) + Tanimoto(GeM patch). Paper
   Eqs. (2)–(3) write cosine for both streams (prose also names Tanimoto);
@@ -77,7 +77,7 @@ from popoe.cache import fingerprint
 from popoe.interfaces import Detection, ObjectModel, Scene, is_runtime_failure
 from popoe.segmentor import SegmentorUnavailable, build_sam2_model
 from popoe.segmentor_detections import BOPDetectionsSegmentor
-from popoe.segmentor_cnos_v3 import (
+from popoe.segmentor_cnos_lab import (
     GRID,
     PatchForegroundScorer,
     DepthSizeGate,
@@ -106,7 +106,7 @@ DEFAULT_GAMMA = 0.1      # objectness confidence exponent
 DEFAULT_GEM_P = 1.5      # GeM pooling exponent (Radenovic et al.)
 DEFAULT_PROMPT = "items."
 DEFAULT_GDINO_MODEL = "IDEA-Research/grounding-dino-base"
-#: MUSE keeps small proposals CNOS-v3 would drop, so the gate's pixel floor is
+#: MUSE keeps small proposals CNOS-lab would drop, so the gate's pixel floor is
 #: lower here than that segmentor's 8000.
 DEFAULT_MIN_PIXELS = 2000
 
@@ -513,7 +513,7 @@ class DinoV2ClsGemEmbedder:
 class MuseTemplateBank:
     """Per-class ``(cls, gem)`` bank over rendered template PNGs.
 
-    Same PNG convention as CNOS-v3 (alpha channel when present, else a
+    Same PNG convention as CNOS-lab (alpha channel when present, else a
     near-black background threshold), so one rendered template set serves both
     segmentors.
     """
@@ -594,7 +594,7 @@ class MuseSceneResult:
 class MuseSegmentor:
     """MUSE reimplementation as a live ``Segmentor``.
 
-    Two things make this NOT a copy of ``CNOSv3Segmentor``'s shape, both
+    Two things make this NOT a copy of ``CNOSLabSegmentor``'s shape, both
     consequences of MUSE scoring classes jointly:
 
     1. **The relative score needs every class at once.** ``Segmentor.segment``

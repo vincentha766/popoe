@@ -205,7 +205,7 @@ Every entry satisfies the same `Segmentor` protocol and stamps its origin into
 | `segmentor_nids.NIDSNetDetectionsSegmentor` | `nids` | file — NIDS-Net artefacts |
 | `segmentor_muse.MuseDetectionsSegmentor` | `muse-repro` | file — replay of dumped MUSE masks |
 | `segmentor_muse.MuseSegmentor` | `muse-repro` | live — GroundingDINO→SAM2→DINOv2; also its own producer |
-| `segmentor_cnos_v3.CNOSv3Segmentor` | `cnos-v3` | live — depth-size-gated foreground-patch CNOS |
+| `segmentor_cnos_lab.CNOSLabSegmentor` | `cnos-lab` | live — depth-size-gated foreground-patch CNOS (formerly `cnos-v3`) |
 | `segmentor_cnos.CNOSSegmentor` | `cnos-live` | live — SAM2 AMG proposes, DINOv2 matches |
 | `segmentor_cnos.DinoWindowSegmentor` | `dino-window` | live — DINOv2 multi-scale sliding-window matching |
 | `segmentor.SAMSegmentor` | `sam2-amg` | live — SAM2.1 automatic mask generator, class-agnostic |
@@ -240,7 +240,7 @@ dets = seg.segment(scene, obj)
 dets[0].source        # -> 'cnos' | 'sam6d' | 'nids' — which backend produced it
 ```
 
-The three CNOS source names (`cnos`, `cnos-v3`, `cnos-live` — see the inventory
+The three CNOS source names (`cnos`, `cnos-lab`, `cnos-live` — see the inventory
 above) are **reserved**: only the official producer's artefacts may be filed
 under `cnos`, for the same reason `muse` is reserved below.
 
@@ -265,7 +265,7 @@ public code**, so there is no producer to adapt (its masks, unlike its method,
 `data/detections/muse/`). What popoe carries is a reimplementation from the
 paper (arXiv 2510.17866), and it
 occupies both forms at once: `MuseSegmentor` computes masks from pixels like
-`CNOSv3Segmentor`, while `muse_records` / `write_muse_detections` dump those same
+`CNOSLabSegmentor`, while `muse_records` / `write_muse_detections` dump those same
 masks to a detections JSON, after which `MuseDetectionsSegmentor` replays them as
 an ordinary named source — GPU-free, unionable, archivable. See [MUSE.md](MUSE.md).
 

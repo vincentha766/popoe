@@ -5,10 +5,10 @@ CNOS has two tracks in popoe, and the source names are part of the contract:
 | Source | Meaning |
 |--------|---------|
 | `cnos` | Official CNOS/CNOS-FastSAM producer, including public BOP default detections |
-| `cnos-v3` | Local lab recipe: proposal masks -> depth size gate -> DINOv2 foreground-patch rank |
+| `cnos-lab` | Local lab recipe (formerly `cnos-v3`): proposal masks -> depth size gate -> DINOv2 foreground-patch rank |
 | `cnos-live` | Existing simplified live SAM2+DINOv2 segmentor, not an official result |
 
-Do not write local v3 outputs with `source="cnos"`. Official benchmark numbers
+Do not write local lab outputs with `source="cnos"`. Official benchmark numbers
 and reproduction headline commands should keep using official/public `cnos`
 detections.
 
@@ -160,15 +160,18 @@ popoe-cnos adapt-custom \
 ```
 
 The adapted JSON keeps `source="cnos"` and can be consumed by
-`CNOSDetectionsSegmentor`. If you run the local v3 recipe, write it under a
-separate path such as `data/detections/cnos_v3/` and keep
-`source="cnos-v3"`.
+`CNOSDetectionsSegmentor`. If you run the local lab recipe, write it under a
+separate path such as `data/detections/cnos_lab/` and keep
+`source="cnos-lab"`.
 
-## Local CNOS-v3
+## Local CNOS-lab (formerly CNOS-v3)
 
-`popoe.segmentor_cnos_v3.CNOSv3Segmentor` is the local lab recipe migrated from
-`gedi/scripts/cnos_match3.py`: proposal masks are filtered by visible 3D extent
-from depth, then ranked by DINOv2 foreground-patch similarity to templates.
+`popoe.segmentor_cnos_lab.CNOSLabSegmentor` is the local lab recipe migrated
+from `gedi/scripts/cnos_match3.py`: proposal masks are filtered by visible 3D
+extent from depth, then ranked by DINOv2 foreground-patch similarity to
+templates. The old name's "v3" was that script's iteration count — renamed
+because it read as an official CNOS release. `popoe.segmentor_cnos_v3` remains
+an import shim, and old artifacts with `source="cnos-v3"` mean this recipe.
 
 It is intentionally separate from official CNOS. Use it for real-scene/lab
 experiments, not for claiming official CNOS benchmark results.
@@ -177,6 +180,6 @@ experiments, not for claiming official CNOS benchmark results.
 
 - Confirm the official submodule commit before reproducing results.
 - Confirm `source="cnos"` only appears on official/public CNOS files.
-- Confirm local v3 outputs use `source="cnos-v3"`.
+- Confirm local lab outputs use `source="cnos-lab"`.
 - Confirm `CNOSSegmentor` live outputs are `source="cnos-live"`.
 - Confirm object IDs match the CAD set consumed by popoe.

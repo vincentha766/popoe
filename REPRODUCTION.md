@@ -413,7 +413,7 @@ sensitivity — see `LEADERBOARD_ALIGNMENT.md` ignore sweep).
 |---|---|
 | `cnos` / `sam6d` / `nids` / `muse` | Official or precomputed JSON. **Nothing in popoe writes `muse`.** |
 | `muse-repro` | `popoe.segmentor_muse` / `popoe-bop-muse` reimplementation |
-| `cnos-v3` / `cnos-live` | Self-built CNOS tracks (lab / live) — not paper headline |
+| `cnos-lab` / `cnos-live` | Self-built CNOS tracks (lab / live; `cnos-lab` formerly `cnos-v3`) — not paper headline |
 
 ### Remaining follow-up
 
