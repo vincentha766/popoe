@@ -88,12 +88,39 @@ class DinoGeDiFusion:
             signs[signs == 0] = 1.0
             self.pca_vis.components_ = comps * signs[:, None]
 
-        if self.pca_vis is not None and n_vis == self.pca_vis.n_features_in_:
+        # Reduction is PCA projection or nothing. It used to fall back to a raw
+        # slice of the first vis_dim DINO dims (or zero-padding) whenever the
+        # PCA was absent or its width disagreed — a materially different visual
+        # representation served under the same name, with nothing recorded in
+        # the cache key. That is the substitution popoe.interfaces'
+        # availability contract exists to forbid, and the one place it would
+        # bias every number in the study rather than one stage's output.
+        if self.pca_vis is not None:
+            if n_vis != self.pca_vis.n_features_in_:
+                raise ValueError(
+                    f"visual features are {n_vis}-D but the installed PCA was "
+                    f"fitted on {self.pca_vis.n_features_in_}-D. This is the "
+                    f"wrong basis for these features (a stale snapshot, or a "
+                    f"changed DINO layer); slicing to {vis_dim}-D instead would "
+                    f"quietly swap PCA projection for raw DINO dims. Install "
+                    f"the matching PCA, or re-encode.")
             vis_reduced = self.pca_vis.transform(vis_feats)
-        elif n_vis >= vis_dim:
-            vis_reduced = vis_feats[:, :vis_dim]
+        elif n_vis == vis_dim:
+            # Nothing to reduce: the visual branch already has the target width,
+            # so passing it through is the identity — not a substituted method.
+            vis_reduced = vis_feats
         else:
-            vis_reduced = np.pad(vis_feats, ((0, 0), (0, vis_dim - n_vis)))
+            why = (f"only {int(valid.sum())} of {len(valid)} points have valid "
+                   f"geometric features, which is not more than vis_dim "
+                   f"{vis_dim}" if n_vis > vis_dim else
+                   f"vis_dim {vis_dim} exceeds the {n_vis}-D visual features")
+            raise ValueError(
+                f"cannot reduce {n_vis}-D visual features to {vis_dim}-D: no "
+                f"PCA could be fitted ({why}). Truncating or zero-padding here "
+                f"would substitute a different visual representation under the "
+                f"same name and leave no trace in the cache key. Fix the input "
+                f"(a cloud this degenerate is not describable), or install a "
+                f"fitted PCA.")
 
         def l2norm(x):
             norms = np.linalg.norm(x, axis=1, keepdims=True) + 1e-8

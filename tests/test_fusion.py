@@ -58,6 +58,51 @@ def test_vis_weight_zero_is_pure_geometric():
     assert not np.allclose(fused[:, 64:], 0.0)
 
 
+# ── Reduction is PCA projection or nothing ──────────────────────────────
+
+def test_degenerate_cloud_raises_instead_of_truncating():
+    """Regression: with too few valid geometric rows to fit a PCA, fuse() used
+    to fall back to `vis_feats[:, :vis_dim]` — the raw first 64 DINO dims
+    standing in for a PCA projection, under the same name and with nothing in
+    the cache key to show for it."""
+    rng = np.random.default_rng(17)
+    vis = rng.standard_normal((100, 1536)).astype(np.float32)
+    geo = rng.standard_normal((100, 64)).astype(np.float32)
+    geo[10:] = np.nan                      # 10 valid rows, vis_dim is 64
+
+    with pytest.raises(ValueError, match="no PCA could be fitted"):
+        DinoGeDiFusion(vis_weight=1.0).fuse(vis, geo)
+
+
+def test_mismatched_pca_width_raises():
+    """A PCA fitted on different-width features is the wrong basis, not a
+    reason to silently slice."""
+    rng = np.random.default_rng(19)
+    pca = PCA(n_components=4).fit(rng.standard_normal((80, 16)))
+    vis = rng.standard_normal((50, 1536)).astype(np.float32)
+    geo = rng.standard_normal((50, 64)).astype(np.float32)
+
+    with pytest.raises(ValueError, match="fitted on 16-D"):
+        DinoGeDiFusion(pca_vis=pca, vis_weight=1.0).fuse(vis, geo)
+
+
+def test_no_reduction_needed_is_identity_not_substitution():
+    """The one legitimate non-PCA path: the visual branch already has the
+    target width, so passing it through reduces nothing and substitutes
+    nothing. Must NOT raise, and must not invent a PCA."""
+    rng = np.random.default_rng(23)
+    vis = rng.standard_normal((50, 64)).astype(np.float32)
+    geo = rng.standard_normal((50, 64)).astype(np.float32)
+
+    fu = DinoGeDiFusion(vis_weight=1.0)
+    fused = fu.fuse(vis, geo)
+
+    assert fu.pca_vis is None, "nothing to fit when no reduction is needed"
+    assert fused.shape == (50, 128)
+    l2 = lambda x: x / (np.linalg.norm(x, axis=1, keepdims=True) + 1e-8)
+    assert np.allclose(fused[:, :64], l2(vis), atol=1e-6)
+
+
 # ── The PCA basis must never be silently re-fitted ──────────────────────
 
 class _FusionOnlyExtractor:
