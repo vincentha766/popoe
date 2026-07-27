@@ -477,11 +477,14 @@ provenance complaint is itself a claim about artefacts and needs the same
 standard of evidence it demands — check the host that produced the run before
 telling someone their numbers are unverified.
 
-### Left open: `scale_vis` assumes equal halves (pre-existing)
+### `scale_vis` assumed equal halves (pre-existing) — FIXED
 
 Found by codex round 3 on PR #12, verified **pre-existing** and deliberately
 not fixed there — the PR's identity branch is byte-identical to what `main`
-already did for this configuration, so it is not a regression.
+already did for this configuration, so it was never a regression. Fixed
+separately in PR #13 once the fusion work had landed; the estimate below that
+it "touches the evaluated weight-sweep path" turned out to be wrong, see the
+resolution at the end.
 
 `recipes.scale_vis` splits fused `[vis|geo]` features with
 `vd = feats.shape[1] // 2`, i.e. it assumes the two halves are equal width.
@@ -500,9 +503,50 @@ So a weight sweep under a non-geo-matched `POPOE_VIS_DIM` silently runs a
 different weighting than its label says — the same shape as the 07-14 "w=1 was
 never w=1" defect, in the one knob that was not swept then.
 
-Fix direction: `scale_vis` cannot infer the split from the array alone, so the
-visual width has to be carried rather than guessed — either recorded in
-`PointFeatures.meta` at fuse time and passed through `_reweighted`, or read
-from the same `POPOE_VIS_DIM` the fusion itself consults. Untangling it touches
-the evaluated weight-sweep path, which is why it was kept out of a PR whose
-point was that the mainline does not move.
+**Resolution (PR #13).** The fix was far smaller than the estimate above, for
+a reason worth recording: the split does not have to be carried, because it was
+already being recorded. `POPOE_VIS_DIM` is part of the encoder cache key
+(`enc_cfg['vis_dim']`), so features built under one setting cannot be paired
+with another setting's split — a different value is a different key, hence a
+different entry. bop_eval therefore already knows the boundary and just had to
+pass it.
+
+The second half is a consequence of the PR #12 work: with the truncation and
+zero-pad fallbacks gone, the fused visual width **is** `vis_dim` on every
+surviving path (PCA projects to `n_components=vis_dim`; the identity path
+requires `n_vis == vis_dim`). Before that there was a third case where the
+width was whatever a raw slice happened to produce, and no rule would have
+held. Removing the fallbacks is what made the split derivable at all.
+
+So `scale_vis(feats, w, vis_dim=None)` splits at `vis_dim`, refusing a boundary
+that is not a proper prefix rather than guessing, and `bop_eval` passes the
+value from `enc_cfg`. `None` keeps the historical equal-halves answer, so no
+existing caller moves. Verified byte-identical on the geo-matched mainline;
+under `POPOE_VIS_DIM=1536` all 1536 visual channels are now scaled where 736
+were previously left at w=1.
+
+A first attempt had `scale_vis` resolve the split from `POPOE_VIS_DIM` itself
+"since that is what the fusion reads". **That was wrong**, and the suite caught
+it under a non-default environment: the env var is only the fusion's DEFAULT,
+and a caller passing `DinoGeDiFusion(vis_dim=...)` or a pre-fit `pca_vis`
+overrides it — the real width is then `n_components`. With a 64-component PCA
+supplied and `POPOE_VIS_DIM=1536` exported, the env answer tried to split a
+128-D vector at 1536. The split has to come from the caller that knows, not
+from a variable that merely influences it.
+
+Fallout worth keeping: `tests/test_fusion.py` had been inheriting the
+developer's shell. `POPOE_VIS_DIM=1536` alone flipped four of its tests on
+`main` — including `test_output_dims`, which predates all of this work —
+because the env changes the width the fused vector actually has. The module now
+clears the fusion knobs in an autouse fixture and sets them explicitly where a
+test wants one, so the suite passes under a dirty environment too.
+
+Estimating-lesson: "this touches the hot path" was wrong, and wrong in the
+direction that defers work. The knob was already keyed, so the information
+needed to fix it safely was present the whole time — the cost was in reading
+the cache-key construction, not in threading new state.
+
+Review-lesson: the env-fallback error was invisible under the default
+environment and only surfaced from deliberately running the suite with the very
+knob the change was about. A test suite that never varies the variable under
+discussion cannot falsify a claim about it.

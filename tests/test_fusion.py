@@ -7,6 +7,17 @@ import popoe
 from popoe.freeze.fusion import DinoGeDiFusion, IdentityReduction
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_fusion_env(monkeypatch):
+    """Fusion resolves its defaults from the environment, so these tests must
+    control it. Without this the whole module inherits the developer's shell:
+    `POPOE_VIS_DIM=1536` alone flips four of them, because it changes the width
+    the fused vector actually has. Tests that want a non-default value set it
+    themselves."""
+    for knob in ("POPOE_VIS_DIM", "POPOE_VIS_WEIGHT", "POPOE_SKIP_VIS"):
+        monkeypatch.delenv(knob, raising=False)
+
+
 def _reference(vis, geo, pca, vis_w):
     """The intended arithmetic, written out independently."""
     valid = ~np.isnan(geo).any(axis=1)
@@ -219,3 +230,70 @@ def test_output_dims():
     geo = rng.standard_normal((300, 32)).astype(np.float32)
     fused = DinoGeDiFusion().fuse(vis, geo)   # vis_dim defaults to geo dim
     assert fused.shape == (300, 64)           # 32 vis + 32 geo
+
+
+# ── scale_vis splits at vis_dim, not at half ────────────────────────────
+
+def test_scale_vis_geo_matched_is_unchanged():
+    """The mainline: geo-matched halves ARE equal, so the historical `// 2`
+    answer must survive byte-for-byte. Every published number ran here."""
+    from popoe.freeze.recipes import scale_vis
+    rng = np.random.default_rng(41)
+    fused = rng.standard_normal((50, 128)).astype(np.float32)   # 64 vis + 64 geo
+
+    legacy = fused.astype(np.float64).copy()
+    legacy[:, :64] *= 0.3
+    assert np.array_equal(scale_vis(fused, 0.3), legacy)
+
+
+def test_scale_vis_honours_a_non_geo_matched_split():
+    """Regression: with POPOE_VIS_DIM=1536 against 64-D GeDi the fused vector is
+    1600-D, and `// 2` scaled 800 of the 1536 visual channels while leaving 736
+    at w=1 — a sweep quietly running a different weighting than its label."""
+    from popoe.freeze.recipes import scale_vis
+    rng = np.random.default_rng(43)
+    fused = rng.standard_normal((20, 1600)).astype(np.float32)
+
+    got = scale_vis(fused, 0.5, vis_dim=1536)
+    assert np.allclose(got[:, :1536], fused[:, :1536].astype(np.float64) * 0.5)
+    assert np.allclose(got[:, 1536:], fused[:, 1536:])          # geo untouched
+    # what the old code did, for contrast: boundary at 1600//2 = 800
+    assert not np.allclose(got[:, 800:1536], fused[:, 800:1536])
+
+
+def test_scale_vis_does_not_read_the_environment():
+    """The split must come from the caller, never from POPOE_VIS_DIM. That env
+    var is only the fusion's DEFAULT: an explicit `pca_vis` overrides it, and
+    the real width is then `n_components`. Reading the env would try to split a
+    128-D vector at 1536 — which is exactly how this was caught."""
+    import os
+    from popoe.freeze.recipes import scale_vis
+    fused = np.ones((4, 128), np.float32)            # 64 vis + 64 geo
+
+    baseline = scale_vis(fused, 0.5)
+    os.environ["POPOE_VIS_DIM"] = "1536"             # cleaned by the autouse fixture
+    assert np.array_equal(scale_vis(fused, 0.5), baseline)
+
+
+def test_scale_vis_refuses_an_impossible_split():
+    from popoe.freeze.recipes import scale_vis
+    fused = np.ones((4, 128), np.float32)
+    for bad in (0, -1, 128, 999):
+        with pytest.raises(ValueError, match="not a valid split"):
+            scale_vis(fused, 0.5, vis_dim=bad)
+
+
+def test_fused_visual_width_is_always_vis_dim(monkeypatch):
+    """The premise scale_vis relies on: after the fallbacks were removed, every
+    surviving path emits a visual part exactly vis_dim wide — so a caller can
+    always determine the split."""
+    rng = np.random.default_rng(47)
+    vis = rng.standard_normal((300, 1536)).astype(np.float32)
+
+    for geo_dim in (32, 64, 66):                       # PCA path, geo-matched
+        geo = rng.standard_normal((300, geo_dim)).astype(np.float32)
+        assert DinoGeDiFusion().fuse(vis, geo).shape[1] == 2 * geo_dim
+
+    monkeypatch.setenv("POPOE_VIS_DIM", "1536")        # identity path
+    geo = rng.standard_normal((300, 64)).astype(np.float32)
+    assert DinoGeDiFusion().fuse(vis, geo).shape[1] == 1536 + 64
