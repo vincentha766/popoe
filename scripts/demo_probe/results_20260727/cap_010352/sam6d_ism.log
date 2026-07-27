@@ -1,0 +1,45 @@
+[sam6d_ism] CAP 5957 MiB (fraction 0.122 of 48640)
+[sam6d_ism] cuda context               card=  1996 MiB | torch alloc=    0 peak_alloc=    0 reserved=    2 MiB | t=   0.0s 
+[sam6d_ism] +SAM ViT-H                 card=  4570 MiB | torch alloc= 2509 peak_alloc= 2509 reserved= 2576 MiB | t=   6.3s 
+Using cache found in /workspace/torch_cache/hub/facebookresearch_dinov2_main
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/swiglu_ffn.py:43: UserWarning: xFormers is available (SwiGLU)
+  warnings.warn("xFormers is available (SwiGLU)")
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/attention.py:27: UserWarning: xFormers is available (Attention)
+  warnings.warn("xFormers is available (Attention)")
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/block.py:33: UserWarning: xFormers is available (Block)
+  warnings.warn("xFormers is available (Block)")
+[sam6d_ism] models loaded              card=  6748 MiB | torch alloc= 3670 peak_alloc= 3670 reserved= 3740 MiB | t=  14.8s 
+Traceback (most recent call last):
+  File "/workspace/probe/probe_role.py", line 116, in <module>
+    n = work(); report("warmup done", f"units={n}")
+  File "/workspace/probe/probe_role.py", line 110, in work
+    return len(gen.generate(rgb))
+  File "/workspace/envs/sam6d/lib/python3.10/site-packages/torch/utils/_contextlib.py", line 115, in decorate_context
+    return func(*args, **kwargs)
+  File "/workspace/envs/sam6d/lib/python3.10/site-packages/segment_anything/automatic_mask_generator.py", line 163, in generate
+    mask_data = self._generate_masks(image)
+  File "/workspace/envs/sam6d/lib/python3.10/site-packages/segment_anything/automatic_mask_generator.py", line 206, in _generate_masks
+    crop_data = self._process_crop(image, crop_box, layer_idx, orig_size)
+  File "/workspace/envs/sam6d/lib/python3.10/site-packages/segment_anything/automatic_mask_generator.py", line 236, in _process_crop
+    self.predictor.set_image(cropped_im)
+  File "/workspace/envs/sam6d/lib/python3.10/site-packages/segment_anything/predictor.py", line 60, in set_image
+    self.set_torch_image(input_image_torch, image.shape[:2])
+  File "/workspace/envs/sam6d/lib/python3.10/site-packages/torch/utils/_contextlib.py", line 115, in decorate_context
+    return func(*args, **kwargs)
+  File "/workspace/envs/sam6d/lib/python3.10/site-packages/segment_anything/predictor.py", line 89, in set_torch_image
+    self.features = self.model.image_encoder(input_image)
+  File "/workspace/envs/sam6d/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1501, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/workspace/envs/sam6d/lib/python3.10/site-packages/segment_anything/modeling/image_encoder.py", line 112, in forward
+    x = blk(x)
+  File "/workspace/envs/sam6d/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1501, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/workspace/envs/sam6d/lib/python3.10/site-packages/segment_anything/modeling/image_encoder.py", line 174, in forward
+    x = self.attn(x)
+  File "/workspace/envs/sam6d/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1501, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/workspace/envs/sam6d/lib/python3.10/site-packages/segment_anything/modeling/image_encoder.py", line 234, in forward
+    attn = add_decomposed_rel_pos(attn, q, self.rel_pos_h, self.rel_pos_w, (H, W), (H, W))
+  File "/workspace/envs/sam6d/lib/python3.10/site-packages/segment_anything/modeling/image_encoder.py", line 358, in add_decomposed_rel_pos
+    attn.view(B, q_h, q_w, k_h, k_w) + rel_h[:, :, :, :, None] + rel_w[:, :, :, None, :]
+torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate 1024.00 MiB (GPU 0; 47.50 GiB total capacity; 5.74 GiB already allocated; 38.74 GiB free; 5.82 GiB allowed; 5.81 GiB reserved in total by PyTorch) If reserved memory is >> allocated memory try setting max_split_size_mb to avoid fragmentation.  See documentation for Memory Management and PYTORCH_CUDA_ALLOC_CONF

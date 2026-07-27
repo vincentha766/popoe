@@ -1,0 +1,44 @@
+[
+ {
+  "label": "00 cuda context only",
+  "smi_proc_MiB": 502,
+  "torch_alloc_MiB": 0,
+  "torch_reserved_MiB": 2,
+  "torch_peak_MiB": 0
+ },
+ {
+  "label": "01 +GroundingDINO-base",
+  "smi_proc_MiB": 1410,
+  "torch_alloc_MiB": 890,
+  "torch_reserved_MiB": 910,
+  "torch_peak_MiB": 890
+ },
+ {
+  "label": "02 +SAM2 Hiera-L",
+  "smi_proc_MiB": 2404,
+  "torch_alloc_MiB": 1885,
+  "torch_reserved_MiB": 1904,
+  "torch_peak_MiB": 1885
+ },
+ {
+  "label": "03 +DINOv2-g  (ALL THREE RESIDENT)",
+  "smi_proc_MiB": 6728,
+  "torch_alloc_MiB": 6220,
+  "torch_reserved_MiB": 6228,
+  "torch_peak_MiB": 6220
+ },
+ {
+  "label": "04 after warmup frame (peak)",
+  "smi_proc_MiB": 7904,
+  "torch_alloc_MiB": 6244,
+  "torch_reserved_MiB": 7392,
+  "torch_peak_MiB": 7317
+ },
+ {
+  "label": "05 after all frames (peak)",
+  "smi_proc_MiB": 7924,
+  "torch_alloc_MiB": 6244,
+  "torch_reserved_MiB": 7412,
+  "torch_peak_MiB": 7333
+ }
+]

@@ -1,0 +1,30 @@
+[muse] CAP 5949 MiB (fraction 0.122 of 48640)
+[muse] cuda context               card=  1000 MiB | torch alloc=    0 peak_alloc=    0 reserved=    2 MiB | t=   0.0s 
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/1182 [00:00<?, ?it/s]Loading weights:   8%|▊         | 97/1182 [00:00<00:01, 967.46it/s]Loading weights:  20%|██        | 240/1182 [00:00<00:00, 1238.10it/s]Loading weights:  31%|███       | 364/1182 [00:00<00:00, 845.33it/s] Loading weights:  39%|███▉      | 460/1182 [00:00<00:01, 675.99it/s]Loading weights:  52%|█████▏    | 620/1182 [00:00<00:00, 909.12it/s]Loading weights:  62%|██████▏   | 727/1182 [00:00<00:00, 760.04it/s]Loading weights:  69%|██████▉   | 817/1182 [00:00<00:00, 787.09it/s]Loading weights:  77%|███████▋  | 906/1182 [00:01<00:00, 801.12it/s]Loading weights:  84%|████████▍ | 995/1182 [00:01<00:00, 821.32it/s]Loading weights:  96%|█████████▌| 1134/1182 [00:01<00:00, 789.03it/s]Loading weights: 100%|██████████| 1182/1182 [00:01<00:00, 844.23it/s]
+Using cache found in /workspace/torch_cache/hub/facebookresearch_dinov2_main
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/swiglu_ffn.py:51: UserWarning: xFormers is not available (SwiGLU)
+  warnings.warn("xFormers is not available (SwiGLU)")
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/attention.py:33: UserWarning: xFormers is not available (Attention)
+  warnings.warn("xFormers is not available (Attention)")
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/block.py:40: UserWarning: xFormers is not available (Block)
+  warnings.warn("xFormers is not available (Block)")
+Traceback (most recent call last):
+  File "/workspace/probe/probe_role.py", line 47, in <module>
+    e = DinoV2ClsGemEmbedder(device="cuda"); _ = e.model
+  File "/workspace/popoe_vramprobe/src/popoe/segmentor_muse.py", line 466, in model
+    ).to(self.device).eval()
+  File "/workspace/envs/muse/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1340, in to
+    return self._apply(convert)
+  File "/workspace/envs/muse/lib/python3.10/site-packages/torch/nn/modules/module.py", line 900, in _apply
+    module._apply(fn)
+  File "/workspace/envs/muse/lib/python3.10/site-packages/torch/nn/modules/module.py", line 900, in _apply
+    module._apply(fn)
+  File "/workspace/envs/muse/lib/python3.10/site-packages/torch/nn/modules/module.py", line 900, in _apply
+    module._apply(fn)
+  [Previous line repeated 1 more time]
+  File "/workspace/envs/muse/lib/python3.10/site-packages/torch/nn/modules/module.py", line 927, in _apply
+    param_applied = fn(param)
+  File "/workspace/envs/muse/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1326, in convert
+    return t.to(
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 48.00 MiB. GPU 0 has a total capacity of 47.50 GiB of which 41.22 GiB is free. Process 936516 has 6.27 GiB memory in use. 5.81 GiB allowed; Of the allocated memory 5.78 GiB is allocated by PyTorch, and 4.38 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)

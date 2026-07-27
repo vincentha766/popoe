@@ -1,0 +1,32 @@
+[pose] CAP 4270 MiB (fraction 0.088 of 48640)
+[pose] cuda context               card=  1996 MiB | torch alloc=    0 peak_alloc=    0 reserved=    2 MiB | t=   0.0s 
+Using cache found in /workspace/torch_cache/hub/facebookresearch_dinov2_main
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/swiglu_ffn.py:51: UserWarning: xFormers is not available (SwiGLU)
+  warnings.warn("xFormers is not available (SwiGLU)")
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/attention.py:33: UserWarning: xFormers is not available (Attention)
+  warnings.warn("xFormers is not available (Attention)")
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/block.py:40: UserWarning: xFormers is not available (Block)
+  warnings.warn("xFormers is not available (Block)")
+/workspace/envs/dGeDi/lib/python3.10/site-packages/torch/_utils.py:831: UserWarning: TypedStorage is deprecated. It will be removed in the future and UntypedStorage will be the only storage class. This should only matter to you if you are using storages directly.  To access UntypedStorage directly, use tensor.untyped_storage() instead of tensor.storage()
+  return self.fget.__get__(instance, owner)()
+Traceback (most recent call last):
+  File "/workspace/probe/probe_role.py", line 71, in <module>
+    tfe = TargetFeatureExtractor(device="cuda"); tfe._canon_scale = 1.0
+  File "/workspace/popoe_vramprobe/src/popoe/freeze/feature_extractor.py", line 553, in __init__
+    self.dino = dino if dino is not None else load_dinov2(device)
+  File "/workspace/popoe_vramprobe/src/popoe/freeze/feature_extractor.py", line 42, in load_dinov2
+    model = model.to(device).eval()
+  File "/workspace/envs/dGeDi/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1160, in to
+    return self._apply(convert)
+  File "/workspace/envs/dGeDi/lib/python3.10/site-packages/torch/nn/modules/module.py", line 810, in _apply
+    module._apply(fn)
+  File "/workspace/envs/dGeDi/lib/python3.10/site-packages/torch/nn/modules/module.py", line 810, in _apply
+    module._apply(fn)
+  File "/workspace/envs/dGeDi/lib/python3.10/site-packages/torch/nn/modules/module.py", line 810, in _apply
+    module._apply(fn)
+  [Previous line repeated 1 more time]
+  File "/workspace/envs/dGeDi/lib/python3.10/site-packages/torch/nn/modules/module.py", line 833, in _apply
+    param_applied = fn(param)
+  File "/workspace/envs/dGeDi/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1158, in convert
+    return t.to(device, dtype if t.is_floating_point() or t.is_complex() else None, non_blocking)
+torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate 48.00 MiB. GPU 0 has a total capacty of 47.50 GiB of which 37.99 GiB is free. Process 936516 has 2.34 GiB memory in use. Process 936518 has 2.51 GiB memory in use. Process 936520 has 4.64 GiB memory in use. Of the allocated memory 4.16 GiB is allocated by PyTorch, and 8.76 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting max_split_size_mb to avoid fragmentation.  See documentation for Memory Management and PYTORCH_CUDA_ALLOC_CONF

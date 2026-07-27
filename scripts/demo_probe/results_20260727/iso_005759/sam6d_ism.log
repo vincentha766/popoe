@@ -1,0 +1,13 @@
+[sam6d_ism] cuda context               card=   502 MiB | torch alloc=    0 peak_alloc=    0 reserved=    2 MiB | t=   0.0s 
+[sam6d_ism] +SAM ViT-H                 card=  3076 MiB | torch alloc= 2509 peak_alloc= 2509 reserved= 2576 MiB | t=   6.3s 
+Using cache found in /workspace/torch_cache/hub/facebookresearch_dinov2_main
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/swiglu_ffn.py:43: UserWarning: xFormers is available (SwiGLU)
+  warnings.warn("xFormers is available (SwiGLU)")
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/attention.py:27: UserWarning: xFormers is available (Attention)
+  warnings.warn("xFormers is available (Attention)")
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/block.py:33: UserWarning: xFormers is available (Block)
+  warnings.warn("xFormers is available (Block)")
+[sam6d_ism] models loaded              card=  4240 MiB | torch alloc= 3670 peak_alloc= 3670 reserved= 3740 MiB | t=  14.1s 
+[sam6d_ism] warmup done                card=  7946 MiB | torch alloc= 3678 peak_alloc= 6899 reserved= 7422 MiB | t=  16.3s units=177
+[sam6d_ism] steady                     card=  7946 MiB | torch alloc= 3678 peak_alloc= 6899 reserved= 7422 MiB | t=  47.9s n_iter=17 mean=1.85s
+[RESULT] role=sam6d_ism torch_peak_alloc=6899 MiB torch_reserved=7422 MiB card_now=7946 MiB mean_frame=1.854s n=17

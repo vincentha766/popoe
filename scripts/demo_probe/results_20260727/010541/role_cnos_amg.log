@@ -1,0 +1,12 @@
+[cnos_amg] cuda context               card=   502 MiB | torch alloc=    0 peak_alloc=    0 reserved=    2 MiB | t=   0.0s 
+Using cache found in /workspace/torch_cache/hub/facebookresearch_dinov2_main
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/swiglu_ffn.py:51: UserWarning: xFormers is not available (SwiGLU)
+  warnings.warn("xFormers is not available (SwiGLU)")
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/attention.py:33: UserWarning: xFormers is not available (Attention)
+  warnings.warn("xFormers is not available (Attention)")
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/block.py:40: UserWarning: xFormers is not available (Block)
+  warnings.warn("xFormers is not available (Block)")
+[cnos_amg] models loaded              card= 10708 MiB | torch alloc= 5329 peak_alloc= 5329 reserved= 5340 MiB | t=  45.3s 
+[cnos_amg] warmup done                card= 14336 MiB | torch alloc= 5338 peak_alloc= 7406 reserved= 7966 MiB | t=  46.9s units=50
+[cnos_amg] steady                     card= 14336 MiB | torch alloc= 5338 peak_alloc= 7406 reserved= 7966 MiB | t= 109.0s n_iter=27 mean=2.30s
+[RESULT] role=cnos_amg torch_peak_alloc=7406 MiB torch_reserved=7966 MiB card_now=14336 MiB mean_frame=2.297s n=27

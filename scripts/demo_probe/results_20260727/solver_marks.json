@@ -1,0 +1,16 @@
+[
+ {
+  "label": "00 pose stack resident (DINOv2-g + GeDi x2)",
+  "smi_proc_MiB": 4872,
+  "torch_alloc_MiB": 4359,
+  "torch_reserved_MiB": 4372,
+  "torch_peak_MiB": 4359
+ },
+ {
+  "label": "01 after GPU RANSAC (peak)",
+  "smi_proc_MiB": 5864,
+  "torch_alloc_MiB": 4367,
+  "torch_reserved_MiB": 5320,
+  "torch_peak_MiB": 5218
+ }
+]
