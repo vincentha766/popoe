@@ -63,15 +63,33 @@ row #1's locally scored 0.7781 (+0.9pt, RANSAC-noise scale) under an
 identical recipe — the end-to-end chain is sound, so every gap above is
 methodological, not a defect.
 
-**Diagnostic reading** (full analysis in `../gedi/BOP_OFFICIAL_BASELINES.md`):
-ITODD — untextured industrial parts, single-channel gray, the weakest regime
-for the visual branch — is the one dataset that beats the official row, so
-the geometric backbone reproduces faithfully. The gap tracks
-multi-instance-ness instead (single-instance −3.4/−5.8/−6.6 vs multi
-−7.7/−10.0/−11.2), and IC-BIN zero-pads only 1.6% of its rows, so detection
-recall is not the bottleneck. That points at `adapters.select_top_instances`
-having no spatial de-duplication — two champions can land on one physical
-instance (audit risk #5, 2026-07-27, now evidenced rather than hypothesised).
+**What the gaps are not caused by**: the official FreeZe(CNOS) row consumes
+the *same* CNOS-FastSAM detection file, so every per-dataset gap arises in
+the pose stage (registration + scoring), not in detection.
+
+**The per-dataset spread is NOT yet explained.** An earlier version of this
+section claimed it tracked multi-instance-ness and blamed
+`adapters.select_top_instances` for lacking spatial de-duplication. **That
+claim is withdrawn — the submitted CSVs refute it:**
+
+- ITODD has the *most* multi-instance targets of the seven (75.7%, up to 8+
+  instances) and is the only dataset that beats the official row; HB is
+  100% single-instance and sits at −10.0pt. Single-instance gaps
+  (−3.4/−5.8/−6.6/−10.0) and multi-instance gaps (+0.4/−7.7/−11.2) have
+  essentially the same mean.
+- Champions within one target are not stacking on one physical instance:
+  median pairwise translation is 236mm (IC-BIN) / 99mm (T-LESS) / 97mm
+  (ITODD), and only 0.3–0.9% of champion pairs sit closer than 5mm.
+
+A second candidate died too: the winning visual weight (per-target argmax
+over `--weights`) is distributed almost identically across all seven sets
+(mean 0.56–0.65), so "our visual branch is weaker than theirs" has no
+support either.
+
+Settling this needs GT-based per-instance analysis — separating "wrong mask
+or wrong object" from "right mask, poor registration" — which requires the
+GT trees on the pod volume for the five datasets not held locally. Until
+then the spread is recorded as unexplained rather than narrated.
 
 ### Campaign notes (2026-07-26)
 
