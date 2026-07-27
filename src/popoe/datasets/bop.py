@@ -23,6 +23,49 @@ def _read_json(path):
         return json.load(f)
 
 
+# Per-dataset directory layout for the BOP-Classic-Core seven. Values follow
+# bop_toolkit's dataset_params (its defaults: tless split_type='primesense',
+# model_type='cad'; itodd images are gray/*.tif with depth/*.tif). Everything
+# outside this table is NOT guessed — an unknown dataset must be named
+# explicitly by the caller, because the failure mode of a wrong guess is not a
+# crash: a missing image dir used to yield a clean-looking all-zero CSV.
+BOP_LAYOUTS = {
+    "lmo":   {"split": "test", "img_dir": "rgb", "img_ext": ".png",
+              "depth_ext": ".png", "models_dir": "models"},
+    "tless": {"split": "test_primesense", "img_dir": "rgb", "img_ext": ".png",
+              "depth_ext": ".png", "models_dir": "models_cad"},
+    "tudl":  {"split": "test", "img_dir": "rgb", "img_ext": ".png",
+              "depth_ext": ".png", "models_dir": "models"},
+    "icbin": {"split": "test", "img_dir": "rgb", "img_ext": ".png",
+              "depth_ext": ".png", "models_dir": "models"},
+    "itodd": {"split": "test", "img_dir": "gray", "img_ext": ".tif",
+              "depth_ext": ".tif", "models_dir": "models"},
+    "hb":    {"split": "test_primesense", "img_dir": "rgb", "img_ext": ".png",
+              "depth_ext": ".png", "models_dir": "models"},
+    "ycbv":  {"split": "test", "img_dir": "rgb", "img_ext": ".png",
+              "depth_ext": ".png", "models_dir": "models"},
+}
+
+
+def bop_layout(dataset, split=None, models_dir=None) -> dict:
+    """Resolve a dataset's directory layout, with explicit overrides.
+
+    Raises ValueError for a name outside BOP_LAYOUTS — overrides refine a
+    known layout (e.g. hb's test_kinect), they do not define a new one, since
+    the image dir/ext would still be a guess.
+    """
+    if dataset not in BOP_LAYOUTS:
+        raise ValueError(
+            f"unknown BOP dataset {dataset!r}; known: "
+            f"{', '.join(sorted(BOP_LAYOUTS))}")
+    layout = dict(BOP_LAYOUTS[dataset])
+    if split is not None:
+        layout["split"] = split
+    if models_dir is not None:
+        layout["models_dir"] = models_dir
+    return layout
+
+
 def default_targets_path(bop_root, split="test") -> Path:
     """Return the conventional BOP target file path for a split."""
 
@@ -36,11 +79,14 @@ def default_targets_path(bop_root, split="test") -> Path:
     return path
 
 
-def bop_frame_manifest(bop_root, split, scene_id, im_id) -> FrameManifest:
+def bop_frame_manifest(bop_root, split, scene_id, im_id, img_dir="rgb",
+                       img_ext=".png", depth_ext=".png") -> FrameManifest:
     """Build a frame manifest for one BOP image.
 
     BOP ``scene_camera.json`` stores ``depth_scale`` in millimetres per raw
     depth unit. ``FrameManifest`` expects metres per raw unit, so divide by 1000.
+    The image dir/extensions default to the rgb/png layout most sets use; pass
+    the values from ``bop_layout`` for the ones that differ (itodd: gray/tif).
     """
 
     root = str(Path(bop_root).expanduser())
@@ -48,8 +94,8 @@ def bop_frame_manifest(bop_root, split, scene_id, im_id) -> FrameManifest:
     cameras = _scene_camera(root, split, int(scene_id))
     cam = cameras[str(int(im_id))]
     return FrameManifest(
-        rgb_path=str(scene_dir / "rgb" / f"{int(im_id):06d}.png"),
-        depth_path=str(scene_dir / "depth" / f"{int(im_id):06d}.png"),
+        rgb_path=str(scene_dir / img_dir / f"{int(im_id):06d}{img_ext}"),
+        depth_path=str(scene_dir / "depth" / f"{int(im_id):06d}{depth_ext}"),
         K=cam["cam_K"],
         depth_scale=float(cam.get("depth_scale", 1.0)) / 1000.0,
         scene_id=int(scene_id),
