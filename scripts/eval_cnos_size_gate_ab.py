@@ -37,7 +37,7 @@ import cv2
 import numpy as np
 
 from popoe.interfaces import ObjectModel, Scene
-from popoe.segmentor_cnos_v3 import DepthSizeGate
+from popoe.segmentor_cnos_lab import DepthSizeGate
 from popoe.segmentor_detections import decode_detection_mask, load_bop_detections
 
 CLAMP_PAIR = (19, 20)

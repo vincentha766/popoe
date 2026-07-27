@@ -41,3 +41,19 @@ def test_freeze_package_exports():
     import popoe.freeze as fz
     for name in fz.__all__:
         assert getattr(fz, name) is not None, name
+
+
+def test_segmentor_cnos_v3_shim():
+    """segmentor_cnos_v3 -> segmentor_cnos_lab rename (the 'v3' read as an
+    official CNOS release; it was gedi's cnos_match3.py iteration count)."""
+    import popoe.segmentor_cnos_lab as new
+    import popoe.segmentor_cnos_v3 as old
+    for name in ("DepthSizeGate", "DiameterSizeModel",
+                 "DinoV2ForegroundPatchExtractor", "PatchForegroundScorer",
+                 "SAM2AMGMaskProposer", "TemplateDirPatchBank",
+                 "select_by_nearest_diameter", "select_by_soft_affinity",
+                 "square_crop"):
+        assert getattr(old, name) is getattr(new, name), name
+    assert old.CNOSv3Segmentor is new.CNOSLabSegmentor
+    # the constant follows the rename: old importers now emit the new label
+    assert old.CNOS_V3_SOURCE == new.CNOS_LAB_SOURCE == "cnos-lab"

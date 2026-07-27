@@ -92,7 +92,7 @@ popoe-muse \
 
 The frame manifest is the usual `popoe.datasets.frames` record
 (`rgb_path`, `depth_path`, `K`, `depth_scale`). Templates are the same rendered
-PNG directories CNOS-v3 uses. The command prints the surviving-proposal count
+PNG directories CNOS-lab uses. The command prints the surviving-proposal count
 and each class's best score breakdown, writes the detections JSON, then reloads
 it through `load_bop_detections` so a schema error surfaces immediately.
 
@@ -166,7 +166,7 @@ list honest — it is what stops these numbers being read as an exact replicatio
 |-------|------|-----|
 | No depth size gate (BOP proposals are RGB-only) | Depth 3D-extent gate after proposal, union of all registered classes' intervals | Cheap, already validated on this project's real shots, targets the printed-text confuser failure mode |
 | Paper Eqs. (2)–(3): cosine on cls **and** GeM | Default: cosine(cls) + **Tanimoto**(GeM); optional ``patch_sim=cosine`` | G2 A/B; paper prose also names Tanimoto |
-| — | No union-bbox box-prompt refinement (CNOS-v3 has one) | The GD+SAM2 cascade is the paper's largest ablation lever (+0.108 mAP over plain SAM proposals); it should not need the patch |
+| — | No union-bbox box-prompt refinement (CNOS-lab has one) | The GD+SAM2 cascade is the paper's largest ablation lever (+0.108 mAP over plain SAM proposals); it should not need the patch |
 | Naive softmax | Max-subtracted softmax | Identical on any input the reference handles; additionally keeps an all-failed proposal row from becoming NaN and poisoning every class's ranking |
 
 Two departures from the reference script itself (not from the paper), both
@@ -219,7 +219,7 @@ and gating are bit-identical — Grounding DINO, SAM2 and the depth gate select
 exactly the same three regions. Every difference is in scoring, and it comes
 from the two `square_crop` implementations, which are not the same function:
 
-| | reference (`cnos_match3.py:31`) | popoe (`segmentor_cnos_v3.py:41`) |
+| | reference (`cnos_match3.py:31`) | popoe (`segmentor_cnos_lab.py`, `square_crop`) |
 |---|---|---|
 | bbox | inclusive (`ys.max()`) | exclusive (`ys.max() + 1`) |
 | half-width | `(hw + int(hw*2*pad)) // 2` | `round(side * (0.5 + pad))` |
@@ -238,7 +238,7 @@ a decision.
 **Decision (2026-07-26): bit-parity is not pursued.** popoe's exclusive bbox is
 the geometrically correct one — the reference's inclusive bbox is an off-by-one
 — so aligning would mean freezing that off-by-one into this repo. The shared
-`square_crop` also serves CNOS-v3, an evaluated path, so changing it needs its
+`square_crop` also serves CNOS-lab, an evaluated path, so changing it needs its
 own A/B rather than a drive-by edit. What matters is recorded instead: the two
 crop conventions differ, the resulting score sensitivity is ~0.017, and any
 margin below that is a tie.

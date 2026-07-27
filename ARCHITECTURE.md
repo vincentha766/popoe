@@ -205,7 +205,7 @@ Every entry satisfies the same `Segmentor` protocol and stamps its origin into
 | `segmentor_nids.NIDSNetDetectionsSegmentor` | `nids` | file — NIDS-Net artefacts |
 | `segmentor_muse.MuseDetectionsSegmentor` | `muse-repro` | file — replay of dumped MUSE masks |
 | `segmentor_muse.MuseSegmentor` | `muse-repro` | live — GroundingDINO→SAM2→DINOv2; also its own producer |
-| `segmentor_cnos_v3.CNOSv3Segmentor` | `cnos-v3` | live — depth-size-gated foreground-patch CNOS |
+| `segmentor_cnos_lab.CNOSLabSegmentor` | `cnos-lab` | live — depth-size-gated foreground-patch CNOS (formerly `cnos-v3`) |
 | `segmentor_cnos.CNOSSegmentor` | `cnos-live` | live — SAM2 AMG proposes, DINOv2 matches |
 | `segmentor_cnos.DinoWindowSegmentor` | `dino-window` | live — DINOv2 multi-scale sliding-window matching |
 | `segmentor.SAMSegmentor` | `sam2-amg` | live — SAM2.1 automatic mask generator, class-agnostic |
@@ -240,7 +240,7 @@ dets = seg.segment(scene, obj)
 dets[0].source        # -> 'cnos' | 'sam6d' | 'nids' — which backend produced it
 ```
 
-The three CNOS source names (`cnos`, `cnos-v3`, `cnos-live` — see the inventory
+The three CNOS source names (`cnos`, `cnos-lab`, `cnos-live` — see the inventory
 above) are **reserved**: only the official producer's artefacts may be filed
 under `cnos`, for the same reason `muse` is reserved below.
 
@@ -265,7 +265,7 @@ public code**, so there is no producer to adapt (its masks, unlike its method,
 `data/detections/muse/`). What popoe carries is a reimplementation from the
 paper (arXiv 2510.17866), and it
 occupies both forms at once: `MuseSegmentor` computes masks from pixels like
-`CNOSv3Segmentor`, while `muse_records` / `write_muse_detections` dump those same
+`CNOSLabSegmentor`, while `muse_records` / `write_muse_detections` dump those same
 masks to a detections JSON, after which `MuseDetectionsSegmentor` replays them as
 an ordinary named source — GPU-free, unionable, archivable. See [MUSE.md](MUSE.md).
 
@@ -300,6 +300,29 @@ is an external **full pose** producer, so it is not a `Segmentor` at all:
 `segmentor_sam6d.SAM6DPemResultsCoarseEstimator` adapts PEM's BOP CSV or custom
 JSON outputs to `PoseHypothesis` through the separate `CoarseEstimator`
 contract, keeping it out of the FreeZe feature-solver contract.
+
+## Assembly: sharing the heavy models (`popoe.assembly`)
+
+Three components load their own DINOv2 ViT-g (~4.3 GB VRAM each) — MUSE's crop
+embedder, CNOS-lab's patch extractor, the pose encoders — and SAM2 is loaded
+independently by the MUSE refiner and the AMG proposers. Composed as separate
+processes the live ensemble plus pose does not fit a 24 GB card, and the
+overrun is entirely duplicate weights (measured: DEMO_SINGLE_GPU.md).
+
+`assembly.ModelPool` holds one lazily-loaded copy of each shared model; every
+model-owning component grew a matching injection parameter (`model=` on the
+DINOv2 pair, `sam_model=` on the SAM2 trio) that bypasses its own loader. The
+`*_from_pool` builders wire the existing segmentors and pose encoders around
+one pool. Two scoped departures from the usual rules: pool wiring loads the
+*pooled* models at build time, not first use (a resident service wants startup
+failures at startup — though unpooled components like MUSE's Grounding DINO
+still lazy-load on the first frame); and component `config()` identity still
+describes models by name —
+truthful because the pool is the single place a name resolves to weights.
+
+The service shell that would sit on top (HTTP, cameras, supervision) stays
+outside popoe (AGENTS.md boundary); this module only guarantees the library
+composes into one process without duplicate weights.
 
 ## BOP runner invariants
 

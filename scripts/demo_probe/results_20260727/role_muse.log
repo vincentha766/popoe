@@ -1,0 +1,14 @@
+[muse] cuda context               card_used= 31193 MiB  (+    0 since ctx) t=   0.4s 
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/1182 [00:00<?, ?it/s]Loading weights:  16%|█▌        | 184/1182 [00:00<00:00, 1838.70it/s]Loading weights:  33%|███▎      | 388/1182 [00:00<00:00, 1307.63it/s]Loading weights:  45%|████▍     | 529/1182 [00:00<00:00, 973.32it/s] Loading weights: 100%|██████████| 1182/1182 [00:00<00:00, 2005.63it/s]
+Using cache found in /workspace/torch_cache/hub/facebookresearch_dinov2_main
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/swiglu_ffn.py:51: UserWarning: xFormers is not available (SwiGLU)
+  warnings.warn("xFormers is not available (SwiGLU)")
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/attention.py:33: UserWarning: xFormers is not available (Attention)
+  warnings.warn("xFormers is not available (Attention)")
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/block.py:40: UserWarning: xFormers is not available (Block)
+  warnings.warn("xFormers is not available (Block)")
+[muse] models loaded              card_used= 36945 MiB  (+ 5752 since ctx) t= 118.1s 
+[muse] warmup done                card_used= 30180 MiB  (+-1013 since ctx) t= 121.7s units=20
+[muse] steady                     card_used=  7926 MiB  (+-23267 since ctx) t= 242.5s n_iter=46 mean=2.63s
+[RESULT] role=muse peak_card_delta=-23267 MiB mean_frame=2.625s n=46

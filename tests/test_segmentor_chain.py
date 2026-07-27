@@ -132,7 +132,7 @@ def test_an_oom_during_model_load_is_not_treated_as_unavailability(monkeypatch):
     monkeypatch.setattr(torch.hub, "load", _oom)
 
     from popoe.segmentor_cnos import DinoV2Backbone
-    from popoe.segmentor_cnos_v3 import DinoV2ForegroundPatchExtractor
+    from popoe.segmentor_cnos_lab import DinoV2ForegroundPatchExtractor
 
     for loader in (lambda: DinoV2Backbone(device="cpu").model,
                    lambda: DinoV2ForegroundPatchExtractor(device="cpu").model):

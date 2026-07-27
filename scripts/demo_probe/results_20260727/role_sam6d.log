@@ -1,0 +1,13 @@
+[sam6d_ism] cuda context               card_used= 30695 MiB  (+    0 since ctx) t=   0.0s 
+[sam6d_ism] +SAM ViT-H                 card_used= 34765 MiB  (+ 4070 since ctx) t=  21.4s 
+Using cache found in /workspace/torch_cache/hub/facebookresearch_dinov2_main
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/swiglu_ffn.py:43: UserWarning: xFormers is available (SwiGLU)
+  warnings.warn("xFormers is available (SwiGLU)")
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/attention.py:27: UserWarning: xFormers is available (Attention)
+  warnings.warn("xFormers is available (Attention)")
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/block.py:33: UserWarning: xFormers is available (Block)
+  warnings.warn("xFormers is available (Block)")
+[sam6d_ism] models loaded              card_used= 31085 MiB  (+  390 since ctx) t=  44.9s 
+[sam6d_ism] warmup done                card_used= 26317 MiB  (+-4378 since ctx) t=  69.0s units=177
+[sam6d_ism] steady                     card_used= 30200 MiB  (+ -495 since ctx) t= 191.2s n_iter=7 mean=17.44s
+[RESULT] role=sam6d_ism peak_card_delta=-495 MiB mean_frame=17.445s n=7

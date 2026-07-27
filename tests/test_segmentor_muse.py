@@ -5,7 +5,7 @@ import pytest
 
 from popoe.interfaces import ObjectModel, Scene
 from popoe.segmentor import SegmentorUnavailable
-from popoe.segmentor_cnos_v3 import DepthSizeGate
+from popoe.segmentor_cnos_lab import DepthSizeGate
 from popoe.segmentor_muse import (
     DESCRIPTOR_FIELDS,
     MUSE_SOURCE,

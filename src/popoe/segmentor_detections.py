@@ -431,7 +431,7 @@ class BOPDetectionsSegmentor:
             # Object not in the confusable set — leave scores alone.
             return dets
 
-        from popoe.segmentor_cnos_v3 import (
+        from popoe.segmentor_cnos_lab import (
             DepthSizeGate,
             DiameterSizeModel,
             select_by_nearest_diameter,

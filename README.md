@@ -186,7 +186,7 @@ CNOS naming is deliberately split:
 | Source | Meaning |
 |--------|---------|
 | `cnos` | Official CNOS/CNOS-FastSAM predictions, public BOP files, or `external/cnos` output |
-| `cnos-v3` | Local lab recipe: proposal masks -> depth size gate -> DINOv2 foreground-patch rank |
+| `cnos-lab` | Local lab recipe (formerly `cnos-v3`): proposal masks -> depth size gate -> DINOv2 foreground-patch rank |
 | `cnos-live` | Existing simplified live CNOS-style segmentor (`CNOSSegmentor`), not an official result |
 
 The ensemble's fourth member, **MUSE**, publishes neither code nor masks, so it

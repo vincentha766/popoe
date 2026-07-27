@@ -1,0 +1,62 @@
+[cnos_amg] CAP 6394 MiB (fraction 0.131 of 48640)
+[cnos_amg] cuda context               card=  1498 MiB | torch alloc=    0 peak_alloc=    0 reserved=    2 MiB | t=   0.0s 
+Using cache found in /workspace/torch_cache/hub/facebookresearch_dinov2_main
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/swiglu_ffn.py:51: UserWarning: xFormers is not available (SwiGLU)
+  warnings.warn("xFormers is not available (SwiGLU)")
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/attention.py:33: UserWarning: xFormers is not available (Attention)
+  warnings.warn("xFormers is not available (Attention)")
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/block.py:40: UserWarning: xFormers is not available (Block)
+  warnings.warn("xFormers is not available (Block)")
+[cnos_amg] models loaded              card=  8240 MiB | torch alloc= 5329 peak_alloc= 5329 reserved= 5340 MiB | t=  53.0s 
+Traceback (most recent call last):
+  File "/workspace/probe/probe_role.py", line 116, in <module>
+    n = work(); report("warmup done", f"units={n}")
+  File "/workspace/probe/probe_role.py", line 65, in work
+    return len(gen.generate(rgb))
+  File "/workspace/envs/muse/lib/python3.10/site-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+  File "/workspace/envs/muse/lib/python3.10/site-packages/sam2/automatic_mask_generator.py", line 196, in generate
+    mask_data = self._generate_masks(image)
+  File "/workspace/envs/muse/lib/python3.10/site-packages/sam2/automatic_mask_generator.py", line 233, in _generate_masks
+    crop_data = self._process_crop(image, crop_box, layer_idx, orig_size)
+  File "/workspace/envs/muse/lib/python3.10/site-packages/sam2/automatic_mask_generator.py", line 271, in _process_crop
+    batch_data = self._process_batch(
+  File "/workspace/envs/muse/lib/python3.10/site-packages/sam2/automatic_mask_generator.py", line 314, in _process_batch
+    masks, iou_preds, low_res_masks = self.predictor._predict(
+  File "/workspace/envs/muse/lib/python3.10/site-packages/torch/utils/_contextlib.py", line 116, in decorate_context
+    return func(*args, **kwargs)
+  File "/workspace/envs/muse/lib/python3.10/site-packages/sam2/sam2_image_predictor.py", line 420, in _predict
+    low_res_masks, iou_predictions, _, _ = self.model.sam_mask_decoder(
+  File "/workspace/envs/muse/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/workspace/envs/muse/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/workspace/envs/muse/lib/python3.10/site-packages/sam2/modeling/sam/mask_decoder.py", line 136, in forward
+    masks, iou_pred, mask_tokens_out, object_score_logits = self.predict_masks(
+  File "/workspace/envs/muse/lib/python3.10/site-packages/sam2/modeling/sam/mask_decoder.py", line 213, in predict_masks
+    hs, src = self.transformer(src, pos_src, tokens)
+  File "/workspace/envs/muse/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/workspace/envs/muse/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/workspace/envs/muse/lib/python3.10/site-packages/sam2/modeling/sam/transformer.py", line 95, in forward
+    queries, keys = layer(
+  File "/workspace/envs/muse/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/workspace/envs/muse/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/workspace/envs/muse/lib/python3.10/site-packages/sam2/modeling/sam/transformer.py", line 171, in forward
+    attn_out = self.cross_attn_token_to_image(q=q, k=k, v=keys)
+  File "/workspace/envs/muse/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/workspace/envs/muse/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/workspace/envs/muse/lib/python3.10/site-packages/sam2/modeling/sam/transformer.py", line 233, in forward
+    k = self.k_proj(k)
+  File "/workspace/envs/muse/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1736, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/workspace/envs/muse/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1747, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/workspace/envs/muse/lib/python3.10/site-packages/torch/nn/modules/linear.py", line 125, in forward
+    return F.linear(input, self.weight, self.bias)
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 256.00 MiB. GPU 0 has a total capacity of 47.50 GiB of which 38.62 GiB is free. Process 936516 has 2.34 GiB memory in use. Process 936518 has 6.53 GiB memory in use. 6.24 GiB allowed; Of the allocated memory 5.98 GiB is allocated by PyTorch, and 54.09 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)

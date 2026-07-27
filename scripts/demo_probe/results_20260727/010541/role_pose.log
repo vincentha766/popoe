@@ -1,0 +1,14 @@
+[pose] cuda context               card=  1000 MiB | torch alloc=    0 peak_alloc=    0 reserved=    2 MiB | t=   0.0s 
+Using cache found in /workspace/torch_cache/hub/facebookresearch_dinov2_main
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/swiglu_ffn.py:51: UserWarning: xFormers is not available (SwiGLU)
+  warnings.warn("xFormers is not available (SwiGLU)")
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/attention.py:33: UserWarning: xFormers is not available (Attention)
+  warnings.warn("xFormers is not available (Attention)")
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/block.py:40: UserWarning: xFormers is not available (Block)
+  warnings.warn("xFormers is not available (Block)")
+/workspace/envs/dGeDi/lib/python3.10/site-packages/torch/_utils.py:831: UserWarning: TypedStorage is deprecated. It will be removed in the future and UntypedStorage will be the only storage class. This should only matter to you if you are using storages directly.  To access UntypedStorage directly, use tensor.untyped_storage() instead of tensor.storage()
+  return self.fget.__get__(instance, owner)()
+[pose] models loaded              card=  6384 MiB | torch alloc= 4359 peak_alloc= 4359 reserved= 4372 MiB | t=  43.7s 
+[pose] warmup done                card= 14336 MiB | torch alloc= 4367 peak_alloc= 5218 reserved= 5320 MiB | t=  50.6s units=5
+[pose] steady                     card=  5862 MiB | torch alloc= 4367 peak_alloc= 5218 reserved= 5320 MiB | t= 111.9s n_iter=34 mean=1.80s
+[RESULT] role=pose torch_peak_alloc=5218 MiB torch_reserved=5320 MiB card_now=5862 MiB mean_frame=1.799s n=34

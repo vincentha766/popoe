@@ -8,7 +8,7 @@ not a footnote. The authors' *masks*, unlike their method, are obtainable —
 their BOP submissions are public (see MUSE.md, Upstream Status) — so ``muse``
 names real downloaded files, never anything this module writes.
 
-Naming (same discipline as CNOS's ``cnos`` / ``cnos-v3`` / ``cnos-live`` split):
+Naming (same discipline as CNOS's ``cnos`` / ``cnos-lab`` / ``cnos-live`` split):
 
 ============  ==============================================================
 ``muse``      RESERVED for official MUSE artefacts. Nothing here writes it.
@@ -24,7 +24,7 @@ Two halves, because MUSE has to be both kinds of segmentor at once
 (see ARCHITECTURE.md, "Segmentation backends"):
 
 * **live** — ``MuseSegmentor`` computes masks from pixels, like
-  ``CNOSv3Segmentor``. This is what runs on a freshly captured frame.
+  ``CNOSLabSegmentor``. This is what runs on a freshly captured frame.
 * **producer** — ``muse_records`` / ``write_muse_detections`` dump the same
   masks to a BOP-format detections JSON, so the result becomes a file-backed
   source like every other backend: it can join a ``BOPDetectionsSegmentor``
@@ -50,7 +50,7 @@ numbers being read as an exact replication):
 * A depth-based 3D-extent size gate runs after proposal. MUSE has none (its BOP
   results are RGB-only); we keep it because it is cheap and directly targets the
   printed-text confuser failure mode seen on this project's real shots.
-* No union-bbox box-prompt refinement pass (CNOS-v3 has one); the GD+SAM2
+* No union-bbox box-prompt refinement pass (CNOS-lab has one); the GD+SAM2
   cascade is the paper's single largest ablation lever and should not need it.
 * Matching defaults to cosine(class token) + Tanimoto(GeM patch). Paper
   Eqs. (2)–(3) write cosine for both streams (prose also names Tanimoto);
@@ -77,7 +77,7 @@ from popoe.cache import fingerprint
 from popoe.interfaces import Detection, ObjectModel, Scene, is_runtime_failure
 from popoe.segmentor import SegmentorUnavailable, build_sam2_model
 from popoe.segmentor_detections import BOPDetectionsSegmentor
-from popoe.segmentor_cnos_v3 import (
+from popoe.segmentor_cnos_lab import (
     GRID,
     PatchForegroundScorer,
     DepthSizeGate,
@@ -106,7 +106,7 @@ DEFAULT_GAMMA = 0.1      # objectness confidence exponent
 DEFAULT_GEM_P = 1.5      # GeM pooling exponent (Radenovic et al.)
 DEFAULT_PROMPT = "items."
 DEFAULT_GDINO_MODEL = "IDEA-Research/grounding-dino-base"
-#: MUSE keeps small proposals CNOS-v3 would drop, so the gate's pixel floor is
+#: MUSE keeps small proposals CNOS-lab would drop, so the gate's pixel floor is
 #: lower here than that segmentor's 8000.
 DEFAULT_MIN_PIXELS = 2000
 
@@ -377,10 +377,15 @@ class SAM2BoxMaskRefiner:
     source = "sam2-box"
 
     def __init__(self, device: str = "cuda", model_size: str = "large",
-                 sam_ckpt_dir: Optional[str] = None):
+                 sam_ckpt_dir: Optional[str] = None,
+                 sam_model=None):
+        # sam_model: a prebuilt SAM2 model to wrap instead of loading one —
+        # the sharing seam (popoe.assembly). Must be the checkpoint that
+        # model_size names: config() keeps describing the weights by size.
         self.device = device
         self.model_size = model_size
         self.sam_ckpt_dir = sam_ckpt_dir
+        self._sam_model = sam_model
         self._predictor = None
 
     def _load(self):
@@ -391,8 +396,10 @@ class SAM2BoxMaskRefiner:
                 raise SegmentorUnavailable(
                     "sam2 not installed: pip install git+https://github.com/"
                     "facebookresearch/sam2.git") from e
-            self._predictor = SAM2ImagePredictor(
-                build_sam2_model(self.model_size, self.device, self.sam_ckpt_dir))
+            model = (self._sam_model if self._sam_model is not None else
+                     build_sam2_model(self.model_size, self.device,
+                                      self.sam_ckpt_dir))
+            self._predictor = SAM2ImagePredictor(model)
         return self._predictor
 
     def config(self) -> dict:
@@ -435,7 +442,12 @@ class DinoV2ClsGemEmbedder:
                  grid: int = GRID, gem_p: float = DEFAULT_GEM_P,
                  fg_threshold: float = 0.4,
                  mask_rgb: bool = True,
-                 gem_tokens: str = "all"):
+                 gem_tokens: str = "all",
+                 model=None):
+        # model: a preloaded DINOv2 module to use instead of loading one —
+        # the sharing seam (popoe.assembly). Must be the weights that
+        # model_name names, on `device`: config() keeps describing them by
+        # name, so cache identities stay truthful only if the two agree.
         self.device = device
         self.model_name = model_name
         self.grid = int(grid)
@@ -449,7 +461,7 @@ class DinoV2ClsGemEmbedder:
             raise ValueError(f"gem_tokens must be 'fg' or 'all', got {gem_tokens!r}")
         self.gem_tokens = gt
         self._patch_mask = PatchForegroundScorer(grid=grid, fg_threshold=fg_threshold)
-        self._model = None
+        self._model = model
         self._mean = None
         self._std = None
 
@@ -469,11 +481,16 @@ class DinoV2ClsGemEmbedder:
                     raise
                 raise SegmentorUnavailable(
                     f"DINOv2 ({self.model_name}) load failed: {e}") from e
+        return self._model
+
+    def _ensure_norm_stats(self):
+        # Split out of the loader so an injected model gets them too.
+        if self._mean is None:
+            import torch
             self._mean = torch.tensor([0.485, 0.456, 0.406],
                                       device=self.device).view(1, 3, 1, 1)
             self._std = torch.tensor([0.229, 0.224, 0.225],
                                      device=self.device).view(1, 3, 1, 1)
-        return self._model
 
     def config(self) -> dict:
         return {"model_name": self.model_name, "grid": self.grid,
@@ -486,6 +503,7 @@ class DinoV2ClsGemEmbedder:
         model = self.model      # guards torch: missing -> SegmentorUnavailable
         import torch
 
+        self._ensure_norm_stats()
         rgb = np.asarray(rgb_crop, dtype=np.uint8)
         if self.mask_rgb:
             m = np.asarray(fg_mask, dtype=bool)
@@ -513,7 +531,7 @@ class DinoV2ClsGemEmbedder:
 class MuseTemplateBank:
     """Per-class ``(cls, gem)`` bank over rendered template PNGs.
 
-    Same PNG convention as CNOS-v3 (alpha channel when present, else a
+    Same PNG convention as CNOS-lab (alpha channel when present, else a
     near-black background threshold), so one rendered template set serves both
     segmentors.
     """
@@ -594,7 +612,7 @@ class MuseSceneResult:
 class MuseSegmentor:
     """MUSE reimplementation as a live ``Segmentor``.
 
-    Two things make this NOT a copy of ``CNOSv3Segmentor``'s shape, both
+    Two things make this NOT a copy of ``CNOSLabSegmentor``'s shape, both
     consequences of MUSE scoring classes jointly:
 
     1. **The relative score needs every class at once.** ``Segmentor.segment``
@@ -848,6 +866,8 @@ def build_muse_segmentor(classes: Sequence[MuseClass],
                          max_extent_ratio: float = 1.1,
                          mask_rgb: bool = True,
                          gem_tokens: str = "all",
+                         embedder: Optional[DinoV2ClsGemEmbedder] = None,
+                         refiner: Optional[SAM2BoxMaskRefiner] = None,
                          **kwargs) -> MuseSegmentor:
     """Wire the real GPU components. Construction stays lazy — nothing loads
     until the first ``segment``, so an unavailable backend surfaces at the call
@@ -857,15 +877,23 @@ def build_muse_segmentor(classes: Sequence[MuseClass],
     proposal regime). Relaxed ratios only apply when the gate is enabled.
     Defaults (G3 2026-07-26): ``mask_rgb=True`` + ``gem_tokens="all"`` —
     paper sec 4.1 object-region embedding; lifts LMO AP 0.23→0.39, YCB-V→0.68.
+
+    ``embedder``/``refiner`` accept prebuilt components so their heavy models
+    can be shared across segmentors (popoe.assembly). A given embedder also
+    feeds the template bank; ``dinov2_model``/``mask_rgb``/``gem_tokens`` (resp.
+    ``sam2_size``/``sam_ckpt_dir``) are then ignored — the prebuilt component
+    already fixed them.
     """
-    embedder = DinoV2ClsGemEmbedder(
-        device=device, model_name=dinov2_model,
-        mask_rgb=mask_rgb, gem_tokens=gem_tokens)
+    if embedder is None:
+        embedder = DinoV2ClsGemEmbedder(
+            device=device, model_name=dinov2_model,
+            mask_rgb=mask_rgb, gem_tokens=gem_tokens)
     return MuseSegmentor(
         classes,
         proposer=GroundingDinoBoxProposer(gdino_model, prompt, box_threshold,
                                           text_threshold, device),
-        refiner=SAM2BoxMaskRefiner(device, sam2_size, sam_ckpt_dir),
+        refiner=(refiner if refiner is not None else
+                 SAM2BoxMaskRefiner(device, sam2_size, sam_ckpt_dir)),
         embedder=embedder,
         template_bank=MuseTemplateBank({c.obj.obj_id: c.template_dir
                                         for c in classes}, embedder),

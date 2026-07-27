@@ -3,8 +3,8 @@ import pytest
 
 from popoe.interfaces import ObjectModel, Scene
 from popoe.segmentor import SegmentorUnavailable
-from popoe.segmentor_cnos_v3 import (
-    CNOSv3Segmentor,
+from popoe.segmentor_cnos_lab import (
+    CNOSLabSegmentor,
     DepthSizeGate,
     DiameterSizeModel,
     PatchForegroundScorer,
@@ -81,10 +81,10 @@ class _Scorer:
         return float(mask.sum())
 
 
-def test_cnos_v3_segmentor_sorts_and_stamps_source():
+def test_cnos_lab_segmentor_sorts_and_stamps_source():
     small = _mask(1, 8, 1, 8)
     large = _mask(10, 30, 10, 30)
-    seg = CNOSv3Segmentor(
+    seg = CNOSLabSegmentor(
         proposer=_Proposer([small, large]),
         template_bank=_Bank(),
         scorer=_Scorer(),
@@ -95,17 +95,17 @@ def test_cnos_v3_segmentor_sorts_and_stamps_source():
     dets = seg.segment(_scene(), ObjectModel(9, "x", diameter=0.25))
 
     assert len(dets) == 1
-    assert dets[0].source == "cnos-v3"
+    assert dets[0].source == "cnos-lab"
     assert dets[0].score == pytest.approx(float(large.sum()))
     assert dets[0].bbox == (10.0, 10.0, 30.0, 30.0)
 
 
-def test_cnos_v3_reuses_template_bank_scorer_when_not_explicit():
+def test_cnos_lab_reuses_template_bank_scorer_when_not_explicit():
     class BankWithScorer(_Bank):
         scorer = _Scorer()
 
     large = _mask(10, 30, 10, 30)
-    seg = CNOSv3Segmentor(
+    seg = CNOSLabSegmentor(
         proposer=_Proposer([large]),
         template_bank=BankWithScorer(),
         size_gate=_Gate(),
@@ -117,9 +117,9 @@ def test_cnos_v3_reuses_template_bank_scorer_when_not_explicit():
     assert dets[0].score == pytest.approx(float(large.sum()))
 
 
-def test_cnos_v3_requires_explicit_heavy_components():
+def test_cnos_lab_requires_explicit_heavy_components():
     with pytest.raises(SegmentorUnavailable, match="mask proposer"):
-        CNOSv3Segmentor().segment(_scene(), ObjectModel(9, "x", diameter=0.25))
+        CNOSLabSegmentor().segment(_scene(), ObjectModel(9, "x", diameter=0.25))
 
 
 def test_diameter_size_model_prefers_matching_extent():

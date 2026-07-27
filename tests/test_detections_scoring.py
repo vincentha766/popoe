@@ -78,7 +78,7 @@ def _pf(pts, feats):
 def test_size_select_nearest_prefers_matching_extent(tmp_path, masks):
     """Mask-stage nearest-diameter should flip a high-score wrong-size mask."""
     from popoe.segmentor_detections import BOPDetectionsSegmentor
-    from popoe.segmentor_cnos_v3 import DepthSizeGate
+    from popoe.segmentor_cnos_lab import DepthSizeGate
 
     # Synthetic depth: constant Z so extent ≈ 3D bbox diagonal of mask.
     H, W = 48, 64

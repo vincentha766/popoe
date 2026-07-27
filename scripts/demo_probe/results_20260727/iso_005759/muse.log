@@ -1,0 +1,14 @@
+[muse] cuda context               card=   502 MiB | torch alloc=    0 peak_alloc=    0 reserved=    2 MiB | t=   0.0s 
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/1182 [00:00<?, ?it/s]Loading weights:  47%|████▋     | 551/1182 [00:00<00:00, 5356.76it/s]Loading weights: 100%|██████████| 1182/1182 [00:00<00:00, 6780.88it/s]
+Using cache found in /workspace/torch_cache/hub/facebookresearch_dinov2_main
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/swiglu_ffn.py:51: UserWarning: xFormers is not available (SwiGLU)
+  warnings.warn("xFormers is not available (SwiGLU)")
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/attention.py:33: UserWarning: xFormers is not available (Attention)
+  warnings.warn("xFormers is not available (Attention)")
+/workspace/torch_cache/hub/facebookresearch_dinov2_main/dinov2/layers/block.py:40: UserWarning: xFormers is not available (Block)
+  warnings.warn("xFormers is not available (Block)")
+[muse] models loaded              card=  6728 MiB | torch alloc= 6219 peak_alloc= 6219 reserved= 6228 MiB | t=  44.9s 
+[muse] warmup done                card=  7904 MiB | torch alloc= 6244 peak_alloc= 7316 reserved= 7392 MiB | t=  46.5s units=20
+[muse] steady                     card=  7924 MiB | torch alloc= 6244 peak_alloc= 7332 reserved= 7412 MiB | t=  76.9s n_iter=21 mean=1.45s
+[RESULT] role=muse torch_peak_alloc=7332 MiB torch_reserved=7412 MiB card_now=7924 MiB mean_frame=1.446s n=21
