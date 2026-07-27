@@ -102,9 +102,13 @@ def resolve_layout(bop: Path, dataset=None, split=None, models_dir=None):
     try:
         return name, bop_layout(name, split=split, models_dir=models_dir)
     except ValueError as e:
+        # Two ways to get here deserve two hints: telling someone who already
+        # passed --dataset to "pass --dataset explicitly" answers nothing.
+        hint = (f"--dataset {dataset!r} is not a known dataset" if dataset
+                else f"--bop basename {bop.name!r} does not name a dataset; "
+                     f"pass --dataset explicitly")
         raise SystemExit(
-            f"{e}\n--bop basename {bop.name!r} does not name a dataset; pass "
-            f"--dataset explicitly (layout and the 'auto' merge depend on it).")
+            f"{e}\n{hint} (layout and the 'auto' merge depend on it).")
 
 
 def resolve_merge(merge_arg, dataset):
@@ -129,18 +133,32 @@ def resolve_merge(merge_arg, dataset):
 
 def read_frame_images(sdir: Path, im_id: int, layout):
     """Read one image's (bgr, raw depth), or raise FileNotFoundError naming
-    the file. cv2.imread returns None for missing and unreadable files alike,
-    so the None check must sit this close to the read. itodd's single-channel
-    gray/*.tif comes back replicated to 3 channels by the default IMREAD_COLOR
-    — the standard way to feed a gray set to an RGB visual branch."""
+    the file (cv2.imread returns None for missing and unreadable files alike,
+    so the None check must sit this close to the read — the message says so).
+
+    A gray modality (itodd) is read UNCHANGED and replicated to 3 channels
+    explicitly. IMREAD_COLOR would do the replication too, but it also
+    silently shifts a 16-bit image down to its top 8 bits — near-black input
+    reaching the visual branch with no error anywhere. Until someone chooses
+    a tone mapping deliberately, a non-uint8 gray image is fatal."""
     depth_path = sdir / "depth" / f"{im_id:06d}{layout['depth_ext']}"
     img_path = sdir / layout["img_dir"] / f"{im_id:06d}{layout['img_ext']}"
     depth_raw = cv2.imread(str(depth_path), cv2.IMREAD_UNCHANGED)
-    rgb_bgr = cv2.imread(str(img_path))
-    if depth_raw is None or rgb_bgr is None:
+    gray = layout["img_dir"] == "gray"
+    img = cv2.imread(str(img_path),
+                     cv2.IMREAD_UNCHANGED if gray else cv2.IMREAD_COLOR)
+    if depth_raw is None or img is None:
         missing = depth_path if depth_raw is None else img_path
         raise FileNotFoundError(str(missing))
-    return rgb_bgr, depth_raw
+    if gray:
+        if img.dtype != np.uint8:
+            raise SystemExit(
+                f"{img_path} decodes to {img.dtype}, not uint8 — a 16-bit "
+                f"gray image needs a deliberate tone-mapping choice; refusing "
+                f"to shift to the top 8 bits implicitly.")
+        if img.ndim == 2:
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+    return img, depth_raw
 
 
 def floored_topk(user_topk, max_inst):
@@ -599,11 +617,11 @@ def main():
     # and the run ends with a summary instead of a clean-looking "done".
     failures: dict = {}
 
-    def note_failure(stage, obj_id, e):
+    def note_failure(stage, label, e):
         import traceback
         key = (stage, type(e).__name__)
         failures[key] = failures.get(key, 0) + 1
-        print(f"[FAIL {stage}] obj{obj_id}: {type(e).__name__}: {e}", flush=True)
+        print(f"[FAIL {stage}] {label}: {type(e).__name__}: {e}", flush=True)
         if failures[key] == 1:
             traceback.print_exc()
 
@@ -618,9 +636,18 @@ def main():
             if not pending:
                 continue
             sdir = bop / layout["split"] / f"{scene_id:06d}"
-            cam = json.load(open(sdir / "scene_camera.json"))[str(im_id)]
-            K = np.array(cam["cam_K"]).reshape(3, 3)
             try:
+                # scene_camera.json inside the try: a missing SCENE (wrong
+                # --split, partial download) must hit the same fatal-or-skip
+                # policy as a missing image, not leak a bare traceback.
+                cams = json.load(open(sdir / "scene_camera.json"))
+                if str(im_id) not in cams:
+                    raise SystemExit(
+                        f"im_id {im_id} absent from {sdir}/scene_camera.json "
+                        f"— the targets file and the data tree disagree; not "
+                        f"skippable.")
+                cam = cams[str(im_id)]
+                K = np.array(cam["cam_K"]).reshape(3, 3)
                 rgb_bgr, depth_raw = read_frame_images(sdir, im_id, layout)
             except FileNotFoundError as e:
                 # An unreadable image is FATAL by default. Writing zero rows
@@ -629,15 +656,17 @@ def main():
                 # dataset as a clean-looking all-zero CSV instead of crashing.
                 if not args.allow_missing_images:
                     raise SystemExit(
-                        f"cannot read {e}.\nA missing image aborts the run "
-                        f"(--allow-missing-images to write zero rows instead); "
-                        f"check the dataset/--split/--models-dir resolution "
-                        f"printed at startup.")
+                        f"cannot read {e} (file missing or undecodable).\n"
+                        f"Aborting rather than writing zero rows "
+                        f"(--allow-missing-images opts back in). If EVERY "
+                        f"image fails, the layout is wrong — check the "
+                        f"dataset/split/models line printed at startup; a "
+                        f"single failure is more likely a corrupt file.")
                 # Opt-in skip keeps the completion invariant: inst_count rows
                 # per target, or resume classifies this as a mid-target crash
                 # and re-runs it forever (the image will still be missing).
                 # Counted, so the run cannot end with a clean-looking "done".
-                note_failure("load_image", "-", e)
+                note_failure("load_image", f"im {scene_id}/{im_id}", e)
                 for o, n in pending:
                     for _ in range(n):
                         wr.writerow([scene_id, im_id, o, 0.0, IDN, ZT, "0.0"])
@@ -663,7 +692,7 @@ def main():
                 try:
                     dets = segmentor.segment(scene, obj)
                 except Exception as e:
-                    note_failure("segment", obj_id, e)
+                    note_failure("segment", f"obj{obj_id}", e)
                     dets = []
                 for ci, det in enumerate(dets):
                     try:
@@ -672,7 +701,7 @@ def main():
                     except Exception as e:
                         # Often a degenerate mask cloud (e.g. GeDi LRF) — but
                         # logged, because "often" is not "always".
-                        note_failure("encode_target", obj_id, e)
+                        note_failure("encode_target", f"obj{obj_id}", e)
                         continue
                     if len(tgt.pts) < 4:
                         continue
@@ -697,7 +726,7 @@ def main():
                                            if args.score_coarse else [])
                                         + [args.solver])
                         except Exception as e:
-                            note_failure("solve/refine/score", obj_id, e)
+                            note_failure("solve/refine/score", f"obj{obj_id}", e)
                             continue
                 elapsed = f"{time.time()-t_start:.3f}"
                 buffered[obj_id] = (inst_count, hyps_by_det, elapsed)

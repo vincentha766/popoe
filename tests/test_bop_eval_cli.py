@@ -285,3 +285,28 @@ def test_read_frame_images_names_the_missing_file(bop_eval, tmp_path):
     (sdir / "depth" / "000003.png").unlink()
     with pytest.raises(FileNotFoundError, match="depth"):
         bop_eval.read_frame_images(sdir, 3, lay)
+
+
+def test_read_frame_images_16bit_gray_is_fatal(bop_eval, tmp_path):
+    """IMREAD_COLOR would shift a 16-bit gray image to its top 8 bits and
+    hand a near-black frame to the visual branch with no error anywhere.
+    The gray path reads UNCHANGED and refuses non-uint8 instead."""
+    import cv2
+    from popoe.datasets.bop import bop_layout
+    lay = bop_layout("itodd")
+    sdir = tmp_path / "000001"
+    (sdir / "depth").mkdir(parents=True)
+    (sdir / "gray").mkdir()
+    cv2.imwrite(str(sdir / "depth" / "000003.tif"),
+                np.full((8, 8), 1000, np.uint16))
+    cv2.imwrite(str(sdir / "gray" / "000003.tif"),
+                np.full((8, 8), 30000, np.uint16))
+    with pytest.raises(SystemExit, match="uint8"):
+        bop_eval.read_frame_images(sdir, 3, lay)
+
+
+def test_resolve_layout_blames_the_flag_that_was_passed(bop_eval, tmp_path):
+    """A typo'd --dataset must not be answered with 'pass --dataset
+    explicitly' — that hint belongs to the basename-inference path only."""
+    with pytest.raises(SystemExit, match="--dataset 'tles' is not"):
+        bop_eval.resolve_layout(tmp_path / "bop", dataset="tles")

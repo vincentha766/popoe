@@ -1,9 +1,11 @@
 """Minimal BOP dataset helpers — find instances and load BOP RGB-D frames.
 
-Standard BOP layout under `bop_root`:
+Common BOP layout under `bop_root`:
     test/000048/rgb/000001.png  depth/000001.png  mask_visib/000001_000002.png
                 scene_camera.json  scene_gt.json
     models/obj_000005.ply
+Not every dataset follows it — split dir, image modality/extension and models
+dir vary per dataset; the deviations are tabulated in BOP_LAYOUTS below.
 Depth is returned in METRES (raw uint16 * depth_scale / 1000).
 """
 import glob

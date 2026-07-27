@@ -135,3 +135,40 @@ def test_cli_rejects_a_non_pose_csv(tn, tmp_path, monkeypatch):
                                       "--out", str(tmp_path / "o.csv")])
     with pytest.raises(SystemExit, match="missing column"):
         tn.main()
+
+
+def test_negative_time_is_fatal_in_sum_mode(tn):
+    """Re-normalizing is a silent corruption: summing an already-normalized
+    file multiplies each image's time by its target count and the result
+    still passes the server's per-image consistency check. Negative values
+    are the detectable half (a -1 file re-summed would submit -N), so they
+    refuse loudly."""
+    with pytest.raises(SystemExit, match="negative"):
+        tn.normalize([_row(1, 3, 7, "-1")], [], "sum")
+
+
+def test_cli_neg1_ignores_detections(tn, tmp_path, monkeypatch):
+    """neg1 is the documented escape hatch when a detections file has no
+    time field — so that file must not be parsed (and fatal) in neg1 mode."""
+    raw = tmp_path / "raw.csv"
+    out = tmp_path / "sub.csv"
+    dets = tmp_path / "no_time.json"
+    _write_csv(raw, _ROWS)
+    dets.write_text(json.dumps([{"scene_id": 1, "image_id": 3,
+                                 "category_id": 7, "score": 0.9}]))
+    monkeypatch.setattr(sys, "argv", ["bop_time_normalize", str(raw),
+                                      "--out", str(out), "--mode", "neg1",
+                                      "--detections", str(dets)])
+    tn.main()
+    got = list(csv.DictReader(open(out)))
+    assert all(r["time"] == "-1" for r in got)
+
+
+def test_cli_overwrite_guard_survives_path_spelling(tn, tmp_path, monkeypatch):
+    raw = tmp_path / "raw.csv"
+    _write_csv(raw, _ROWS)
+    dotted = str(tmp_path / "." / "raw.csv")
+    monkeypatch.setattr(sys, "argv", ["bop_time_normalize", str(raw),
+                                      "--out", dotted])
+    with pytest.raises(SystemExit, match="differ"):
+        tn.main()

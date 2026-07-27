@@ -23,6 +23,12 @@ normalized file is derived from it. `--mode neg1` writes the always-compliant
 -1 instead (when timing is not worth reporting, or a legacy CSV has no
 usable time column).
 
+Run ONCE, on the raw CSV. The output is not valid input: normalization is a
+sum, so summing again multiplies each image's time by its target count — and
+the result still passes the server's per-image consistency check, so nothing
+downstream would notice. Negative times are refused for the same reason (a
+-1 file re-summed would silently submit -N as "not reported").
+
 Usage:
   python examples/bop_time_normalize.py raw.csv --out METHOD_ycbv-test.csv \
       [--detections cnos.json --detections sam6d.json] [--mode sum|neg1]
@@ -33,6 +39,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 
 HEADER = ["scene_id", "im_id", "obj_id", "score", "R", "t", "time"]
 
@@ -56,6 +63,12 @@ def target_times(rows):
                 f"row {key} has no usable time value "
                 f"({r.get('time', '')!r}); this CSV cannot be normalized by "
                 f"summation — use --mode neg1.")
+        if t < 0:
+            raise SystemExit(
+                f"row {key} has negative time {t}. Sum mode needs the RAW "
+                f"bop_eval CSV; a -1 (or already-normalized) file cannot be "
+                f"re-normalized — re-summing would silently corrupt the "
+                f"column while still passing the server's per-image check.")
         if key in out and abs(out[key] - t) > 1e-9:
             raise SystemExit(
                 f"target {key} carries two different time values "
@@ -119,7 +132,9 @@ def main():
                          "+ detection time; neg1: uniform -1 (time not "
                          "reported — always compliant)")
     args = ap.parse_args()
-    if args.out == args.csv_in:
+    # realpath: "dir/./raw.csv" and symlinks must not slip past a guard whose
+    # whole purpose is keeping the raw per-target measurement intact.
+    if os.path.realpath(args.out) == os.path.realpath(args.csv_in):
         raise SystemExit("--out must differ from the input; the raw "
                          "per-target measurement is worth keeping.")
 
@@ -131,11 +146,19 @@ def main():
                              f"expected a bop_eval pose CSV {HEADER}")
         rows = list(rd)
 
-    det_maps = [detection_times(p) for p in args.detections]
+    # neg1 reports no time at all, so the detections files must not even be
+    # parsed: a file that would be fatal in sum mode (no time field) cannot
+    # block the very mode that error message recommends as the way out.
+    if args.mode == "neg1" and args.detections:
+        print("--mode neg1 ignores --detections (no time is reported)",
+              flush=True)
+    det_maps = ([] if args.mode == "neg1"
+                else [detection_times(p) for p in args.detections])
     out_rows, uncovered = normalize(rows, det_maps, args.mode)
     if uncovered:
         print(f"{uncovered} (image, detections-file) pairs had no detection "
-              f"entry; those images carry pose time only", flush=True)
+              f"entry; those images' time is missing that file's detection "
+              f"component", flush=True)
 
     with open(args.out, "w", newline="") as f:
         wr = csv.writer(f)
