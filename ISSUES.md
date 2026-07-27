@@ -434,9 +434,45 @@ The contract had been stated, tested at the segmentor boundary, and cited in
 `ARCHITECTURE.md` for two weeks while the layer feeding every reported number
 still had three fallbacks in it.
 
-Open (not addressed here): `bop_eval` has no `--seed`, so
-`Open3DFeatureRansacSolver(seed=...)` is reachable only from the demo and
-REPRODUCTION.md's "tighten to bit-identical if the run is seeded" is
-unreachable; the 07-26 solver A/B numbers still have no ledger row; and
-`solver_swap_demo` prints recall@0.05/0.1/0.2d while both doc tables quote
-@0.2d and @0.5d.
+The same sweep found three smaller things, all since fixed (`d691349`,
+`698ffd5`, `05baa0a`):
+
+4. **The seed knob was unreachable.** `Open3DFeatureRansacSolver(seed=...)`
+   landed in `42c916e`, but `_build_solver` never passed one and `bop_eval` had
+   no flag — so it could only be set by constructing the solver by hand, and
+   the mainline `--solver o3d` stayed non-reproducible. `bop_eval --seed` now
+   wires it through (default `None` = historical unseeded, nothing shifts). The
+   seed stays OUT of the encoder cache key on purpose: it moves poses, not
+   features, so keying it would invalidate every pod cache for nothing.
+5. **`solver_swap_demo` could not print one of its own quoted columns.** The
+   summary emitted recall @0.05/0.1/0.2d while the ARCHITECTURE.md table quotes
+   @0.2d and @0.5d. Thresholds and labels now come from one tuple.
+6. **`registration._geometric_prune` was dead** — zero references;
+   `ransac_pose_estimation` inlines a simpler two-point check instead.
+
+### A withdrawn finding, and why it was wrong
+
+The sweep also claimed the 07-26 solver A/B numbers had "no surviving raw
+artefact" and so shared the status of the table they replaced. **That is
+withdrawn.** It came from checking a worktree where `outputs/` — correctly
+gitignored — simply did not exist, and was never verified against the machine
+that ran the campaign.
+
+The artefacts are intact and properly stamped: `outputs/solver_swap_20260726/`
+carries PROVENANCE files with commit hash (`63c5e7d`), pod, fresh-clone path
+and timestamp, the run logs, and a README recording the withdrawal. Every cited
+number was recomputed from the 140 per-instance rows of `mssd140_run.log` and
+reproduces exactly — all three medians, all six recalls, `recall@0.1d = 0.000`
+for all three, and the 72/33/35 head-to-head. The run log has no summary block
+because the pod died at 140, which is why the figures were derived post-hoc;
+that is a recorded circumstance, not a missing artefact.
+
+What remains is only that REPRODUCTION.md has no cross-reference row pointing
+at them — and whether the ledger rule even applies is a judgement call, since
+ARCHITECTURE.md states outright that the table "is not a performance claim for
+popoe". Left open deliberately.
+
+Lesson, second order: "I could not find it" is not "it does not exist". A
+provenance complaint is itself a claim about artefacts and needs the same
+standard of evidence it demands — check the host that produced the run before
+telling someone their numbers are unverified.
