@@ -164,6 +164,18 @@ def main():
                          "solver changes score/R/t, so use a FRESH --out and "
                          "--cand-csv: resume/append are keyed by rows, not "
                          "config (as with --use-s-coarse/--merge/--weights).")
+    ap.add_argument("--seed", type=int, default=None,
+                    help="seed the solver's RNG. Default None = the historical "
+                         "UNSEEDED mainline: Open3D's RANSAC draws from a global "
+                         "RNG it never seeds, so --solver o3d runs are not "
+                         "reproducible run-to-run. Pass a seed for anything whose "
+                         "numbers get cited — REPRODUCTION.md's acceptance rule "
+                         "tightens to bit-identical for seeded runs. Seeding "
+                         "changes score/R/t, so use a FRESH --out and --cand-csv. "
+                         "Ignored by --solver teaser (no RNG); overrides the gpu "
+                         "solvers' own default 42. Feature caches are NOT affected "
+                         "— the seed moves poses, not features, so it is "
+                         "deliberately absent from the encoder cache key.")
     ap.add_argument("--merge", default="ycbv",
                     help="'ycbv' for the clamp pair, 'none', or '19:20,...'")
     ap.add_argument("--size-select", default="none",
@@ -300,6 +312,11 @@ def main():
         if not merge:
             raise SystemExit("--dual-assign requires --merge with a confusable pair")
         print(f"dual_assign=ON merge={merge}", flush=True)
+    # Provenance: reproducibility is a property of the RUN, so it belongs in the
+    # log next to the numbers, not only in the shell history that produced them.
+    print(f"solver={args.solver} seed={args.seed} "
+          f"({'reproducible' if args.seed is not None else 'UNSEEDED — o3d poses vary run-to-run'})",
+          flush=True)
     q_enc, t_enc = best_encoders(target_grid=args.grid,
                                  render_backend=args.render_backend)
     selector = BestScoreSelector()
@@ -392,7 +409,7 @@ def main():
         stages = stages_for_object(extent, size_aware=obj_id in merge,
                                    score_coarse=args.score_coarse,
                                    use_s_coarse=args.use_s_coarse,
-                                   solver=args.solver)
+                                   solver=args.solver, seed=args.seed)
         query_cache[obj_id] = (obj, q, stages)
         print(f"  obj{obj_id}: extent={extent*1000:.0f}mm "
               f"encode={time.time()-t0:.1f}s", flush=True)
