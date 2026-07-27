@@ -301,6 +301,29 @@ is an external **full pose** producer, so it is not a `Segmentor` at all:
 JSON outputs to `PoseHypothesis` through the separate `CoarseEstimator`
 contract, keeping it out of the FreeZe feature-solver contract.
 
+## Assembly: sharing the heavy models (`popoe.assembly`)
+
+Three components load their own DINOv2 ViT-g (~4.3 GB VRAM each) — MUSE's crop
+embedder, CNOS-lab's patch extractor, the pose encoders — and SAM2 is loaded
+independently by the MUSE refiner and the AMG proposers. Composed as separate
+processes the live ensemble plus pose does not fit a 24 GB card, and the
+overrun is entirely duplicate weights (measured: DEMO_SINGLE_GPU.md).
+
+`assembly.ModelPool` holds one lazily-loaded copy of each shared model; every
+model-owning component grew a matching injection parameter (`model=` on the
+DINOv2 pair, `sam_model=` on the SAM2 trio) that bypasses its own loader. The
+`*_from_pool` builders wire the existing segmentors and pose encoders around
+one pool. Two scoped departures from the usual rules: pool wiring loads the
+*pooled* models at build time, not first use (a resident service wants startup
+failures at startup — though unpooled components like MUSE's Grounding DINO
+still lazy-load on the first frame); and component `config()` identity still
+describes models by name —
+truthful because the pool is the single place a name resolves to weights.
+
+The service shell that would sit on top (HTTP, cameras, supervision) stays
+outside popoe (AGENTS.md boundary); this module only guarantees the library
+composes into one process without duplicate weights.
+
 ## BOP runner invariants
 
 `examples/bop_eval.py` is a composition runner, not a new stage, but several

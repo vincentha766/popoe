@@ -360,11 +360,13 @@ class DinoV2ForegroundPatchExtractor:
     """Lazy DINOv2 patch extractor matching `gedi/scripts/cnos_match3.py`."""
 
     def __init__(self, device: str = "cuda", model_name: str = "dinov2_vitg14_reg",
-                 grid: int = GRID):
+                 grid: int = GRID, model=None):
+        # model: preloaded DINOv2 module — the sharing seam (popoe.assembly).
+        # Must be the weights model_name names, on `device`.
         self.device = device
         self.model_name = model_name
         self.grid = int(grid)
-        self._model = None
+        self._model = model
         self._mean = None
         self._std = None
 
@@ -385,18 +387,24 @@ class DinoV2ForegroundPatchExtractor:
                 raise SegmentorUnavailable(
                     f"DINOv2 ({self.model_name}) load failed: {e}"
                 ) from e
+        return self._model
+
+    def _ensure_norm_stats(self):
+        # Split out of the loader so an injected model gets them too.
+        if self._mean is None:
+            import torch
             self._mean = torch.tensor(
                 [0.485, 0.456, 0.406], device=self.device
             ).view(1, 3, 1, 1)
             self._std = torch.tensor(
                 [0.229, 0.224, 0.225], device=self.device
             ).view(1, 3, 1, 1)
-        return self._model
 
     def fg_patches(self, rgb_uint8: np.ndarray, fg_mask: np.ndarray) -> np.ndarray:
         import torch
 
         model = self.model
+        self._ensure_norm_stats()
         x = torch.from_numpy(rgb_uint8).float().permute(2, 0, 1).unsqueeze(0)
         x = x.to(self.device) / 255.0
         x = (x - self._mean) / self._std
@@ -466,18 +474,23 @@ class SAM2AMGMaskProposer:
 
     def __init__(self, device: str = "cuda", model_size: str = "small",
                  min_mask_region_area: int = 2000,
-                 sam_ckpt_dir: Optional[str] = None):
+                 sam_ckpt_dir: Optional[str] = None,
+                 sam_model=None):
+        # sam_model: prebuilt SAM2 model — the sharing seam (popoe.assembly).
+        # Must be the checkpoint model_size names.
         self.device = device
         self.model_size = model_size
         self.min_mask_region_area = int(min_mask_region_area)
         self.sam_ckpt_dir = sam_ckpt_dir
+        self._sam_model = sam_model
         self._generator = None
 
     def _load(self):
         if self._generator is None:
             from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 
-            model = build_sam2_model(self.model_size, self.device, self.sam_ckpt_dir)
+            model = (self._sam_model if self._sam_model is not None else
+                     build_sam2_model(self.model_size, self.device, self.sam_ckpt_dir))
             self._generator = SAM2AutomaticMaskGenerator(
                 model, min_mask_region_area=self.min_mask_region_area, **AMG_PARAMS
             )

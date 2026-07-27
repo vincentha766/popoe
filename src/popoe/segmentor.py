@@ -186,19 +186,25 @@ class SAMSegmentor:
     def __init__(self, device: str = 'cuda', model_size: str = 'small',
                  n_masks: int = 5, conf_threshold: float = 0.4,
                  min_mask_region_area: int = 200,
-                 sam_ckpt_dir: str | None = None):
+                 sam_ckpt_dir: str | None = None,
+                 sam_model=None):
+        # sam_model: prebuilt SAM2 model — the sharing seam (popoe.assembly).
+        # Must be the checkpoint model_size names.
         self.device = device
         self.model_size = model_size
         self.n_masks = n_masks
         self.conf_threshold = conf_threshold
         self.min_mask_region_area = min_mask_region_area
         self.sam_ckpt_dir = sam_ckpt_dir
+        self._sam_model = sam_model
         self._generator = None
 
     def _load(self):
         if self._generator is None:
             from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
-            model = build_sam2_model(self.model_size, self.device, self.sam_ckpt_dir)
+            model = (self._sam_model if self._sam_model is not None else
+                     build_sam2_model(self.model_size, self.device,
+                                      self.sam_ckpt_dir))
             self._generator = SAM2AutomaticMaskGenerator(
                 model, min_mask_region_area=self.min_mask_region_area,
                 **AMG_PARAMS)
