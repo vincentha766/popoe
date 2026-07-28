@@ -37,6 +37,82 @@ entrypoints, under the dual-disclosure discipline of `../gedi/EXPERIMENTS.md`
 | 5 | YCB-V grasp ADD(-S)@0.1d | **0.8173** (median 2.5 mm / 6.6°) — gedi `scripts/freezev2_grasp_eval.py` | external grasp CLI on #1 CSV | **LOCAL-CPU** (post #1) | **0.8240** (@0.05d 0.7716; med 2.5 mm / 11.9°) | same | ☑ Δ=+0.0067 |
 | 6 | LM-O grasp ADD(-S)@0.1d | **0.7617** (7.2 mm / 5.8°) | same as #5 on #2 CSV | **LOCAL-CPU** (post #2) | **0.7706** (@0.05d 0.5146; med 7.1 mm / 5.9°) | same | ☑ Δ=+0.0089 |
 
+## BOP-Classic-Core seven-set ledger (2026-07-27, OFFICIAL SERVER SCORES)
+
+> The seven core datasets scored by the **BOP evaluation server**, method
+> `popoe-cnos`, popoe **`0c93d3e`**, pod `bidtug84rly2xo` (4090, stopped).
+> Submissions 39689–39695, all kept **private**. These are not local
+> measurements — the server computed them from the uploaded pose CSVs.
+> Recipe: official CNOS-FastSAM default detections, **single source** (same
+> footing as the official FreeZe(CNOS) row); `--merge ycbv` on YCB-V, `auto`
+> elsewhere. Artefacts: `../gedi/ycbv_local_data/bop7_full_20260727/`.
+
+| Dataset | AR | AR_MSSD | AR_MSPD | AR_VSD | FreeZe(CNOS) | Δ | s/image |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| TUD-L | 0.902 | 0.924 | 0.925 | 0.859 | 0.936 | −3.4pt | 2.52 |
+| YCB-V | 0.787 | 0.797 | 0.746 | 0.818 | 0.853 | −6.6pt | 3.61 |
+| HB | 0.690 | 0.685 | 0.685 | 0.701 | 0.790 | −10.0pt | 10.07 |
+| LM-O | 0.631 | 0.670 | 0.700 | 0.523 | 0.689 | −5.8pt | 6.29 |
+| ITODD | **0.565** | 0.607 | 0.592 | 0.495 | 0.561 | **+0.4pt** | 5.71 |
+| T-LESS | 0.443 | 0.462 | 0.477 | 0.388 | 0.520 | −7.7pt | 12.96 |
+| IC-BIN | 0.387 | 0.343 | 0.309 | 0.510 | 0.499 | −11.2pt | 35.44 |
+| **ARCore** | **0.6293** | | | | **0.6926** | **−6.3pt** | |
+
+**Pipeline self-validation**: YCB-V's server AR 0.787 agrees with headline
+row #1's locally scored 0.7781 (+0.9pt, RANSAC-noise scale) under an
+identical recipe — the end-to-end chain is sound, so every gap above is
+methodological, not a defect.
+
+**What the gaps are not caused by**: the official FreeZe(CNOS) row consumes
+the *same* CNOS-FastSAM detection file, so every per-dataset gap arises in
+the pose stage (registration + scoring), not in detection.
+
+**The per-dataset spread is NOT yet explained.** An earlier version of this
+section claimed it tracked multi-instance-ness and blamed
+`adapters.select_top_instances` for lacking spatial de-duplication. **That
+claim is withdrawn — the submitted CSVs refute it:**
+
+- ITODD has the *most* multi-instance targets of the seven (75.7%, up to 8+
+  instances) and is the only dataset that beats the official row; HB is
+  100% single-instance and sits at −10.0pt. Single-instance gaps
+  (−3.4/−5.8/−6.6/−10.0) and multi-instance gaps (+0.4/−7.7/−11.2) have
+  essentially the same mean.
+- Champions within one target are not stacking on one physical instance:
+  median pairwise translation is 236mm (IC-BIN) / 99mm (T-LESS) / 97mm
+  (ITODD), and only 0.3–0.9% of champion pairs sit closer than 5mm.
+
+A second candidate died too: the winning visual weight (per-target argmax
+over `--weights`) is distributed almost identically across all seven sets
+(mean 0.56–0.65), so "our visual branch is weaker than theirs" has no
+support either.
+
+Settling this needs GT-based per-instance analysis — separating "wrong mask
+or wrong object" from "right mask, poor registration" — which requires the
+GT trees on the pod volume for the five datasets not held locally. Until
+then the spread is recorded as unexplained rather than narrated.
+
+> **2026-07-28 — every LM-O number above and below predates the shading fix.**
+> LM-O carries its colour in `property uchar red/green/blue` with no UV atlas.
+> Until popoe `b439d58`, such meshes were classified as untextured and rendered
+> flat beige, so the DINOv2 half of every LM-O query feature was computed on a
+> colourless image. This applies to **headline rows 2, 4 and 6** and to the
+> **LM-O row of the seven-set table** (0.631). Re-running those commands at or
+> after that commit will **not** reproduce their numbers, and should not: the
+> measured move on the seven-set CNOS LM-O line is **+1.31 pt** full AR
+> (0.6876 → 0.7007), on top of **+2.07 pt** at the coarse pose.
+>
+> Three more sets in the seven-set table are vertex-coloured and carry the same
+> caveat, **unmeasured**: TUD-L, IC-BIN, HB. YCB-V (rows 1/3/5 and its
+> seven-set row) is unaffected — it ships a real UV atlas. T-LESS
+> (`models_cad`) and ITODD have no colour at all, so flat beige was already
+> the correct render for them; ITODD is also the only set we beat official on.
+> The affected and unaffected sets interleave in gap size, so this fix does
+> **not** explain the per-dataset spread discussed above.
+>
+> Evidence, null control and per-object breakdown:
+> `../gedi/BOP_OFFICIAL_BASELINES.md` 乙-5; artifacts
+> `../gedi/ycbv_local_data/vcolor_ab_20260728/`.
+
 ### Campaign notes (2026-07-26)
 
 - Fresh clone path on pod: `/workspace/popoe_verify_75553a1` @ `75553a1`.

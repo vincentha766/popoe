@@ -57,6 +57,7 @@ from popoe.cache import StageCache, file_fingerprint, fingerprint
 from popoe.datasets.bop import bop_layout, default_targets_path
 from popoe.interfaces import ObjectModel, PointFeatures, PoseHypothesis, Scene
 from popoe.confusable_select import dual_assign_hyps, partner_id
+from popoe.freeze.feature_extractor import mesh_shading_key_parts
 from popoe.freeze.recipes import (
     TAU_FRAC, WEIGHTS, YCBV_CLAMP_DIAMETERS_M, YCBV_MERGE_LABELS,
     best_encoders, best_segmentor, scale_vis, solver_provenance,
@@ -611,8 +612,16 @@ def main():
                                         / f"obj_{obj_id:06d}.ply"),
                           diameter=0.0)
         t0 = time.time()
+        # Shading is keyed PER MESH, not in enc_cfg: the fix that taught the
+        # renderer about `property uchar red/green/blue` changed the rendered
+        # pixels for LM-O / TUD-L / IC-BIN / HB only, and neither enc_cfg nor
+        # the mesh bytes move when render CODE changes — so without this part
+        # the old grey-render features would be served silently. Empty tuple for
+        # UV-atlas and colourless meshes, which keeps every YCB-V / T-LESS /
+        # ITODD key (and hence their cached features) exactly as it was.
+        shade_parts = mesh_shading_key_parts(obj.mesh_path)
         qkey = (fingerprint("query", enc_cfg, file_fingerprint(obj.mesh_path),
-                            obj_id) if cache else None)
+                            obj_id, *shade_parts) if cache else None)
         # Both files or nothing; an incomplete entry is fatal (the dependent
         # target entries share this qkey and may hold a target-fitted basis).
         entry = load_cached_query(cache, qkey)
@@ -650,7 +659,13 @@ def main():
                     f" diam={tau_basis*1000:.0f}mm "
                     f"tau={TAU_FRAC*tau_basis*1000:.2f}mm "
                     f"(was {TAU_FRAC*extent*1000:.2f}mm)")
-        print(f"  obj{obj_id}: extent={extent*1000:.0f}mm "
+        # Both tags are printed unconditionally, including when they are empty
+        # or default: this line is the evidence for "which renderer path and
+        # which threshold basis actually ran". A log that only speaks up in the
+        # interesting case cannot tell "flat, correctly" apart from "the
+        # resolver never ran", and the same goes for the tau basis.
+        shade_note = shade_parts[0].split("=")[1] if shade_parts else "uv-or-flat"
+        print(f"  obj{obj_id}: extent={extent*1000:.0f}mm shading={shade_note} "
               f"encode={time.time()-t0:.1f}s{tau_note}", flush=True)
 
     cand_f = None
