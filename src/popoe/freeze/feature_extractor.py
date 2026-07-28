@@ -575,7 +575,15 @@ class QueryFeatureExtractor:
 
         # Load and normalise mesh (mesh is in mm, pts_np is in metres)
         mesh = trimesh.load(mesh_path, force='mesh')
-        scale = 0.45 * 224 / max(mesh.extents)
+        # Render canvas and fill fraction. Historical values (224, 0.45) are the
+        # DINOv2 native canvas; FreeZeV2 Sec. IV-A renders at 480x480 with the
+        # object at ~50% ("occupies approximately 50% of the width and height in
+        # a 480x480 image"). 480 is not a multiple of the 14px patch, so a
+        # faithful run passes 476 (= 34*14). Both knobs are cache keys in
+        # bop_eval's enc_cfg — set them there or features go stale silently.
+        canon = (int(os.environ.get("POPOE_QUERY_CANON", "224")) // 14) * 14
+        fill = float(os.environ.get("POPOE_QUERY_FILL", "0.45"))
+        scale = fill * canon / max(mesh.extents)
         mesh.apply_scale(scale)
         center = mesh.bounds.mean(0)
         mesh.apply_translation(-center)
@@ -583,8 +591,28 @@ class QueryFeatureExtractor:
 
         # Canonical scale for GeDi: r_lrf=0.5m was trained on ~1m scenes; rescale
         # object to ~1m extent before GeDi (keeps features local, not whole-object).
+        #
+        # What "1m" is measured against is a paper-fidelity knob. Historical
+        # ("extent"): the sampled cloud's largest bounding-box side. FreeZeV2
+        # Sec. IV-A: GeDi neighbourhoods occupy "30% and 40% of the object's
+        # DIAMETER" — and a bounding-box side runs 2-35% short of the diameter
+        # on LM-O (same basis mismatch as tau, but here it shrinks every GeDi
+        # neighbourhood). "diameter" uses the max pairwise distance over the
+        # mesh's convex-hull vertices — the BOP models_info definition, computed
+        # from the model itself so nothing external needs threading in.
         extent_m = float(np.ptp(pts_np, axis=0).max())
-        self._canon_scale = 1.0 / max(extent_m, 1e-6)
+        if os.environ.get("POPOE_CANON_BASIS", "extent") == "diameter":
+            hull = mesh.convex_hull.vertices / (1000.0 * scale)  # back to metres
+            # Exact diameter: the farthest pair of a point set lies on its hull.
+            d2 = 0.0
+            for i in range(0, len(hull), 512):
+                chunk = hull[i:i + 512]
+                d2 = max(d2, float(((chunk[:, None, :] - hull[None, :, :]) ** 2)
+                                   .sum(-1).max()))
+            basis_m = math.sqrt(d2)
+        else:
+            basis_m = extent_m
+        self._canon_scale = 1.0 / max(basis_m, 1e-6)
         geo_input = (pts_np * self._canon_scale).astype(np.float32)
         # role="query": a CAD model sampled all around. Role-blind backbones
         # (GeDi, dGeDi) ignore it; FPFH needs it to pick the normal convention,
@@ -602,7 +630,7 @@ class QueryFeatureExtractor:
             transforms.Normalize(mean=[0.485,0.456,0.406], std=[0.229,0.224,0.225]),
         ])
 
-        H, W = 224, 224
+        H, W = canon, canon
         vis_feats_acc = np.zeros((len(pts_np), DINO_DIM), dtype=np.float64)
         vis_counts = np.zeros(len(pts_np), dtype=np.int32)
 
@@ -671,6 +699,29 @@ class QueryFeatureExtractor:
         seen = vis_counts > 0
         vis_feats = np.zeros((len(pts_np), DINO_DIM), dtype=np.float32)
         vis_feats[seen] = (vis_feats_acc[seen] / vis_counts[seen, None]).astype(np.float32)
+
+        # Visibility gate. FreeZeV2 Sec. IV-A: "we filter P_Q^raw by keeping
+        # only the points that are visible from at least V = 18 views". The
+        # historical behaviour (0) keeps every point — one seen from no view
+        # keeps an all-zero visual vector, one seen once keeps a single grazing
+        # view's features. Measured on LM-O the paper's gate touches only ~2.5%
+        # of a 3000-point cloud, so this is a fidelity knob, not an expected
+        # lever. Applied to points, features and the returned cloud together so
+        # the solver sees the same set the features describe; the PCA below is
+        # then fitted on the survivors only.
+        min_views = int(os.environ.get("POPOE_QUERY_MIN_VIEWS", "0"))
+        if min_views > 0:
+            keep = vis_counts >= min_views
+            if not keep.any():
+                raise RuntimeError(
+                    f"POPOE_QUERY_MIN_VIEWS={min_views} removed every query "
+                    f"point (max count {int(vis_counts.max())} of {n_views} "
+                    f"views) — the gate is misconfigured, not the mesh.")
+            vis_feats, geo_feats = vis_feats[keep], geo_feats[keep]
+            pts_query = pts_query[torch.from_numpy(keep)] \
+                if isinstance(pts_query, torch.Tensor) else pts_query[keep]
+            print(f"    visibility gate >= {min_views}/{n_views} views: "
+                  f"kept {int(keep.sum())}/{len(keep)} points", flush=True)
 
         # Fit PCA on actual features
         fused = self._fuse_features(vis_feats, geo_feats)

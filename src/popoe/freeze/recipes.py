@@ -117,7 +117,12 @@ def best_encoders(device: str = "cuda", target_grid: int = 32,
                                render_backend=render_backend)
     tx = TargetFeatureExtractor(device, dino=dino, gedi=gedi)
     qx.fusion.vis_weight = 1.0   # pinned; make_freeze_encoders shares qx.fusion
-    return make_freeze_encoders(qx, tx)
+    # |P_Q|. Historical 3000; FreeZeV2 Sec. IV-A uses 5k ("For P_Q and
+    # P_T^dense we use 5k and 3k points"). Env, not a parameter, so it travels
+    # the same road as the other feature knobs and bop_eval's enc_cfg can
+    # record what actually ran.
+    n_points = int(os.environ.get("POPOE_QUERY_POINTS", "3000"))
+    return make_freeze_encoders(qx, tx, n_points=n_points)
 
 
 def best_segmentor(detections_json: str | None = None, topk: int = 2,
@@ -177,7 +182,8 @@ def ycbv_lab_segmentor(detections_json: str | None = None, topk: int = 2,
 SOLVERS = ("o3d", "gpu", "gpu-feat", "teaser")   # o3d is the evaluated mainline default
 
 
-def _build_solver(name: str, tau: float, n_ransac: int, seed: int | None = None):
+def _build_solver(name: str, tau: float, n_ransac: int, seed: int | None = None,
+                  corr_topk: int = 0):
     """o3d (default, mainline) | gpu (ported RANSAC, geometric fitness) |
     gpu-feat (gpu with the Eq.5 feature-aware fitness — the B layer) |
     teaser (TEASER++ certifiable registration; deterministic, so n_ransac
@@ -197,7 +203,13 @@ def _build_solver(name: str, tau: float, n_ransac: int, seed: int | None = None)
     if name == "o3d":
         from popoe.solvers import Open3DFeatureRansacSolver
         return Open3DFeatureRansacSolver(tau_inlier=tau, max_iteration=n_ransac,
-                                         seed=seed)
+                                         seed=seed, corr_topk=corr_topk)
+    if corr_topk:
+        # Only the o3d path implements the precomputed top-k set; a silent
+        # ignore here would let a "faithful" run fall back to each solver's own
+        # matching while its provenance claims k=10.
+        raise ValueError(f"corr_topk is an o3d knob; solver {name!r} got "
+                         f"corr_topk={corr_topk}")
     if name in ("gpu", "gpu-feat"):
         from popoe.solvers import GPURansacSolver
         kw = {} if seed is None else {"seed": seed}   # else keep its own default
@@ -246,7 +258,8 @@ def stages_for_object(extent_m: float, size_aware: bool = False,
                       n_ransac: int = 10000, score_coarse: bool = False,
                       use_s_coarse: bool = False, solver: str = "o3d",
                       seed: int | None = None,
-                      tau_basis_m: float | None = None):
+                      tau_basis_m: float | None = None,
+                      corr_topk: int = 0):
     """Per-object solver/refiner/scorer with thresholds scaled to the object.
     ``extent_m``: max bounding-box side of the sampled query cloud (metres).
 
@@ -274,7 +287,8 @@ def stages_for_object(extent_m: float, size_aware: bool = False,
     from popoe.adapters import ICPRefiner
     from popoe.scoring import ChampionScorer
     tau = TAU_FRAC * (extent_m if tau_basis_m is None else tau_basis_m)
-    solver = _build_solver(solver, tau, n_ransac, seed=seed)
+    solver = _build_solver(solver, tau, n_ransac, seed=seed,
+                           corr_topk=corr_topk)
     refiner = ICPRefiner(tau_icp=tau, keep_coarse=score_coarse or use_s_coarse)
     # use_s_coarse implies s_coarse IS computed and emitted, so compute_s_coarse
     # reflects reality (an inspector reading the flag sees the truth).
