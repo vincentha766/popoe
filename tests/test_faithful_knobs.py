@@ -144,3 +144,11 @@ def test_probe_corr_requires_cache_and_explicit_backend(tmp_path):
                                "--render-backend", "auto"],
                        capture_output=True, text=True, env=env)
     assert r.returncode != 0 and "render-backend" in (r.stderr + r.stdout)
+
+
+def test_n_restarts_reaches_the_solver_and_refuses_non_o3d():
+    solver, _, _ = stages_for_object(0.1, n_restarts=5)
+    assert solver.n_restarts == 5
+    assert stages_for_object(0.1)[0].n_restarts == 1
+    with pytest.raises(ValueError, match="n_restarts"):
+        _build_solver("gpu", tau=0.03, n_ransac=10, n_restarts=5)

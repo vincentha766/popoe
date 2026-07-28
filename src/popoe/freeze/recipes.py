@@ -184,7 +184,7 @@ SOLVERS = ("o3d", "gpu", "gpu-feat", "teaser")   # o3d is the evaluated mainline
 
 
 def _build_solver(name: str, tau: float, n_ransac: int, seed: int | None = None,
-                  corr_topk: int = 0):
+                  corr_topk: int = 0, n_restarts: int = 1):
     """o3d (default, mainline) | gpu (ported RANSAC, geometric fitness) |
     gpu-feat (gpu with the Eq.5 feature-aware fitness — the B layer) |
     teaser (TEASER++ certifiable registration; deterministic, so n_ransac
@@ -204,7 +204,11 @@ def _build_solver(name: str, tau: float, n_ransac: int, seed: int | None = None,
     if name == "o3d":
         from popoe.solvers import Open3DFeatureRansacSolver
         return Open3DFeatureRansacSolver(tau_inlier=tau, max_iteration=n_ransac,
-                                         seed=seed, corr_topk=corr_topk)
+                                         seed=seed, corr_topk=corr_topk,
+                                         n_restarts=n_restarts)
+    if n_restarts != 1 and name != "o3d":
+        raise ValueError(f"n_restarts is an o3d knob; solver {name!r} got "
+                         f"n_restarts={n_restarts}")
     if corr_topk:
         # Only the o3d path implements the precomputed top-k set; a silent
         # ignore here would let a "faithful" run fall back to each solver's own
@@ -274,6 +278,7 @@ def stages_for_object(extent_m: float, size_aware: bool = False,
                       seed: int | None = None,
                       tau_basis_m: float | None = None,
                       corr_topk: int = 0,
+                      n_restarts: int = 1,
                       render_rerank: bool = False):
     """Per-object solver/refiner/scorer with thresholds scaled to the object.
     ``extent_m``: max bounding-box side of the sampled query cloud (metres).
@@ -308,7 +313,7 @@ def stages_for_object(extent_m: float, size_aware: bool = False,
     from popoe.scoring import ChampionScorer
     tau = TAU_FRAC * (extent_m if tau_basis_m is None else tau_basis_m)
     solver = _build_solver(solver, tau, n_ransac, seed=seed,
-                           corr_topk=corr_topk)
+                           corr_topk=corr_topk, n_restarts=n_restarts)
     icp = ICPRefiner(tau_icp=tau, keep_coarse=score_coarse or use_s_coarse)
     if render_rerank:
         from popoe.render_rerank import RenderAppearanceReranker
