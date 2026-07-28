@@ -504,7 +504,7 @@ def main():
             if boxes is None:
                 n_skip += 1
                 for name, _, _ in cands:
-                    wr.writerow([scene_id, im_id, obj_id, name] + [""] * 15)
+                    wr.writerow([scene_id, im_id, obj_id, name] + [""] * 16)
                 continue
 
             R_champ = next(Rv for nm, Rv, _ in cands if nm == "champion")
