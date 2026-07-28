@@ -98,8 +98,11 @@ then the spread is recorded as unexplained rather than narrated.
 > colourless image. This applies to **headline rows 2, 4 and 6** and to the
 > **LM-O row of the seven-set table** (0.631). Re-running those commands at or
 > after that commit will **not** reproduce their numbers, and should not: the
-> measured move on the seven-set CNOS LM-O line is **+1.31 pt** full AR
-> (0.6876 → 0.7007), on top of **+2.07 pt** at the coarse pose.
+> measured move is **+1.31 pt** full AR (0.6876 → 0.7007) — on the
+> **CNOS∪SAM6D union line**; an earlier version of this note said "seven-set
+> CNOS line", which its own numbers contradict (that line's row is 0.631).
+> On the seven-set CNOS single-source line the same fix measures **+1.07 pt**
+> (0.6306 → 0.6413, `corrtopk_20260728/lmo_base`). Quote per line.
 >
 > Three more sets in the seven-set table are vertex-coloured and carry the same
 > caveat, **unmeasured**: TUD-L, IC-BIN, HB. YCB-V (rows 1/3/5 and its

@@ -37,7 +37,7 @@ class Open3DFeatureRansacSolver:
                  max_iteration: int = 10000, confidence: float = 0.999,
                  edge_length: float = 0.9, mutual_filter: bool = True,
                  n_restarts: int = 1, subsample: float = 0.7,
-                 seed: Optional[int] = None):
+                 seed: Optional[int] = None, corr_topk: int = 0):
         self.tau_inlier = tau_inlier
         self.ransac_n = ransac_n
         self.max_iteration = max_iteration
@@ -70,6 +70,15 @@ class Open3DFeatureRansacSolver:
         # would invalidate every existing cache for nothing. It belongs in the
         # run's provenance instead, which is where bop_eval prints it.
         self.seed = seed
+        # corr_topk > 0 switches correspondence construction from Open3D's
+        # internal matching (kNN in feature space + optional mutual filter,
+        # i.e. k=1) to a precomputed top-k set: for each TARGET point, its k
+        # best QUERY matches by feature similarity — the convention
+        # gpu_ransac.py already uses. FreeZeV2 Sec. IV-A: "For correspondence
+        # estimation, we use a top-k strategy with k = 10." 0 keeps the
+        # historical k=1 path byte-identical; the mutual filter does not apply
+        # to the precomputed set (the paper has no mutual condition).
+        self.corr_topk = corr_topk
 
     def solve(self, query: PointFeatures, target: PointFeatures,
               frame: CanonFrame) -> list[PoseHypothesis]:
@@ -97,10 +106,7 @@ class Open3DFeatureRansacSolver:
             if self.seed is not None:
                 o3d.utility.random.seed(self.seed + restart)
             pcd_q, pcd_t = pcd(qp), pcd(tp)
-            fq, ft = feat(qf, len(pcd_q.points)), feat(tf, len(pcd_t.points))
-            r = reg.registration_ransac_based_on_feature_matching(
-                pcd_q, pcd_t, fq, ft,
-                mutual_filter=self.mutual_filter,
+            common = dict(
                 max_correspondence_distance=self.tau_inlier,
                 estimation_method=reg.TransformationEstimationPointToPoint(False),
                 ransac_n=self.ransac_n,
@@ -111,6 +117,27 @@ class Open3DFeatureRansacSolver:
                 criteria=reg.RANSACConvergenceCriteria(
                     max_iteration=self.max_iteration, confidence=self.confidence),
             )
+            if self.corr_topk > 0:
+                # (Nt, Nq) similarity; rows of the fused feature space have
+                # constant norm (two unit-norm halves), but normalise anyway so
+                # the ordering is cosine by construction, not by accident.
+                qn = qf / np.maximum(np.linalg.norm(qf, axis=1, keepdims=True), 1e-12)
+                tn = tf / np.maximum(np.linalg.norm(tf, axis=1, keepdims=True), 1e-12)
+                sim = tn @ qn.T
+                k_eff = min(self.corr_topk, sim.shape[1])
+                top = np.argpartition(-sim, k_eff - 1, axis=1)[:, :k_eff]
+                t_idx = np.repeat(np.arange(sim.shape[0]), k_eff)
+                pairs = np.stack([top.reshape(-1), t_idx], axis=1)  # [query, target]
+                r = reg.registration_ransac_based_on_correspondence(
+                    pcd_q, pcd_t,
+                    o3d.utility.Vector2iVector(pairs.astype(np.int32)),
+                    **common)
+            else:
+                fq = feat(qf, len(pcd_q.points))
+                ft = feat(tf, len(pcd_t.points))
+                r = reg.registration_ransac_based_on_feature_matching(
+                    pcd_q, pcd_t, fq, ft,
+                    mutual_filter=self.mutual_filter, **common)
             T = np.asarray(r.transformation)
             return T[:3, :3].copy(), T[:3, 3].copy(), float(r.fitness)
 

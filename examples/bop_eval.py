@@ -400,6 +400,12 @@ def main():
                          "Two of those three numbers are still unmatched here: "
                          "P_Q is 3000 against the paper's 5k, and --grid 32 "
                          "gives P_T^sparse up to 1024 against its 256.")
+    ap.add_argument("--corr-topk", type=int, default=0,
+                    help="FIDELITY KNOB (FreeZeV2 Sec. IV-A: 'a top-k strategy "
+                         "with k = 10'): precompute, for each target point, its "
+                         "k best query matches and hand RANSAC that set, "
+                         "instead of Open3D's internal k=1 matching. 0 = "
+                         "historical path, byte-identical. o3d solver only.")
     ap.add_argument("--tau-diameter", action="store_true",
                     help="FIDELITY FIX (FreeZeV2 Sec. IV-A): set tau_inlier / "
                          "tau_ICP / the feature-score inlier radius to 3% of "
@@ -545,7 +551,9 @@ def main():
         # env var, so a pre-set POPOE_TARGET_GRID wins over --grid and the key
         # must record what actually ran.
         "grid": os.environ.get("POPOE_TARGET_GRID", str(args.grid)),
-        "n_points": 3000,
+        # Effective |P_Q| (POPOE_QUERY_POINTS reaches best_encoders). int, and
+        # 3000 at the default, so every pre-existing key is byte-identical.
+        "n_points": int(os.environ.get("POPOE_QUERY_POINTS", "3000")),
         "dino_layer": os.environ.get("POPOE_DINO_LAYER", "ratio0.78"),
         "two_scale": os.environ.get("POPOE_TWO_SCALE_GEDI", "1"),
         "crop": os.environ.get("POPOE_TARGET_CROP", "1"),
@@ -577,6 +585,19 @@ def main():
         # change every existing GeDi key and throw away the pod-side cache.
         from popoe.descriptors import fpfh_config
         enc_cfg.update(fpfh_config())
+    # Paper-fidelity feature knobs (FreeZeV2 Sec. IV-A). Same conditional-add
+    # rule as FPFH above: each enters the key ONLY at a non-default value, so
+    # every cache built before these knobs existed keeps its exact key — and a
+    # faithful run can never be served the historical features by mistake.
+    for _key, (_env, _dflt) in {
+        "query_canon": ("POPOE_QUERY_CANON", "224"),      # render canvas px
+        "query_fill": ("POPOE_QUERY_FILL", "0.45"),       # object fill fraction
+        "query_min_views": ("POPOE_QUERY_MIN_VIEWS", "0"),  # visibility gate
+        "canon_basis": ("POPOE_CANON_BASIS", "extent"),   # GeDi radius basis
+    }.items():
+        _val = os.environ.get(_env, _dflt)
+        if _val != _dflt:
+            enc_cfg[_key] = _val
     # Where the [vis | geo] boundary sits, for the selection-time weight sweep.
     # Taken from the SAME value the cache key records, so the split can never
     # disagree with the features it is applied to: a different POPOE_VIS_DIM is
@@ -656,6 +677,7 @@ def main():
         stages = stages_for_object(extent, size_aware=obj_id in merge,
                                    score_coarse=args.score_coarse,
                                    use_s_coarse=args.use_s_coarse,
+                                   corr_topk=args.corr_topk,
                                    solver=args.solver, seed=args.seed,
                                    tau_basis_m=tau_basis)
         query_cache[obj_id] = (obj, q, stages)
