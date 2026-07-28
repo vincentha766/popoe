@@ -28,7 +28,7 @@
 #   nohup bash scripts/icp_ab_run.sh ycbv > /workspace/results/icp_ab/ycbv.log 2>&1 &
 set -euo pipefail
 
-DS="${1:?usage: icp_ab_run.sh <lmo|ycbv|tudl>}"
+DS="${1:?usage: icp_ab_run.sh <lmo|lmo_cnos|ycbv|tudl>}"
 OUT="${OUT:-/workspace/results/icp_ab_20260728}"
 CACHE_ROOT="${CACHE_ROOT:-/workspace/results/pipeline_verify_20260726}"
 BOP="${BOP:-/workspace/bop_data}"
@@ -42,11 +42,21 @@ export OMP_NUM_THREADS="${OMP_NUM_THREADS:-8}"
 mkdir -p "$OUT"
 BASE="$OUT/icp_ab_$DS"
 
+BOP_DS="$DS"
 case "$DS" in
   lmo)
-    # The seven-set LM-O line is the CNOS u SAM6D union, not CNOS alone.
+    # The reproduction HEADLINE LM-O run: CNOS u SAM6D union detections.
     SRC=(--sources "cnos=$DET/cnos/cnos-fastsam_lmo-test.json,sam6d=$DET/sam6d/sam6d_ism_lmo.json"
          --merge none)
+    CACHE="$CACHE_ROOT/cache_lmo_g32" ;;
+  lmo_cnos)
+    # The SEVEN-SET line's LM-O (0.631) is CNOS single-source, and that is the
+    # row the FreeZe Table 3 comparison is drawn against — the union run scores
+    # ~5 pt higher and would answer a different question. Same cache: with
+    # topk=2 the CNOS masks here are the union run's CNOS bucket, and cache keys
+    # are per (scene, mask, object), so every target still hits.
+    BOP_DS=lmo
+    SRC=(--detections "$DET/cnos/cnos-fastsam_lmo-test.json" --merge none)
     CACHE="$CACHE_ROOT/cache_lmo_g32" ;;
   ycbv)
     SRC=(--detections "$DET/cnos/cnos-fastsam_ycbv-test.json" --merge ycbv)
@@ -64,7 +74,7 @@ echo "=== icp_ab $DS | seed=$SEED | cache=$CACHE | $(date -u +%FT%TZ) ==="
 git -C "$PWD" rev-parse HEAD | sed 's/^/popoe commit /'
 
 "$PY" examples/bop_eval.py \
-  --bop "$BOP/$DS" --dataset "$DS" "${SRC[@]}" \
+  --bop "$BOP/$BOP_DS" --dataset "$BOP_DS" "${SRC[@]}" \
   --topk 2 --grid 32 --solver o3d --seed "$SEED" \
   --weights 1.0,0.7,0.5,0.3,0.2 \
   --render-backend nvdiffrast \
@@ -78,10 +88,10 @@ echo "=== split champion into pre/post-ICP poses ==="
 # Full BOP AR = mean(MSSD, MSPD, VSD), the same three legs FreeZe Table 3 uses.
 for V in refined coarse; do
   echo "=== AR($V) ==="
-  BOP_PATH="$BOP/$DS" "$PY" -m popoe.metrics.ar "${BASE}_$V.csv" \
+  BOP_PATH="$BOP/$BOP_DS" "$PY" -m popoe.metrics.ar "${BASE}_$V.csv" \
     2>&1 | tee "$OUT/ar_${DS}_$V.log" | tail -5
   echo "=== VSD($V) ==="
-  "$PY" -m popoe.metrics.vsd "${BASE}_$V.csv" "$BOP/$DS" \
+  "$PY" -m popoe.metrics.vsd "${BASE}_$V.csv" "$BOP/$BOP_DS" \
     2>&1 | tee "$OUT/vsd_${DS}_$V.log" | tail -3
 done
 
