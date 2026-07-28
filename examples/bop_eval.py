@@ -140,6 +140,27 @@ def probe_corr_stats(q, tgt, gts, syms, diam_m):
             float(np.median(best[:, 0]) * 1000.0),
             tau * 1000.0)
 
+
+def probe_half_stats(q, tgt, gts, syms, diam_m):
+    """The fused feature is [vis | geo] at geo-matched equal halves (the
+    configuration every campaign cache was built under). Re-running the top-1
+    check on each half alone answers WHICH branch produced the wrong pairings:
+    a dead visual half points at the render-vs-photo domain, a live visual
+    half that dies when fused points at dilution by the geometric half.
+    Returns (rate1_vis, reach10_vis, rate1_geo, reach10_geo)."""
+    d = q.feats.shape[1]
+    if d % 2:
+        raise SystemExit(f"fused dim {d} is odd; the equal-halves split this "
+                         f"probe assumes does not apply.")
+    h = d // 2
+    out = []
+    for sl in (slice(0, h), slice(h, d)):
+        qh = PointFeatures(pts=q.pts, feats=q.feats[:, sl])
+        th = PointFeatures(pts=tgt.pts, feats=tgt.feats[:, sl])
+        r1, _, reach, _, _ = probe_corr_stats(qh, th, gts, syms, diam_m)
+        out += [r1, reach]
+    return tuple(out)
+
 def resolve_layout(bop: Path, dataset=None, split=None, models_dir=None):
     """Dataset name + directory layout for --bop, name defaulting to the --bop
     basename. Both feed correctness-relevant decisions (split dir, image
@@ -815,7 +836,8 @@ def main():
         probe_wr = csv.writer(probe_f)
         probe_wr.writerow(["scene_id", "im_id", "obj_id", "cand", "n_t", "n_q",
                            "n_gt", "rate1", "rate10", "reach10", "med1_mm",
-                           "tau_mm"])
+                           "tau_mm", "rate1_vis", "reach10_vis", "rate1_geo",
+                           "reach10_geo"])
 
     dense_sizes: list = []
 
@@ -953,16 +975,21 @@ def main():
                             r1, r10, reach, med1, tau_mm = probe_corr_stats(
                                 q, tgt, gts, probe_syms[obj_id],
                                 diameters_m[obj_id])
+                            hv = probe_half_stats(q, tgt, gts,
+                                                  probe_syms[obj_id],
+                                                  diameters_m[obj_id])
                         else:
                             # A detection with no GT instance (false-positive
                             # mask): recorded, not scored - dropping it would
                             # overstate the pool quality.
                             r1 = r10 = reach = med1 = tau_mm = -1.0
+                            hv = (-1.0, -1.0, -1.0, -1.0)
                         probe_wr.writerow([scene_id, im_id, obj_id, ci,
                                            len(tgt.pts), len(q.pts), len(gts),
                                            f"{r1:.4f}", f"{r10:.4f}",
                                            f"{reach:.4f}", f"{med1:.2f}",
-                                           f"{tau_mm:.2f}"])
+                                           f"{tau_mm:.2f}"]
+                                          + [f"{v:.4f}" for v in hv])
                         continue
                     for w in weights:
                         qw = q if w == 1.0 else _reweighted(q, w, vis_split)
