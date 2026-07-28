@@ -234,7 +234,8 @@ def solver_provenance(name: str, seed: int | None) -> str:
 def stages_for_object(extent_m: float, size_aware: bool = False,
                       n_ransac: int = 10000, score_coarse: bool = False,
                       use_s_coarse: bool = False, solver: str = "o3d",
-                      seed: int | None = None):
+                      seed: int | None = None,
+                      tau_basis_m: float | None = None):
     """Per-object solver/refiner/scorer with thresholds scaled to the object.
     ``extent_m``: max bounding-box side of the sampled query cloud (metres).
 
@@ -247,15 +248,29 @@ def stages_for_object(extent_m: float, size_aware: bool = False,
     both off the config is byte-identical.
 
     ``seed`` is forwarded to the solver (see :func:`_build_solver`); ``None``
-    is the historical, unseeded mainline."""
+    is the historical, unseeded mainline.
+
+    ``tau_basis_m``: what the 3% in :data:`TAU_FRAC` is 3% OF, in metres.
+    ``None`` (default, historical) keeps ``extent_m`` — the largest side of the
+    sampled query cloud's axis-aligned bounding box. FreeZeV2 Sec. V-A says
+    "Thresholds tau_inlier and tau_ICP are set to 3% of the object's diameter",
+    and a bounding-box side is never larger than the diameter (on LM-O it runs
+    2-35% short), so every threshold derived here is systematically TIGHTER than
+    the paper's. Pass the BOP ``models_info`` diameter to follow the paper. The
+    one basis feeds all three thresholds it decides — RANSAC's tau_inlier, ICP's
+    tau_ICP, and the feature score's inlier radius (Eq. 4 defines a single
+    tau_inlier that Eq. 5 reuses), so they cannot drift apart."""
     from popoe.adapters import ICPRefiner
     from popoe.scoring import ChampionScorer
-    tau = TAU_FRAC * extent_m
+    tau = TAU_FRAC * (extent_m if tau_basis_m is None else tau_basis_m)
     solver = _build_solver(solver, tau, n_ransac, seed=seed)
     refiner = ICPRefiner(tau_icp=tau, keep_coarse=score_coarse or use_s_coarse)
     # use_s_coarse implies s_coarse IS computed and emitted, so compute_s_coarse
     # reflects reality (an inspector reading the flag sees the truth).
     scorer = ChampionScorer(tau_inlier_frac=TAU_FRAC, size_aware=size_aware,
                             compute_s_coarse=score_coarse or use_s_coarse,
-                            use_s_coarse=use_s_coarse)
+                            use_s_coarse=use_s_coarse,
+                            # None on the historical path: the scorer then
+                            # recomputes TAU_FRAC * extent itself, identically.
+                            tau_abs=None if tau_basis_m is None else tau)
     return solver, refiner, scorer
