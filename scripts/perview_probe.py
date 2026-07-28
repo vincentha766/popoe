@@ -80,6 +80,10 @@ def main():
                                render_backend="nvdiffrast")
     tx = TargetFeatureExtractor("cuda", dino=dino, gedi=gedi)
     qx.fusion.vis_weight = 1.0
+    # The ADAPTER owns install_pca/encode_target; the raw extractor does not
+    # (first launch died on exactly this).
+    from popoe.freeze.adapters import make_freeze_encoders
+    _, t_enc = make_freeze_encoders(qx, tx, n_points=args.n_points)
 
     # ---- query side: the extract_query_features view loop, per-view kept ----
     # (copied from feature_extractor.extract_query_features; keep in step)
@@ -178,10 +182,7 @@ def main():
     # ---- target side: the pipeline's own extractor, visual half sliced ----
     obj = ObjectModel(obj_id=oid, mesh_path=mesh_path, diameter=0.0)
     seg = best_segmentor(detections_json=args.detections, topk=2)
-    tx.install_pca(pca)
-    # Only the visual half is consumed downstream; the geometric half's canon
-    # scale is pinned to the pipeline's convention anyway for hygiene.
-    tx._canon_scale = 1.0 / max(float(np.ptp(pts_m, axis=0).max()), 1e-6)
+    t_enc.install_pca(pca)
 
     mi = json.load(open(bop / layout["models_dir"] / "models_info.json"))
     diam_m = float(mi[str(oid)]["diameter"]) / 1000.0
@@ -214,8 +215,8 @@ def main():
             continue
         for ci, det in enumerate(dets):
             try:
-                tgt = tx.encode_target(scene, det, obj,
-                                       CanonFrame.from_points(pts_m))
+                tgt = t_enc.encode_target(scene, det, obj,
+                                          CanonFrame.from_points(pts_m))
             except Exception:
                 continue
             if len(tgt.pts) < 4:
