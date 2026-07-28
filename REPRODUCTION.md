@@ -37,6 +37,19 @@ entrypoints, under the dual-disclosure discipline of `../gedi/EXPERIMENTS.md`
 | 5 | YCB-V grasp ADD(-S)@0.1d | **0.8173** (median 2.5 mm / 6.6°) — gedi `scripts/freezev2_grasp_eval.py` | external grasp CLI on #1 CSV | **LOCAL-CPU** (post #1) | **0.8240** (@0.05d 0.7716; med 2.5 mm / 11.9°) | same | ☑ Δ=+0.0067 |
 | 6 | LM-O grasp ADD(-S)@0.1d | **0.7617** (7.2 mm / 5.8°) | same as #5 on #2 CSV | **LOCAL-CPU** (post #2) | **0.7706** (@0.05d 0.5146; med 7.1 mm / 5.9°) | same | ☑ Δ=+0.0089 |
 
+> **2026-07-28 — rows 2, 4 and 6 predate the shading fix.** Those three are
+> LM-O, and LM-O carries its colour in `property uchar red/green/blue` with no
+> UV atlas. Until this branch, such meshes were classified as untextured and
+> rendered flat beige, so the DINOv2 half of every LM-O query feature was
+> computed on a colourless image. Re-running the row-2/4/6 commands at or after
+> this commit will **not** reproduce their numbers, and should not: the
+> measured LM-O move on the seven-set CNOS line is +1.31 pt full AR
+> (0.6876 → 0.7007). YCB-V rows 1, 3 and 5 are unaffected — YCB-V ships a real
+> UV atlas and always rendered correctly. Same caveat will apply to TUD-L,
+> IC-BIN and HB, the other three vertex-coloured sets, if they are ever
+> ledgered. Evidence and the null control: `../gedi/BOP_OFFICIAL_BASELINES.md`
+> 乙-5; artifacts `../gedi/ycbv_local_data/vcolor_ab_20260728/`.
+
 ### Campaign notes (2026-07-26)
 
 - Fresh clone path on pod: `/workspace/popoe_verify_75553a1` @ `75553a1`.
