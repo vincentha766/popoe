@@ -150,6 +150,22 @@ def main():
         "gedi_path": os.environ.get("POPOE_GEDI_PATH", "/workspace/gedi"),
         "render_backend": "nvdiffrast",
     }
+    # The same conditional knobs bop_eval adds (paper-fidelity features + the
+    # viewpoint layout): each enters the key ONLY at a non-default value. This
+    # mirror drifted once already — the faithful cache's keys carry these and
+    # this script's replica did not, so every lookup missed. If bop_eval grows
+    # another knob, it must land here too, which is the cost of mirroring.
+    for _key, (_env, _dflt) in {
+        "query_canon": ("POPOE_QUERY_CANON", "224"),
+        "query_fill": ("POPOE_QUERY_FILL", "0.45"),
+        "query_min_views": ("POPOE_QUERY_MIN_VIEWS", "0"),
+        "canon_basis": ("POPOE_CANON_BASIS", "extent"),
+        "query_views": ("POPOE_QUERY_VIEWS", "spiral"),
+    }.items():
+        _val = os.environ.get(_env, _dflt)
+        if _val != _dflt:
+            enc_cfg[_key] = _val
+    enc_cfg["n_points"] = int(os.environ.get("POPOE_QUERY_POINTS", "3000"))
 
     champs = {}
     for r in csv.DictReader(open(args.cand_csv)):
