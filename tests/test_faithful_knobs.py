@@ -79,3 +79,58 @@ def test_correspondence_path_recovers_a_planted_pose():
                                            -1, 1)))
     assert ang_err < 5.0, f"rotation off by {ang_err:.1f} deg"
     assert np.linalg.norm(t - t_true) < 0.005
+
+
+def test_probe_corr_stats_on_a_planted_pose():
+    """Feature-quality ground truth on a synthetic instance.
+
+    Query features = coordinates (perfectly discriminative), target = the same
+    cloud under a known pose. Then every top-1 correspondence is true and all
+    three rates must be 1.0. Scrambling the target features must send rate1
+    towards chance — this pins that the function measures the FEATURES, not
+    the geometry (a bug that compared clouds directly would still pass the
+    first half)."""
+    from examples.bop_eval import probe_corr_stats
+    from popoe.interfaces import PointFeatures
+
+    rng = np.random.default_rng(5)
+    pts_q = rng.uniform(-0.05, 0.05, (300, 3))
+    ang = 0.4
+    R = np.array([[np.cos(ang), -np.sin(ang), 0],
+                  [np.sin(ang), np.cos(ang), 0], [0, 0, 1]])
+    t = np.array([0.01, 0.02, -0.03])
+    pts_t = pts_q @ R.T + t
+    feats = np.hstack([pts_q, pts_q]).astype(np.float64)
+    q = PointFeatures(pts=pts_q, feats=feats)
+    tgt = PointFeatures(pts=pts_t, feats=feats + rng.normal(0, 1e-6, feats.shape))
+    gts = [dict(R=R, t=t * 1000.0)]          # GT t in mm, as scene_gt ships it
+    syms = [dict(R=np.eye(3), t=np.zeros(3))]
+
+    r1, r10, reach, med1, tau_mm = probe_corr_stats(q, tgt, gts, syms, 0.10)
+    assert r1 == 1.0 and reach == 1.0
+    assert med1 < 1.0                        # sub-millimetre top-1 error
+    assert tau_mm == 3.0                     # 3% of a 100mm diameter
+
+    scrambled = PointFeatures(pts=pts_t, feats=rng.permutation(feats))
+    r1s, _, _, _, _ = probe_corr_stats(q, scrambled, gts, syms, 0.10)
+    assert r1s < 0.2, f"scrambled features still match: rate1={r1s}"
+
+
+def test_probe_corr_requires_cache_and_explicit_backend(tmp_path):
+    """The two probe guards are SystemExit, not silent fallbacks: a probe that
+    quietly built features would measure a different cache than it claims."""
+    import subprocess, sys, os
+    env = dict(os.environ, PYTHONPATH="src")
+    base = [sys.executable, "examples/bop_eval.py", "--bop", str(tmp_path),
+            "--dataset", "lmo", "--detections", "x.json",
+            "--out", str(tmp_path / "o.csv"), "--probe-corr",
+            str(tmp_path / "p.csv")]
+    r = subprocess.run(base + ["--render-backend", "nvdiffrast"],
+                       capture_output=True, text=True, env=env)
+    assert r.returncode != 0 and "--cache" in (r.stderr + r.stdout)
+    # --render-backend defaults to nvdiffrast, so the auto guard needs the
+    # explicit value; a default-auto assumption here was the test's own bug.
+    r = subprocess.run(base + ["--cache", str(tmp_path / "c"),
+                               "--render-backend", "auto"],
+                       capture_output=True, text=True, env=env)
+    assert r.returncode != 0 and "render-backend" in (r.stderr + r.stdout)
