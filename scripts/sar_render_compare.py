@@ -267,16 +267,31 @@ class PoseRenderer:
 # crop helpers
 # --------------------------------------------------------------------------
 
-def square_box(mask, pad=1.25, min_side=24):
+def boxes_of(mask, pad=1.25, min_side=24):
+    """Both readings of "the bounding box defined in Sec. 3.3".
+
+    'ti' is the literal one -- the minimum box containing the mask, resized
+    (and therefore stretched) to 224. 'sq' pads it to a square first, which
+    preserves aspect ratio but, for a tall thin object like the mustard
+    bottle, leaves it covering only about a quarter of the patch grid; the
+    other three quarters are background that mismatches identically for every
+    candidate and dilutes the mean cosine. Which reading the authors used is
+    not stated, so both are measured.
+    """
     ys, xs = np.nonzero(mask)
     if len(ys) == 0:
         return None
     y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
     cy, cx = (y0 + y1) / 2.0, (x0 + x1) / 2.0
-    side = max(max(y1 - y0, x1 - x0) * pad, min_side)
-    h = side / 2.0
-    return (int(round(cx - h)), int(round(cy - h)),
-            int(round(cx + h)), int(round(cy + h)))
+    hh = max((y1 - y0) * pad, min_side) / 2.0
+    hw = max((x1 - x0) * pad, min_side) / 2.0
+    side = max(hh, hw)
+    return {
+        "sq": (int(round(cx - side)), int(round(cy - side)),
+               int(round(cx + side)), int(round(cy + side))),
+        "ti": (int(round(cx - hw)), int(round(cy - hh)),
+               int(round(cx + hw)), int(round(cy + hh))),
+    }
 
 
 def crop_resize(img, box, interp=cv2.INTER_LINEAR):
@@ -409,8 +424,12 @@ def main():
 
     fout = open(args.out, "w", newline="")
     wr = csv.writer(fout)
+    # 'ti' = the paper's literal minimum bounding box, stretched to 224.
+    # 'sq' = the same box padded to a square first. `sar_ti` is the faithful
+    # reading of Sec. 3.6; everything else is an ablation around it.
     wr.writerow(["scene_id", "im_id", "obj_id", "variant",
-                 "sar", "sar_comp", "sar_fg", "cls", "cls_comp",
+                 "sar_ti", "sar_ti_comp", "sar_ti_fg", "cls_ti",
+                 "sar_sq", "sar_sq_comp", "sar_sq_fg", "cls_sq",
                  "ncc", "rgb_l1", "depth_inl", "chamfer",
                  "n_mask", "n_patch", "n_occ", "bbox_src"])
 
@@ -463,7 +482,7 @@ def main():
                   for _, Rv, tv in cands]
             masks = [m for _, m, _ in R_]
 
-            box, bbox_src = None, "render"
+            boxes, bbox_src = None, "render"
             if segmentor is not None and key in champs:
                 try:
                     from popoe.interfaces import ObjectModel
@@ -471,101 +490,113 @@ def main():
                     dets = segmentor.segment(scene, obj)
                     ci = champs[key]["cand"]
                     if ci < len(dets):
-                        box = square_box(dets[ci].mask, args.pad)
+                        boxes = boxes_of(dets[ci].mask, args.pad)
                         bbox_src = "det"
                 except Exception as e:
                     if n_done == 0:
                         print(f"[warn] segmentor failed ({e}); using render bbox",
                               flush=True)
-            if box is None:
+            if boxes is None:
                 union = np.zeros((H, W), bool)
                 for m in masks:
                     union |= m
-                box = square_box(union, args.pad)
-            if box is None:
+                boxes = boxes_of(union, args.pad)
+            if boxes is None:
                 n_skip += 1
                 for name, _, _ in cands:
-                    wr.writerow([scene_id, im_id, obj_id, name] + [""] * 13)
+                    wr.writerow([scene_id, im_id, obj_id, name] + [""] * 15)
                 continue
 
-            real_c = crop_resize(rgb, box)
-            obs_dc = crop_resize(obs_d, box, cv2.INTER_NEAREST)
-            grey_c = crop_resize(grey_real, box)
-
-            black_imgs, comp_imgs, pmasks, extras = [], [], [], []
             R_champ = next(Rv for nm, Rv, _ in cands if nm == "champion")
-            for (name, Rv, _), (rr, mm, dd) in zip(cands, R_):
-                rc = crop_resize(rr, box)
-                mc = crop_resize(mm.astype(np.float32), box)
-                dc = crop_resize(dd, box, cv2.INTER_NEAREST)
-                hard = mc > 0.5
-                occ = hard & (obs_dc > 1.0) & (obs_dc < dc - args.occ_tol)
-
-                black = rc.copy()                       # paper: model on black
-                comp = real_c.copy()
-                comp[hard] = rc[hard]
-
-                cov = patch_pool(mc)
-                occ_p = patch_pool(occ.astype(np.float32))
-                pmasks.append((cov >= args.min_cov) & (occ_p < 0.5))
-
-                use = hard & (~occ)
-                if use.sum() >= 16:
-                    x = grey_c[use] - grey_c[use].mean()
-                    y = rc[..., :3].mean(-1)[use]
-                    y = y - y.mean()
-                    den = math.sqrt(float((x * x).sum()) * float((y * y).sum())) + 1e-8
-                    ncc = float((x * y).sum() / den)
-                    l1 = float(np.abs(rc[use] - real_c[use]).mean())
-                else:
-                    ncc, l1 = float('nan'), float('nan')
-                dv = hard & (obs_dc > 1.0)
-                dinl = (float((np.abs(obs_dc[dv] - dc[dv]) < args.depth_tol).mean())
-                        if dv.sum() >= 16 else float('nan'))
-                cham = chamfer_of(obj_id, R_champ.T @ Rv)
-
-                black_imgs.append(black)
-                comp_imgs.append(comp)
-                extras.append((ncc, l1, dinl, cham, int(mm.sum()), int(occ.sum())))
-
-            arr = np.stack([real_c] + black_imgs + comp_imgs).astype(np.float32)
-            arr = (arr - IMNET_MEAN) / IMNET_STD
-            ten = torch.from_numpy(arr.transpose(0, 3, 1, 2)).to(device)
-            with torch.no_grad():
-                pts, cts = [], []
-                for i in range(0, len(ten), args.batch):
-                    o = dino.get_intermediate_layers(
-                        ten[i:i + args.batch], n=[layer],
-                        return_class_token=True)[0]
-                    pts.append(o[0].float())
-                    cts.append(o[1].float())
-                pt = torch.nn.functional.normalize(torch.cat(pts), dim=-1)
-                ct = torch.nn.functional.normalize(torch.cat(cts), dim=-1)
-            cos_p = (pt[1:] * pt[0].unsqueeze(0)).sum(-1).cpu().numpy()
-            cos_c = (ct[1:] * ct[0].unsqueeze(0)).sum(-1).cpu().numpy()
             nc = len(cands)
+            per_box = {}
+            extras = None
+            for tag, box in boxes.items():
+                real_c = crop_resize(rgb, box)
+                obs_dc = crop_resize(obs_d, box, cv2.INTER_NEAREST)
+                grey_c = crop_resize(grey_real, box)
+
+                black_imgs, comp_imgs, pmasks = [], [], []
+                ex = []
+                for (name, Rv, _), (rr, mm, dd) in zip(cands, R_):
+                    rc = crop_resize(rr, box)
+                    mc = crop_resize(mm.astype(np.float32), box)
+                    dc = crop_resize(dd, box, cv2.INTER_NEAREST)
+                    hard = mc > 0.5
+                    occ = hard & (obs_dc > 1.0) & (obs_dc < dc - args.occ_tol)
+
+                    comp = real_c.copy()
+                    comp[hard] = rc[hard]
+
+                    cov = patch_pool(mc)
+                    occ_p = patch_pool(occ.astype(np.float32))
+                    pmasks.append((cov >= args.min_cov) & (occ_p < 0.5))
+
+                    use = hard & (~occ)
+                    if use.sum() >= 16:
+                        x = grey_c[use] - grey_c[use].mean()
+                        y = rc[..., :3].mean(-1)[use]
+                        y = y - y.mean()
+                        den = math.sqrt(float((x * x).sum()) *
+                                        float((y * y).sum())) + 1e-8
+                        ncc = float((x * y).sum() / den)
+                        l1 = float(np.abs(rc[use] - real_c[use]).mean())
+                    else:
+                        ncc, l1 = float('nan'), float('nan')
+                    dv = hard & (obs_dc > 1.0)
+                    dinl = (float((np.abs(obs_dc[dv] - dc[dv]) < args.depth_tol).mean())
+                            if dv.sum() >= 16 else float('nan'))
+                    cham = chamfer_of(obj_id, R_champ.T @ Rv)
+
+                    black_imgs.append(rc)               # paper: model on black
+                    comp_imgs.append(comp)
+                    ex.append((ncc, l1, dinl, cham, int(mm.sum()), int(occ.sum())))
+                if extras is None:                      # box-independent columns
+                    extras = ex
+
+                arr = np.stack([real_c] + black_imgs + comp_imgs).astype(np.float32)
+                arr = (arr - IMNET_MEAN) / IMNET_STD
+                ten = torch.from_numpy(arr.transpose(0, 3, 1, 2)).to(device)
+                with torch.no_grad():
+                    pts, cts = [], []
+                    for i in range(0, len(ten), args.batch):
+                        o = dino.get_intermediate_layers(
+                            ten[i:i + args.batch], n=[layer],
+                            return_class_token=True)[0]
+                        pts.append(o[0].float())
+                        cts.append(o[1].float())
+                    pt = torch.nn.functional.normalize(torch.cat(pts), dim=-1)
+                    ct = torch.nn.functional.normalize(torch.cat(cts), dim=-1)
+                per_box[tag] = ((pt[1:] * pt[0].unsqueeze(0)).sum(-1).cpu().numpy(),
+                                (ct[1:] * ct[0].unsqueeze(0)).sum(-1).cpu().numpy(),
+                                pmasks)
+                if tag == "ti" and dbg_dir and n_dbg < args.debug_n and \
+                        (not args.debug_obj or obj_id == args.debug_obj):
+                    top = np.concatenate([real_c] + black_imgs, axis=1)
+                    bot = np.concatenate([real_c] + comp_imgs, axis=1)
+                    out = (np.concatenate([top, bot], axis=0) * 255).astype(np.uint8)
+                    cv2.imwrite(str(dbg_dir /
+                                    f"{scene_id:06d}_{im_id:06d}_{obj_id}.png"),
+                                cv2.cvtColor(out, cv2.COLOR_RGB2BGR))
+                    n_dbg += 1
 
             for j, (name, _, _) in enumerate(cands):
-                pm = pmasks[j].reshape(-1)
-                npx = int(pm.sum())
-                sar = float(cos_p[j].mean())                 # paper: all patches
-                sar_comp = float(cos_p[nc + j].mean())
-                sar_fg = float(cos_p[j][pm].mean()) if npx else float('nan')
+                out = [scene_id, im_id, obj_id, name]
+                npx = 0
+                for tag in ("ti", "sq"):
+                    cos_p, cos_c, pmasks = per_box[tag]
+                    pm = pmasks[j].reshape(-1)
+                    n = int(pm.sum())
+                    if tag == "ti":
+                        npx = n
+                    out += [f"{float(cos_p[j].mean()):.6f}",          # paper rule
+                            f"{float(cos_p[nc + j].mean()):.6f}",     # composited
+                            (f"{float(cos_p[j][pm].mean()):.6f}" if n else ""),
+                            f"{float(cos_c[j]):.6f}"]
                 ncc, l1, dinl, cham, nmask, nocc = extras[j]
-                wr.writerow([scene_id, im_id, obj_id, name,
-                             f"{sar:.6f}", f"{sar_comp:.6f}", f"{sar_fg:.6f}",
-                             f"{float(cos_c[j]):.6f}", f"{float(cos_c[nc + j]):.6f}",
-                             f"{ncc:.6f}", f"{l1:.6f}", f"{dinl:.6f}",
-                             f"{cham:.6f}", nmask, npx, nocc, bbox_src])
-
-            if dbg_dir and n_dbg < args.debug_n and \
-                    (not args.debug_obj or obj_id == args.debug_obj):
-                top = np.concatenate([real_c] + black_imgs, axis=1)
-                bot = np.concatenate([real_c] + comp_imgs, axis=1)
-                out = (np.concatenate([top, bot], axis=0) * 255).astype(np.uint8)
-                cv2.imwrite(str(dbg_dir / f"{scene_id:06d}_{im_id:06d}_{obj_id}.png"),
-                            cv2.cvtColor(out, cv2.COLOR_RGB2BGR))
-                n_dbg += 1
+                out += [f"{ncc:.6f}", f"{l1:.6f}", f"{dinl:.6f}", f"{cham:.6f}",
+                        nmask, npx, nocc, bbox_src]
+                wr.writerow(out)
 
             n_done += 1
             if n_done % 100 == 0:
