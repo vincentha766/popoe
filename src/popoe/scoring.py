@@ -61,7 +61,7 @@ class ChampionScorer:
                  use_s_coarse: bool = False, tau_abs: float | None = None):
         self.tau_inlier_frac = tau_inlier_frac      # fraction of query extent
         # Absolute tau_inlier in metres, overriding tau_inlier_frac * extent.
-        # FreeZeV2 Sec. V-A: "Thresholds tau_inlier and tau_ICP are set to 3% of
+        # FreeZeV2 Sec. IV-A: "Thresholds tau_inlier and tau_ICP are set to 3% of
         # the object's DIAMETER" — the sampled query cloud's bounding-box side is
         # a different (and systematically smaller) quantity, so a caller that
         # knows the BOP models_info diameter passes the product here instead.

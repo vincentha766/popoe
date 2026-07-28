@@ -6,7 +6,7 @@
 #           P_T^dense; ours was the ~600-point grid cloud, whose own median
 #           nearest-neighbour spacing (~2.5 mm) is the same order as tau_ICP.
 #   tau   — tau_inlier / tau_ICP / the feature-score inlier radius are 3% of the
-#           object's DIAMETER (FreeZeV2 Sec. V-A), not 3% of the sampled query
+#           object's DIAMETER (FreeZeV2 Sec. IV-A), not 3% of the sampled query
 #           cloud's largest bounding-box side, which runs 2-35% short on LM-O.
 #
 # Both are pose-side only: neither knob enters `enc_cfg`, so the campaign

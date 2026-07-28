@@ -393,11 +393,15 @@ def main():
                          "Score-affecting (s_icp rises) — use a FRESH --out.")
     ap.add_argument("--icp-dense-max", type=int, default=3000,
                     help="cap on |P_T^dense| for --icp-dense (0 = no cap). "
-                         "Default 3000 is the paper's own budget (Sec. V-A: "
-                         "'For P_Q^sparse and P_T^dense we use 5k and 3k "
-                         "points'). Subsampling is a fixed-seed uniform draw.")
+                         "Default 3000 is the paper's own budget (Sec. IV-A: "
+                         "'For P_Q and P_T^dense we use 5k and 3k points, "
+                         "respectively, while P_T^sparse includes up to 256 "
+                         "points'). Subsampling is a fixed-seed uniform draw. "
+                         "Two of those three numbers are still unmatched here: "
+                         "P_Q is 3000 against the paper's 5k, and --grid 32 "
+                         "gives P_T^sparse up to 1024 against its 256.")
     ap.add_argument("--tau-diameter", action="store_true",
-                    help="FIDELITY FIX (FreeZeV2 Sec. V-A): set tau_inlier / "
+                    help="FIDELITY FIX (FreeZeV2 Sec. IV-A): set tau_inlier / "
                          "tau_ICP / the feature-score inlier radius to 3% of "
                          "the BOP models_info DIAMETER, not 3% of the sampled "
                          "query cloud's largest bounding-box side (which is "

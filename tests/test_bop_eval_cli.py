@@ -364,7 +364,7 @@ def test_dense_mask_cloud_declines_a_degenerate_mask(bop_eval):
 
 
 def test_tau_basis_switches_all_three_thresholds_together():
-    """FreeZeV2 Sec. V-A sets tau_inlier AND tau_ICP to 3% of the DIAMETER,
+    """FreeZeV2 Sec. IV-A sets tau_inlier AND tau_ICP to 3% of the DIAMETER,
     and Eq. 5 scores over the Eq. 4 inlier set — one basis, three thresholds.
     Passing tau_basis_m must move all of them, and passing None must leave the
     historical extent-based values untouched."""

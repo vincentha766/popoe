@@ -70,13 +70,18 @@ def test_provenance_reports_the_effective_seed_per_solver():
     from popoe.freeze.recipes import solver_provenance
 
     assert "UNSEEDED" in solver_provenance("o3d", None)
-    assert "seed=7 (deterministic)" in solver_provenance("o3d", 7)
+    assert "seed=7 (seeded)" in solver_provenance("o3d", 7)
+    # Not "deterministic": a seeded o3d run is reproducible to within the
+    # measured 0.08 pt, not bit-for-bit (see solver_provenance). The word in
+    # the provenance line is what a reader uses to decide whether a small
+    # between-run difference can be read as signal.
+    assert "deterministic" not in solver_provenance("o3d", 7)
 
     for gpu in ("gpu", "gpu-feat"):
         line = solver_provenance(gpu, None)
         assert "UNSEEDED" not in line, line
-        assert "seed=42 (deterministic)" in line, line
-        assert "seed=7 (deterministic)" in solver_provenance(gpu, 7)
+        assert "seed=42 (seeded)" in line, line
+        assert "seed=7 (seeded)" in solver_provenance(gpu, 7)
 
     for seed in (None, 7):
         line = solver_provenance("teaser", seed)

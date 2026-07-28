@@ -228,7 +228,18 @@ def solver_provenance(name: str, seed: int | None) -> str:
     if effective is None:
         return (f"solver={name} seed=None (UNSEEDED — Open3D's global RNG is "
                 f"never seeded, so poses vary run-to-run)")
-    return f"solver={name} seed={effective} (deterministic)"
+    # "seeded", not "deterministic". Measured 2026-07-28 on o3d: the same
+    # commit, the same seed and the same config, re-run, still moved 94/1445
+    # LM-O rows and 262/4123 YCB-V rows (Open3D's parallel reduction order is
+    # not fixed by a seed). Whether the gpu solvers are bit-reproducible has
+    # NOT been measured, so the word here is the weaker one for every solver
+    # rather than a claim that happens to be checked for one of them.
+    #
+    # The distinction is not pedantry: provenance that reads "deterministic"
+    # licenses treating a 0.0x pt difference between two runs as signal, and
+    # this project has already spent a pod run re-deriving a noise floor that
+    # such a claim would have hidden.
+    return f"solver={name} seed={effective} (seeded)"
 
 
 def stages_for_object(extent_m: float, size_aware: bool = False,
@@ -252,7 +263,7 @@ def stages_for_object(extent_m: float, size_aware: bool = False,
 
     ``tau_basis_m``: what the 3% in :data:`TAU_FRAC` is 3% OF, in metres.
     ``None`` (default, historical) keeps ``extent_m`` — the largest side of the
-    sampled query cloud's axis-aligned bounding box. FreeZeV2 Sec. V-A says
+    sampled query cloud's axis-aligned bounding box. FreeZeV2 Sec. IV-A says
     "Thresholds tau_inlier and tau_ICP are set to 3% of the object's diameter",
     and a bounding-box side is never larger than the diameter (on LM-O it runs
     2-35% short), so every threshold derived here is systematically TIGHTER than
