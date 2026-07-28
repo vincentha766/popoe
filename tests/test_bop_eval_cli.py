@@ -83,13 +83,16 @@ def test_sources_list_builds_named_union(bop_eval, tmp_path):
 # ── the max-inst topk floor ──────────────────────────────────────────────
 
 def test_cand_csv_header_s_coarse_and_solver_columns(bop_eval):
-    """The header always ends with a `solver` column; --score-coarse inserts an
-    s_coarse column just before it."""
+    """The header always ends with a `solver` column; --score-coarse inserts the
+    coarse block (s_coarse and the pre-ICP pose it was measured at) just before
+    it. The pose columns share the switch because they share the mechanism —
+    ICPRefiner(keep_coarse=True) is what produces both."""
     off = bop_eval.cand_csv_header(False)
     on = bop_eval.cand_csv_header(True)
     assert off[-1] == "solver" and "s_coarse" not in off
-    assert on[-1] == "solver" and on[-2] == "s_coarse"
-    assert on == off[:-1] + ["s_coarse", "solver"]
+    assert "R_coarse" not in off and "t_coarse" not in off
+    assert on[-1] == "solver"
+    assert on == off[:-1] + ["s_coarse", "R_coarse", "t_coarse", "solver"]
 
 
 def test_floored_topk(bop_eval):
