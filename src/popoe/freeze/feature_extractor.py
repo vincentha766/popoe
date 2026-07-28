@@ -18,7 +18,18 @@ from popoe.interfaces import CanonFrame
 torch.backends.cudnn.enabled = False
 
 sys.path.insert(0, os.environ.get('POPOE_GEDI_PATH', '/workspace/gedi'))
-from gedi import GeDi
+try:
+    from gedi import GeDi
+except ImportError as _gedi_import_error:  # pragma: no cover - pod always has it
+    # Deferred, not silenced. The GeDi checkout is a pod-side dependency, but
+    # this module also holds pure-CPU logic (the renderer's shading resolver and
+    # its cache-key parts) that must be importable and testable on a box without
+    # it. _make_gedi_single re-raises on first use, so a real run still fails
+    # loudly at load time rather than producing features from nothing.
+    GeDi = None
+    _GEDI_IMPORT_ERROR = _gedi_import_error
+else:
+    _GEDI_IMPORT_ERROR = None
 
 DINO_DIM = 1536   # ViT-g/14 output dim
 GEO_DIM = 32      # GeDi descriptor dim
@@ -44,6 +55,12 @@ def load_dinov2(device='cuda'):
 
 
 def _make_gedi_single(r_lrf):
+    if GeDi is None:
+        raise ImportError(
+            "the GeDi checkout is not importable, so the geometric branch "
+            "cannot be built. Set POPOE_GEDI_PATH to it (default "
+            "/workspace/gedi)."
+        ) from _GEDI_IMPORT_ERROR
     cfg = {
         'dim': GEO_DIM,
         'samples_per_batch': 500,
@@ -103,6 +120,79 @@ def load_gedi(device='cuda'):
 # whichever descriptor POPOE_GEOM_BACKBONE names; both spellings are kept so
 # existing callers (recipes, monolith, eval scripts) stay valid.
 load_geometric_descriptor = load_gedi
+
+
+# --- how a query mesh gets its colour -------------------------------------
+#
+# These names go into the query cache key, so a value here changing means the
+# rendered pixels changed. Do not rename one without bumping the key tag in
+# mesh_shading_key_parts().
+SHADING_UV = "uv"                 # UV atlas + image (YCB-V)
+SHADING_VERTEX_COLOR = "vcolor"   # property uchar red/green/blue (LM-O, TUD-L, IC-BIN)
+SHADING_FACE_COLOR = "fcolor"     # per-face colours
+SHADING_FLAT = "flat"             # no colour at all (T-LESS models_cad, ITODD)
+
+
+def resolve_mesh_shading(mesh) -> str:
+    """Which colour source a query mesh actually carries.
+
+    Until 2026-07-28 the dispatch asked only `uv is not None and image is not
+    None`, so a mesh whose colour lives in `property uchar red/green/blue` —
+    which is how BOP ships LM-O, TUD-L and IC-BIN — was classified as
+    untextured and rendered as flat beige Lambertian. The DINOv2 half of every
+    query feature for those datasets was therefore computed on a colourless
+    image while the target half saw real RGB photographs.
+
+    POPOE_MESH_SHADING=uv-only restores that behaviour. It exists so the A/B
+    that prices this fix can run both arms at ONE commit, and because it
+    reproduces the pre-fix cache keys byte for byte (see
+    mesh_shading_key_parts), so the old arm still hits the campaign cache.
+    """
+    vis = getattr(mesh, "visual", None)
+    if vis is None:
+        return SHADING_FLAT
+    uv = getattr(vis, "uv", None)
+    mat = getattr(vis, "material", None)
+    img = getattr(mat, "image", None) if mat is not None else None
+    if uv is not None and img is not None:
+        return SHADING_UV
+    if os.environ.get("POPOE_MESH_SHADING", "auto").lower() == "uv-only":
+        return SHADING_FLAT
+    # trimesh's ColorVisuals.kind is None when the colours are its fabricated
+    # default, and 'vertex'/'face' only when the file actually carried them —
+    # which is the distinction we need, since a default-grey ColorVisuals must
+    # keep taking the flat path (and keep its old cache key).
+    kind = getattr(vis, "kind", None)
+    if kind == "vertex":
+        return SHADING_VERTEX_COLOR
+    if kind == "face":
+        return SHADING_FACE_COLOR
+    return SHADING_FLAT
+
+
+def mesh_shading_key_parts(mesh_path) -> tuple:
+    """Extra query-cache-key parts for a mesh whose rendered pixels changed.
+
+    EMPTY for UV-atlas and colourless meshes: nothing about their render moved,
+    so appending a part would only throw away a valid cache (YCB-V's query and
+    target features cost hours). Non-empty exactly for the meshes the old
+    dispatch mis-classified — their cached DINOv2 features were computed on a
+    grey render and must NOT be reused.
+
+    This is deliberately not an `enc_cfg` entry: enc_cfg is per RUN, and which
+    shading applies is per MESH. It follows the same rule as the FPFH knobs in
+    examples/bop_eval.py — add key material only where the behaviour actually
+    differs, so unaffected entries survive.
+
+    The `-v1` is a version, not decoration: a future change to how vertex
+    colours are rendered has to bump it, because the mode name alone would
+    still be "vcolor" and the stale features would be served again.
+    """
+    import trimesh
+    mode = resolve_mesh_shading(trimesh.load(str(mesh_path), force="mesh"))
+    if mode in (SHADING_UV, SHADING_FLAT):
+        return ()
+    return (f"shading={mode}-v1",)
 
 
 class QueryFeatureExtractor:
@@ -229,14 +319,22 @@ class QueryFeatureExtractor:
             print(bar, flush=True)
             return False
 
-    def _nvdiffrast_render(self, mesh, cam_pos, H, W, fov_deg):
+    def _nvdiffrast_render(self, mesh, cam_pos, H, W, fov_deg, shading=None):
         """GPU render via nvdiffrast, matching FE's camera convention.
 
         FE projection (used downstream): col = x_cam/z_cam*fx+cx, row = y_cam/z_cam*fy+cy.
+
+        `shading` picks the ALBEDO only; the Lambertian term is the same in every
+        case, so a coloured mesh renders exactly as it did before except that the
+        fixed beige is replaced by the model's own colour. SHADING_UV never
+        reaches here — it has its own function (texture sampling needs a v-flip
+        that vertex attributes do not).
         """
         import nvdiffrast.torch as dr
         import math, PIL.Image
 
+        if shading is None:
+            shading = resolve_mesh_shading(mesh)
         V_np = np.asarray(mesh.vertices, dtype=np.float32)
         F_np = np.asarray(mesh.faces, dtype=np.int32)
 
@@ -284,10 +382,33 @@ class QueryFeatureExtractor:
 
         light_dir = torch.tensor(-forward.astype(np.float32), device=self.device)
         nrm_n = torch.nn.functional.normalize(nrm_interp[0], dim=-1)
-        shading = torch.clamp((nrm_n * light_dir).sum(dim=-1), 0.1, 1.0)  # (H,W)
+        lambert = torch.clamp((nrm_n * light_dir).sum(dim=-1), 0.1, 1.0)  # (H,W)
 
-        base = torch.tensor([180.0, 160.0, 140.0], device=self.device) / 255.0
-        color = shading.unsqueeze(-1) * base  # (H,W,3)
+        # Albedo. The default is the historical fixed beige; a mesh that carries
+        # its own colour uses that instead. Note the colour arrays are indexed by
+        # the SAME vertex/face arrays that were rasterised — trimesh keeps
+        # visual.vertex_colors aligned with .vertices through load/scale/
+        # translate — so an alignment slip would be a length mismatch, which the
+        # asserts below turn into a crash rather than a scrambled render.
+        if shading == SHADING_VERTEX_COLOR:
+            vcol = np.asarray(mesh.visual.vertex_colors, dtype=np.float32)[:, :3] / 255.0
+            assert len(vcol) == len(V_np), (
+                f"vertex_colors {len(vcol)} != vertices {len(V_np)}")
+            vcol_t = torch.from_numpy(np.ascontiguousarray(vcol)).unsqueeze(0).to(self.device)
+            base, _ = dr.interpolate(vcol_t, rast, tri)  # (1,H,W,3)
+            base = base[0]
+        elif shading == SHADING_FACE_COLOR:
+            fcol = np.asarray(mesh.visual.face_colors, dtype=np.float32)[:, :3] / 255.0
+            assert len(fcol) == len(F_np), (
+                f"face_colors {len(fcol)} != faces {len(F_np)}")
+            fcol_t = torch.from_numpy(np.ascontiguousarray(fcol)).to(self.device)
+            # rast[..., 3] is triangle_id + 1, 0 for background; clamp keeps the
+            # background lookup in range (it is masked out by `hit` below).
+            tri_id = (rast[0, :, :, 3].long() - 1).clamp(min=0)
+            base = fcol_t[tri_id]  # (H,W,3)
+        else:
+            base = torch.tensor([180.0, 160.0, 140.0], device=self.device) / 255.0
+        color = lambert.unsqueeze(-1) * base  # (H,W,3)
         bg = torch.tensor([200.0 / 255.0, 200.0 / 255.0, 200.0 / 255.0], device=self.device)
         color = torch.where(hit.unsqueeze(-1), color, bg)
         rgb = (color * 255).clamp(0, 255).to(torch.uint8).cpu().numpy()
@@ -300,9 +421,11 @@ class QueryFeatureExtractor:
 
         return PIL.Image.fromarray(rgb), depth, fx, fy, cx, cy
 
-    def _trimesh_render(self, mesh, cam_pos, H, W, fov_deg):
+    def _trimesh_render(self, mesh, cam_pos, H, W, fov_deg, shading=None):
         """CPU fallback — trimesh ray casting."""
         import math, PIL.Image
+        if shading is None:
+            shading = resolve_mesh_shading(mesh)
         center = np.zeros(3)
         forward = (center - cam_pos)
         forward = forward / (np.linalg.norm(forward) + 1e-8)
@@ -328,9 +451,22 @@ class QueryFeatureExtractor:
         if len(locs) > 0:
             normals = mesh.face_normals[idx_tri]
             light_dir = -forward
-            shading = np.clip((normals * light_dir).sum(axis=1), 0.1, 1.0)
-            base_color = np.array([180, 160, 140], dtype=np.float32)
-            colors = (base_color[None] * shading[:, None]).astype(np.uint8)
+            lambert = np.clip((normals * light_dir).sum(axis=1), 0.1, 1.0)
+            # Same albedo rule as the nvdiffrast path, so the two backends agree
+            # about what a colour mode MEANS. (They still differ numerically —
+            # ray casting vs rasterising — which is why render_backend is in the
+            # cache key.) Flat per-hit-triangle albedo: this path has no
+            # barycentrics, so a vertex-coloured mesh is averaged per face.
+            if shading == SHADING_VERTEX_COLOR:
+                vcol = np.asarray(mesh.visual.vertex_colors,
+                                  dtype=np.float32)[:, :3]
+                base_color = vcol[mesh.faces[idx_tri]].mean(axis=1)  # (hits,3)
+            elif shading == SHADING_FACE_COLOR:
+                base_color = np.asarray(mesh.visual.face_colors,
+                                        dtype=np.float32)[idx_tri, :3]
+            else:
+                base_color = np.array([[180, 160, 140]], dtype=np.float32)
+            colors = (base_color * lambert[:, None]).astype(np.uint8)
             rgb[idx_ray] = colors
             depths = np.linalg.norm(locs - cam_pos, axis=1)
             depth_map[idx_ray] = depths
@@ -406,21 +542,22 @@ class QueryFeatureExtractor:
 
     @staticmethod
     def _mesh_has_texture(mesh):
-        vis = getattr(mesh, 'visual', None)
-        if vis is None: return False
-        uv = getattr(vis, 'uv', None)
-        mat = getattr(vis, 'material', None)
-        img = getattr(mat, 'image', None) if mat is not None else None
-        return uv is not None and img is not None
+        """Deprecated: kept for callers outside this module. It answers "is
+        there a UV atlas", which is NOT the same question as "does this mesh
+        carry colour" — see resolve_mesh_shading."""
+        return resolve_mesh_shading(mesh) == SHADING_UV
 
     def _raycast_render(self, mesh, cam_pos, H=224, W=224, fov_deg=60.0):
         """Render mesh from cam_pos. Returns (PIL.Image, depth, fx, fy, cx, cy).
-        Dispatches: nvdiffrast textured -> nvdiffrast Lambertian -> trimesh CPU."""
+        Dispatches on the mesh's colour source (resolve_mesh_shading): UV atlas
+        -> textured sampler; vertex/face colour or none -> Lambertian with the
+        matching albedo; no nvdiffrast -> trimesh CPU ray caster."""
+        shading = resolve_mesh_shading(mesh)
         if self._init_nvdiffrast():
-            if self._mesh_has_texture(mesh):
+            if shading == SHADING_UV:
                 return self._nvdiffrast_render_textured(mesh, cam_pos, H, W, fov_deg)
-            return self._nvdiffrast_render(mesh, cam_pos, H, W, fov_deg)
-        return self._trimesh_render(mesh, cam_pos, H, W, fov_deg)
+            return self._nvdiffrast_render(mesh, cam_pos, H, W, fov_deg, shading)
+        return self._trimesh_render(mesh, cam_pos, H, W, fov_deg, shading)
 
     @torch.no_grad()
     def extract_query_features(self, mesh_path, pts_query, n_views=None):
