@@ -669,6 +669,7 @@ def main():
         "query_fill": ("POPOE_QUERY_FILL", "0.45"),       # object fill fraction
         "query_min_views": ("POPOE_QUERY_MIN_VIEWS", "0"),  # visibility gate
         "canon_basis": ("POPOE_CANON_BASIS", "extent"),   # GeDi radius basis
+        "query_views": ("POPOE_QUERY_VIEWS", "spiral"),   # view placement #21
     }.items():
         _val = os.environ.get(_env, _dflt)
         if _val != _dflt:

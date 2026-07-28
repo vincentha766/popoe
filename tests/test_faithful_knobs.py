@@ -142,3 +142,15 @@ def test_n_restarts_reaches_the_solver_and_refuses_non_o3d():
     assert stages_for_object(0.1)[0].n_restarts == 1
     with pytest.raises(ValueError, match="n_restarts"):
         _build_solver("gpu", tau=0.03, n_ransac=10, n_restarts=5)
+
+
+def test_icosphere_directions_shape_and_norms():
+    """162 = 10*4^2 + 2, every direction unit-norm and distinct — and the
+    poles/orientation are deterministic (no RNG), which is what lets the
+    cache key be just the layout name."""
+    from popoe.freeze.feature_extractor import icosphere_directions
+    d = icosphere_directions(2)
+    assert d.shape == (162, 3)
+    assert np.allclose(np.linalg.norm(d, axis=1), 1.0, atol=1e-9)
+    assert len({tuple(np.round(x, 9)) for x in d}) == 162
+    assert np.allclose(icosphere_directions(2), d)
