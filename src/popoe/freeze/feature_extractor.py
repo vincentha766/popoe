@@ -128,7 +128,7 @@ load_geometric_descriptor = load_gedi
 # rendered pixels changed. Do not rename one without bumping the key tag in
 # mesh_shading_key_parts().
 SHADING_UV = "uv"                 # UV atlas + image (YCB-V)
-SHADING_VERTEX_COLOR = "vcolor"   # property uchar red/green/blue (LM-O, TUD-L, IC-BIN)
+SHADING_VERTEX_COLOR = "vcolor"   # property uchar red/green/blue (LM-O, TUD-L, IC-BIN, HB)
 SHADING_FACE_COLOR = "fcolor"     # per-face colours
 SHADING_FLAT = "flat"             # no colour at all (T-LESS models_cad, ITODD)
 
@@ -138,7 +138,7 @@ def resolve_mesh_shading(mesh) -> str:
 
     Until 2026-07-28 the dispatch asked only `uv is not None and image is not
     None`, so a mesh whose colour lives in `property uchar red/green/blue` —
-    which is how BOP ships LM-O, TUD-L and IC-BIN — was classified as
+    which is how BOP ships LM-O, TUD-L, IC-BIN and HB — was classified as
     untextured and rendered as flat beige Lambertian. The DINOv2 half of every
     query feature for those datasets was therefore computed on a colourless
     image while the target half saw real RGB photographs.

@@ -1,8 +1,8 @@
 """Which colour source a query mesh has, and what that does to the cache key.
 
 The bug this guards: `_mesh_has_texture` asked only "is there a UV atlas", so a
-mesh carrying `property uchar red/green/blue` — how BOP ships LM-O, TUD-L and
-IC-BIN — was rendered as flat beige and its DINOv2 query features were computed
+mesh carrying `property uchar red/green/blue` — how BOP ships LM-O, TUD-L,
+IC-BIN and HB — was rendered as flat beige and its DINOv2 query features were computed
 on a colourless image.
 
 The second half is the part that is easy to get wrong: fixing the renderer does
