@@ -57,6 +57,7 @@ from popoe.cache import StageCache, file_fingerprint, fingerprint
 from popoe.datasets.bop import bop_layout, default_targets_path
 from popoe.interfaces import ObjectModel, PointFeatures, PoseHypothesis, Scene
 from popoe.confusable_select import dual_assign_hyps, partner_id
+from popoe.freeze.feature_extractor import mesh_shading_key_parts
 from popoe.freeze.recipes import (
     WEIGHTS, YCBV_CLAMP_DIAMETERS_M, YCBV_MERGE_LABELS,
     best_encoders, best_segmentor, scale_vis, solver_provenance,
@@ -547,8 +548,16 @@ def main():
                                         / f"obj_{obj_id:06d}.ply"),
                           diameter=0.0)
         t0 = time.time()
+        # Shading is keyed PER MESH, not in enc_cfg: the fix that taught the
+        # renderer about `property uchar red/green/blue` changed the rendered
+        # pixels for LM-O / TUD-L / IC-BIN / HB only, and neither enc_cfg nor
+        # the mesh bytes move when render CODE changes — so without this part
+        # the old grey-render features would be served silently. Empty tuple for
+        # UV-atlas and colourless meshes, which keeps every YCB-V / T-LESS /
+        # ITODD key (and hence their cached features) exactly as it was.
+        shade_parts = mesh_shading_key_parts(obj.mesh_path)
         qkey = (fingerprint("query", enc_cfg, file_fingerprint(obj.mesh_path),
-                            obj_id) if cache else None)
+                            obj_id, *shade_parts) if cache else None)
         # Both files or nothing; an incomplete entry is fatal (the dependent
         # target entries share this qkey and may hold a target-fitted basis).
         entry = load_cached_query(cache, qkey)
@@ -575,7 +584,12 @@ def main():
                                    use_s_coarse=args.use_s_coarse,
                                    solver=args.solver, seed=args.seed)
         query_cache[obj_id] = (obj, q, stages)
-        print(f"  obj{obj_id}: extent={extent*1000:.0f}mm "
+        # The shading tag is printed even when empty: "which renderer path ran"
+        # is what this run is being trusted about, and a log that only speaks up
+        # in the interesting case cannot tell "flat, correctly" apart from "the
+        # resolver never ran".
+        shade_note = shade_parts[0].split("=")[1] if shade_parts else "uv-or-flat"
+        print(f"  obj{obj_id}: extent={extent*1000:.0f}mm shading={shade_note} "
               f"encode={time.time()-t0:.1f}s", flush=True)
 
     cand_f = None

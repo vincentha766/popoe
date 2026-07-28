@@ -91,6 +91,28 @@ or wrong object" from "right mask, poor registration" — which requires the
 GT trees on the pod volume for the five datasets not held locally. Until
 then the spread is recorded as unexplained rather than narrated.
 
+> **2026-07-28 — every LM-O number above and below predates the shading fix.**
+> LM-O carries its colour in `property uchar red/green/blue` with no UV atlas.
+> Until popoe `b439d58`, such meshes were classified as untextured and rendered
+> flat beige, so the DINOv2 half of every LM-O query feature was computed on a
+> colourless image. This applies to **headline rows 2, 4 and 6** and to the
+> **LM-O row of the seven-set table** (0.631). Re-running those commands at or
+> after that commit will **not** reproduce their numbers, and should not: the
+> measured move on the seven-set CNOS LM-O line is **+1.31 pt** full AR
+> (0.6876 → 0.7007), on top of **+2.07 pt** at the coarse pose.
+>
+> Three more sets in the seven-set table are vertex-coloured and carry the same
+> caveat, **unmeasured**: TUD-L, IC-BIN, HB. YCB-V (rows 1/3/5 and its
+> seven-set row) is unaffected — it ships a real UV atlas. T-LESS
+> (`models_cad`) and ITODD have no colour at all, so flat beige was already
+> the correct render for them; ITODD is also the only set we beat official on.
+> The affected and unaffected sets interleave in gap size, so this fix does
+> **not** explain the per-dataset spread discussed above.
+>
+> Evidence, null control and per-object breakdown:
+> `../gedi/BOP_OFFICIAL_BASELINES.md` 乙-5; artifacts
+> `../gedi/ycbv_local_data/vcolor_ab_20260728/`.
+
 ### Campaign notes (2026-07-26)
 
 - Fresh clone path on pod: `/workspace/popoe_verify_75553a1` @ `75553a1`.
