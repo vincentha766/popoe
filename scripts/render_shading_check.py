@@ -21,11 +21,20 @@ The checks, and what each one would catch:
                   _nvdiffrast_render). A mesh coloured red at +y and green at -y
                   must put red in the LOWER half of the image. Catches exactly
                   the v-flip class of bug the UV path had.
-  4. GAMUT        every rendered object pixel must be `lambert * albedo` for
-                  some albedo the mesh actually carries and lambert in
-                  [0.1, 1.0]. Checked on the REAL LM-O meshes, per channel, so
-                  a colour that came from nowhere (or from the beige default)
-                  fails.
+  4. ALBEDO       on the REAL LM-O meshes: render the same mesh from the same
+                  camera twice, once forced flat and once coloured. Both are
+                  `lambert * albedo` with the SAME lambert, so dividing the two
+                  recovers the interpolated albedo per pixel in closed form.
+                  Every recovered value must lie inside the mesh's own
+                  per-channel vertex-colour range. This is an identity, not a
+                  heuristic, and unlike comparing mean colours it still has
+                  teeth on the near-grey objects (driller, glue) where every
+                  channel mean agrees to within a unit of noise.
+
+A note on what the checks deliberately do NOT assert: that the render "looks
+more like a photograph". It does not, and cannot — the lighting is a synthetic
+headlight. The claim under test is only that the albedo now comes from the
+mesh instead of a constant.
 
 Usage:
   python scripts/render_shading_check.py --bop /workspace/bop_data \
@@ -68,8 +77,14 @@ class _Renderer(QueryFeatureExtractor):
 def _tri_mesh(colors=None):
     """One big triangle spanning the view, vertices at known image positions.
 
-    Vertex 0 at +y (renders DOWN, large row), 1 at -y & -x (up-left),
-    2 at -y & +x (up-right)."""
+    Seen from CAM_Z (below), the renderer's basis is right=+x, up=+y, and
+    y_cam > 0 maps to a LARGER row. So vertex 0 (+y) lands at bottom centre,
+    vertex 1 (-x, -y) at top left, vertex 2 (+x, -y) at top right.
+
+    The camera side matters: from -z the basis comes out right=-x (cross of
+    forward and up_ref flips), which mirrors the image left-to-right. That is
+    correct behaviour — you are looking at the back — but it makes the probe
+    positions below wrong, which is how this note got written."""
     v = np.array([[0.0, 60.0, 0.0], [-60.0, -50.0, 0.0], [60.0, -50.0, 0.0]])
     f = np.array([[0, 1, 2]])
     m = trimesh.Trimesh(vertices=v, faces=f, process=False)
@@ -78,7 +93,10 @@ def _tri_mesh(colors=None):
     return m
 
 
-def _render(rend, mesh, cam_pos=np.array([0.0, 0.0, -200.0]), H=224, W=224):
+CAM_Z = np.array([0.0, 0.0, 200.0])
+
+
+def _render(rend, mesh, cam_pos=CAM_Z, H=224, W=224):
     img, depth, *_ = rend._raycast_render(mesh, cam_pos, H, W)
     return np.asarray(img), depth
 
@@ -131,40 +149,66 @@ def check_orientation(rend):
           f"R-G bottom={rness_bot:.1f} top={rness_top:.1f}")
 
 
-def check_gamut(rend, mesh_path):
-    """Real mesh: every object pixel must be lambert*albedo, per channel."""
+FLAT_BASE = np.array([180.0, 160.0, 140.0])
+
+
+def _prepared(mesh_path):
+    """The mesh exactly as extract_query_features prepares it."""
     m = trimesh.load(str(mesh_path), force="mesh")
-    mode = resolve_mesh_shading(m)
-    if mode != SHADING_VERTEX_COLOR:
-        check(f"{Path(mesh_path).name}: expected vertex colour", False, mode)
-        return None
     m.apply_scale(0.45 * 224 / max(m.extents))
     m.apply_translation(-m.bounds.mean(0))
-    rgb, depth = _render(rend, m, cam_pos=np.array([0.0, 0.0, -max(m.extents) * 1.5]))
-    hit = depth > 0
-    obj = rgb[hit].astype(float)
+    return m
+
+
+def check_albedo(rend, mesh_path):
+    """Divide the coloured render by the flat one and read the albedo back.
+
+    flat[px]     = round(255 * L * 180/255) = round(L * 180)
+    coloured[px] = round(255 * L * A_ch/255) = round(L * A_ch)
+    => A_ch = coloured_ch * 180 / flat_R, exactly, up to uint8 rounding.
+
+    Rounding is why only well-lit pixels are used: at the L=0.1 clamp, flat_R
+    is 18 and one count of rounding is already 5% of the recovered albedo."""
+    name = Path(mesh_path).name
+    m = _prepared(mesh_path)
+    if resolve_mesh_shading(m) != SHADING_VERTEX_COLOR:
+        check(f"{name}: expected vertex colour", False,
+              resolve_mesh_shading(m))
+        return None, None
+    cam = np.array([0.0, 0.0, max(m.extents) * 1.5])
+
+    os.environ["POPOE_MESH_SHADING"] = "uv-only"
+    flat, d_flat = _render(rend, m, cam_pos=cam)
+    os.environ["POPOE_MESH_SHADING"] = "auto"
+    col, d_col = _render(rend, m, cam_pos=cam)
+
+    check(f"{name}: same silhouette as the flat render",
+          np.array_equal(d_flat > 0, d_col > 0),
+          f"{int((d_col > 0).sum())} object pixels")
+    hit = d_col > 0
+    check(f"{name}: the coloured render actually DIFFERS from the flat one",
+          not np.array_equal(flat[hit], col[hit]),
+          f"mean |diff| = {np.abs(flat[hit].astype(int) - col[hit].astype(int)).mean():.1f}")
+
+    lit = hit & (flat[..., 0] >= 60)          # L >= 1/3, rounding under 2%
+    if lit.sum() < 200:
+        check(f"{name}: enough well-lit pixels to recover albedo", False,
+              f"{int(lit.sum())}")
+        return col, flat
+    L = flat[lit][:, 0].astype(float) / FLAT_BASE[0]
+    A = col[lit].astype(float) / L[:, None]
     vc = np.asarray(m.visual.vertex_colors, dtype=float)[:, :3]
-    ok = True
-    detail = []
+    ok, detail = True, []
     for ch, nm in enumerate("RGB"):
-        hi = vc[:, ch].max()
-        # lambert is clamped to [0.1, 1.0], so a pixel can never exceed the
-        # brightest albedo, and interpolation cannot invent a new hue.
-        ok &= obj[:, ch].max() <= hi + 1.5
-        detail.append(f"{nm}: px<= {obj[:, ch].max():.0f} albedo<= {hi:.0f}")
-    check(f"{Path(mesh_path).name}: pixels within mesh colour gamut", bool(ok),
-          "; ".join(detail))
-    # And the render must not be grey: a flat-beige fallback would have
-    # R:G:B fixed at 180:160:140 everywhere.
-    mean_px = obj.mean(0)
-    mean_vc = vc.mean(0)
-    order_px = tuple(np.argsort(-mean_px))
-    order_vc = tuple(np.argsort(-mean_vc))
-    check(f"{Path(mesh_path).name}: channel ORDER matches the mesh's own",
-          order_px == order_vc,
-          f"render mean={np.round(mean_px, 1).tolist()} "
-          f"mesh mean={np.round(mean_vc, 1).tolist()}")
-    return rgb
+        lo, hi = vc[:, ch].min(), vc[:, ch].max()
+        # 3 counts of slack absorbs the two uint8 roundings; interpolation can
+        # only produce convex combinations, so nothing may fall OUTSIDE.
+        bad = int(((A[:, ch] < lo - 3) | (A[:, ch] > hi + 3)).sum())
+        ok &= bad == 0
+        detail.append(f"{nm}[{lo:.0f},{hi:.0f}] out={bad}")
+    check(f"{name}: recovered albedo lies in the mesh's vertex-colour range",
+          bool(ok), "; ".join(detail) + f"  (n={int(lit.sum())})")
+    return col, flat
 
 
 def main():
@@ -195,21 +239,15 @@ def main():
         if not p.exists():
             check(f"{p} exists", False)
             continue
-        # Side by side: forced-flat (what the pipeline used to render) next to
-        # the fix. Same camera, same rasterisation — only the albedo differs.
-        os.environ["POPOE_MESH_SHADING"] = "uv-only"
-        m = trimesh.load(str(p), force="mesh")
-        m.apply_scale(0.45 * 224 / max(m.extents))
-        m.apply_translation(-m.bounds.mean(0))
-        cam = np.array([0.0, 0.0, -max(m.extents) * 1.5])
-        before, _ = _render(rend, m)
-        os.environ["POPOE_MESH_SHADING"] = "auto"
-        after = check_gamut(rend, p)
+        after, before = check_albedo(rend, p)
         if after is None:
             continue
-        pair = np.concatenate([before, np.full((before.shape[0], 4, 3), 255,
-                                               np.uint8), after], axis=1)
-        PIL.Image.fromarray(pair).save(out / f"obj_{oid:06d}_before_after.png")
+        # Side by side: what the pipeline used to render (left) next to what it
+        # renders now (right). Same camera, same rasterisation, same lighting —
+        # only the albedo differs.
+        gap = np.full((before.shape[0], 4, 3), 255, np.uint8)
+        PIL.Image.fromarray(np.concatenate([before, gap, after], axis=1)).save(
+            out / f"obj_{oid:06d}_before_after.png")
 
     # A UV mesh must be untouched by all of this.
     ycbv = Path(args.bop) / "ycbv" / "models" / "obj_000005.ply"
