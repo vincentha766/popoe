@@ -191,7 +191,15 @@ def main():
         if obj_id in qcache:
             return qcache[obj_id]
         mesh = str(bop / layout["models_dir"] / f"obj_{obj_id:06d}.ply")
-        qkey = fingerprint("query", enc_cfg, file_fingerprint(mesh), obj_id)
+        # Shading key parts, same as bop_eval: LM-O-family meshes carry
+        # `shading=vcolor-v1` since the vertex-colour fix, and this mirror
+        # missing it is exactly why every post-fix LM-O lookup missed (the
+        # second mirror-drift failure in one night; the first was the
+        # conditional knobs). The resolver is pure CPU by design.
+        from popoe.freeze.feature_extractor import mesh_shading_key_parts
+        shade_parts = mesh_shading_key_parts(mesh)
+        qkey = fingerprint("query", enc_cfg, file_fingerprint(mesh), obj_id,
+                           *shade_parts)
         arrays = cache.get_arrays("query", qkey)
         pca = cache.get_pickle("query", qkey)
         if arrays is None or pca is None:
