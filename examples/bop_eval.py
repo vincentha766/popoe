@@ -439,6 +439,15 @@ def main():
                          "Two of those three numbers are still unmatched here: "
                          "P_Q is 3000 against the paper's 5k, and --grid 32 "
                          "gives P_T^sparse up to 1024 against its 256.")
+    ap.add_argument("--n-restarts", type=int, default=1,
+                    help="o3d solver restarts per (mask, weight); restart>0 "
+                         "runs on a deterministic 70%% subsample and every "
+                         "restart's pose becomes a separate hypothesis. The "
+                         "weight sweep gives each mask 5 solve attempts in 5 "
+                         "feature spaces; this knob gives it N attempts in ONE "
+                         "space, which is the control that separates "
+                         "'diversity of feature spaces' from 'more RANSAC "
+                         "budget' in the sweep's measured value.")
     ap.add_argument("--probe-corr", default="",
                     help="CORRESPONDENCE PROBE: instead of solving, measure "
                          "how many of the correspondences the matcher would "
@@ -750,6 +759,7 @@ def main():
                                    score_coarse=args.score_coarse,
                                    use_s_coarse=args.use_s_coarse,
                                    corr_topk=args.corr_topk,
+                                   n_restarts=args.n_restarts,
                                    solver=args.solver, seed=args.seed,
                                    tau_basis_m=tau_basis)
         query_cache[obj_id] = (obj, q, stages)
