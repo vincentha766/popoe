@@ -30,7 +30,13 @@ different target sets and quietly favour whichever had fewer.
 The refined CSV is also a self-check: it is reconstructed from the dump by
 argmax, so comparing it to `--out` row by row verifies that this script's
 champion is the live pipeline's champion. A nonzero mismatch count means the
-reconstruction is wrong and the coarse column cannot be trusted either.
+reconstruction is wrong and the coarse column cannot be trusted either — the
+script exits nonzero so the driver stops instead of scoring a wrong column.
+
+A differing pose at EQUAL score is counted separately as a tie, not a mismatch.
+The live scorer ranks in full precision while this script ranks on the 6-dp
+string, so a tie can land on either row; both are legitimate argmaxes and each
+carries its own coarse pose. Failing on those would abort a healthy run.
 
 Single-instance only (`inst_count == 1`, i.e. all of LM-O / YCB-V / TUD-L):
 with several instances per target, "the champion" is a set and reconstructing
@@ -48,6 +54,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import sys
 
 KEY = ("scene_id", "im_id", "obj_id")
 
@@ -97,7 +104,7 @@ def split(cand_csv, out_csv, prefix):
 
     ref_path, coarse_path = f"{prefix}_refined.csv", f"{prefix}_coarse.csv"
     header = ["scene_id", "im_id", "obj_id", "score", "R", "t", "time"]
-    n_pad = n_mismatch = 0
+    n_pad = n_mismatch = n_tie = 0
     with open(ref_path, "w", newline="") as fr, \
             open(coarse_path, "w", newline="") as fc:
         wr, wc = csv.writer(fr), csv.writer(fc)
@@ -121,7 +128,18 @@ def split(cand_csv, out_csv, prefix):
             # t in mm at 4 dp for the refined AND the coarse pose), so this is
             # an exact string comparison, not a tolerance.
             if ch["R"] != row["R"] or ch["t"] != row["t"]:
-                n_mismatch += 1
+                # Two different things wear this disguise, and only one is a
+                # bug. If the champion we rebuilt carries a DIFFERENT score
+                # than the one the live run wrote, we picked the wrong row and
+                # the coarse column beside it belongs to the wrong candidate —
+                # fatal. If the scores are equal we hit a tie: the live scorer
+                # ranked in full precision and we rank on the 6-dp string, so
+                # either row is a legitimate argmax and the coarse column is
+                # still that candidate's own. Report it, do not fail on it.
+                if ch["score"] == row["score"]:
+                    n_tie += 1
+                else:
+                    n_mismatch += 1
             wr.writerow([*k, ch["score"], ch["R"], ch["t"], t_col])
             wc.writerow([*k, ch["score"], ch["R_coarse"], ch["t_coarse"],
                          t_col])
@@ -132,6 +150,8 @@ def split(cand_csv, out_csv, prefix):
           + ("  <-- reconstruction FAILED; the coarse column is not "
              "trustworthy either" if n_mismatch else "  (champion "
              "reconstruction verified)"))
+    print(f"score ties resolved to the other row: {n_tie}"
+          "  (benign: same score, both rows are argmax)")
     print(f"-> {ref_path}\n-> {coarse_path}")
     return n_mismatch
 
@@ -145,8 +165,12 @@ def main():
     ap.add_argument("--prefix", required=True,
                     help="output prefix; writes <prefix>_{refined,coarse}.csv")
     args = ap.parse_args()
-    split(args.cand_csv, args.out_csv, args.prefix)
+    # Nonzero exit, because the caller is icp_ab_run.sh under `set -e`: a
+    # silent exit 0 here let a failed reconstruction flow straight into the AR
+    # computation and `touch DONE`. Printing a warning nobody reads is how this
+    # project produced an all-zero ITODD CSV that looked finished.
+    return 1 if split(args.cand_csv, args.out_csv, args.prefix) else 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
