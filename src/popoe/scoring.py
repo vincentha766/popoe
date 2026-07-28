@@ -58,8 +58,15 @@ class ChampionScorer:
 
     def __init__(self, tau_inlier_frac: float = 0.03, size_thr: float = 0.0075,
                  size_aware: bool = False, compute_s_coarse: bool = False,
-                 use_s_coarse: bool = False):
+                 use_s_coarse: bool = False, tau_abs: float | None = None):
         self.tau_inlier_frac = tau_inlier_frac      # fraction of query extent
+        # Absolute tau_inlier in metres, overriding tau_inlier_frac * extent.
+        # FreeZeV2 Sec. IV-A: "Thresholds tau_inlier and tau_ICP are set to 3% of
+        # the object's DIAMETER" — the sampled query cloud's bounding-box side is
+        # a different (and systematically smaller) quantity, so a caller that
+        # knows the BOP models_info diameter passes the product here instead.
+        # None keeps the historical fraction-of-extent behaviour byte-identical.
+        self.tau_abs = tau_abs
         self.size_thr = size_thr                    # metres, metric_fit inliers
         self.size_aware = size_aware
         self.compute_s_coarse = compute_s_coarse
@@ -72,7 +79,7 @@ class ChampionScorer:
         fq = query.meta.get("feats_w1", query.feats)
         ft = target.meta.get("feats_w1", target.feats)
         diam = float(np.ptp(query.pts, axis=0).max())
-        tau = self.tau_inlier_frac * diam
+        tau = self.tau_abs if self.tau_abs is not None else self.tau_inlier_frac * diam
         s1, _ = feature_aware_score(
             pose.R, pose.t, query.pts, target.pts, fq, ft, tau)
         s_icp = pose.breakdown.get("s_icp", pose.breakdown.get("fitness", 0.0))

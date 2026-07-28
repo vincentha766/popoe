@@ -59,7 +59,7 @@ from popoe.interfaces import ObjectModel, PointFeatures, PoseHypothesis, Scene
 from popoe.confusable_select import dual_assign_hyps, partner_id
 from popoe.freeze.feature_extractor import mesh_shading_key_parts
 from popoe.freeze.recipes import (
-    WEIGHTS, YCBV_CLAMP_DIAMETERS_M, YCBV_MERGE_LABELS,
+    TAU_FRAC, WEIGHTS, YCBV_CLAMP_DIAMETERS_M, YCBV_MERGE_LABELS,
     best_encoders, best_segmentor, scale_vis, solver_provenance,
     stages_for_object,
 )
@@ -138,6 +138,36 @@ def resolve_merge(merge_arg, dataset):
         for a in ids:
             merge[a] = ids
     return merge
+
+
+def dense_mask_cloud(scene, mask, max_pts: int = 3000):
+    """P_T^dense (FreeZeV2 Eq. 6): every valid depth pixel inside the mask,
+    back-projected with the scene intrinsics.
+
+    Byte-for-byte the same construction the feature extractor already performs
+    for the GeDi neighbourhood (`pcd_dense` there, `(depth > 0) & mask`, metres,
+    camera frame) — it is rebuilt here because that one is discarded before it
+    can reach ICP, and recomputing it is cheaper than plumbing it through the
+    feature cache (and would have invalidated every cached entry).
+
+    `max_pts` caps the result with a fixed-seed uniform draw (0 = no cap). The
+    draw is seeded per call, so the same mask always yields the same cloud and
+    the run stays reproducible.
+
+    Returns None when the mask has fewer than 4 valid depth pixels; the caller
+    then leaves `pts_dense` unset and ICP falls back to the sparse cloud."""
+    ys, xs = np.where((scene.depth > 0) & mask)
+    if len(ys) < 4:
+        return None
+    if max_pts and len(ys) > max_pts:
+        idx = np.sort(np.random.default_rng(0).choice(len(ys), max_pts,
+                                                      replace=False))
+        ys, xs = ys[idx], xs[idx]
+    d = scene.depth[ys, xs]
+    fx, fy = scene.K[0, 0], scene.K[1, 1]
+    cx, cy = scene.K[0, 2], scene.K[1, 2]
+    return np.stack([(xs - cx) * d / fx, (ys - cy) * d / fy, d],
+                    axis=1).astype(np.float32)
 
 
 def read_frame_images(sdir: Path, im_id: int, layout):
@@ -352,6 +382,31 @@ def main():
                          "dual-CAD). Requires --merge with a pair (e.g. ycbv). "
                          "Score-affecting — use a FRESH --out / --cand-csv. "
                          "YCB-V inst_count==1 only.")
+    ap.add_argument("--icp-dense", action="store_true",
+                    help="FIDELITY FIX (FreeZeV2 Eq. 6): refine against the "
+                         "DENSE target cloud — every valid depth pixel inside "
+                         "the mask — instead of the 16x16/32x32 patch-grid "
+                         "cloud. The grid cloud's own point spacing (~2.5 mm "
+                         "median) is the same order as tau_ICP (3-7 mm), so ICP "
+                         "cannot resolve below it. Pose-side only: absent from "
+                         "the encoder cache key, so feature caches still hit. "
+                         "Score-affecting (s_icp rises) — use a FRESH --out.")
+    ap.add_argument("--icp-dense-max", type=int, default=3000,
+                    help="cap on |P_T^dense| for --icp-dense (0 = no cap). "
+                         "Default 3000 is the paper's own budget (Sec. IV-A: "
+                         "'For P_Q and P_T^dense we use 5k and 3k points, "
+                         "respectively, while P_T^sparse includes up to 256 "
+                         "points'). Subsampling is a fixed-seed uniform draw. "
+                         "Two of those three numbers are still unmatched here: "
+                         "P_Q is 3000 against the paper's 5k, and --grid 32 "
+                         "gives P_T^sparse up to 1024 against its 256.")
+    ap.add_argument("--tau-diameter", action="store_true",
+                    help="FIDELITY FIX (FreeZeV2 Sec. IV-A): set tau_inlier / "
+                         "tau_ICP / the feature-score inlier radius to 3% of "
+                         "the BOP models_info DIAMETER, not 3% of the sampled "
+                         "query cloud's largest bounding-box side (which is "
+                         "2-35% smaller on LM-O). Pose-side only; caches hit. "
+                         "Score-affecting — use a FRESH --out.")
     ap.add_argument("--render-backend", default="nvdiffrast",
                     choices=["nvdiffrast", "trimesh", "auto"],
                     help="CAD renderer for query features. Default demands the "
@@ -536,6 +591,19 @@ def main():
 
     cache = StageCache(args.cache) if args.cache else None
 
+    # --tau-diameter: the paper's threshold basis. Loaded from the SAME models
+    # directory the meshes come from, so the diameter always describes the mesh
+    # that was actually encoded. Read once, up front, so a missing/renamed
+    # models_info.json fails before any GPU work.
+    diameters_m: dict = {}
+    if args.tau_diameter:
+        mi_path = bop / layout["models_dir"] / "models_info.json"
+        if not mi_path.exists():
+            raise SystemExit(f"--tau-diameter needs {mi_path} (BOP ships it "
+                             f"next to the meshes); not found.")
+        diameters_m = {int(k): float(v["diameter"]) / 1000.0
+                       for k, v in json.load(open(mi_path)).items()}
+
     # Encode ALL queries up front (fail fast; PCA snapshots live in meta).
     # Query features + fitted PCA are CACHED alongside target features: the
     # cached targets' visual halves are projected in the query PCA basis, so
@@ -579,18 +647,30 @@ def main():
         q.meta["qkey"] = qkey
         q.meta["feats_w1"] = q.feats   # genuinely w=1: extraction is pinned
         extent = float(np.ptp(q.pts, axis=0).max())
+        tau_basis = None
+        if args.tau_diameter:
+            if obj_id not in diameters_m:
+                raise SystemExit(f"--tau-diameter: obj {obj_id} absent from "
+                                 f"{layout['models_dir']}/models_info.json")
+            tau_basis = diameters_m[obj_id]
         stages = stages_for_object(extent, size_aware=obj_id in merge,
                                    score_coarse=args.score_coarse,
                                    use_s_coarse=args.use_s_coarse,
-                                   solver=args.solver, seed=args.seed)
+                                   solver=args.solver, seed=args.seed,
+                                   tau_basis_m=tau_basis)
         query_cache[obj_id] = (obj, q, stages)
-        # The shading tag is printed even when empty: "which renderer path ran"
-        # is what this run is being trusted about, and a log that only speaks up
-        # in the interesting case cannot tell "flat, correctly" apart from "the
-        # resolver never ran".
+        tau_note = ("" if tau_basis is None else
+                    f" diam={tau_basis*1000:.0f}mm "
+                    f"tau={TAU_FRAC*tau_basis*1000:.2f}mm "
+                    f"(was {TAU_FRAC*extent*1000:.2f}mm)")
+        # Both tags are printed unconditionally, including when they are empty
+        # or default: this line is the evidence for "which renderer path and
+        # which threshold basis actually ran". A log that only speaks up in the
+        # interesting case cannot tell "flat, correctly" apart from "the
+        # resolver never ran", and the same goes for the tau basis.
         shade_note = shade_parts[0].split("=")[1] if shade_parts else "uv-or-flat"
         print(f"  obj{obj_id}: extent={extent*1000:.0f}mm shading={shade_note} "
-              f"encode={time.time()-t0:.1f}s", flush=True)
+              f"encode={time.time()-t0:.1f}s{tau_note}", flush=True)
 
     cand_f = None
     if args.cand_csv:
@@ -612,6 +692,8 @@ def main():
         if new:
             cand_wr.writerow(header)
 
+    dense_sizes: list = []
+
     def encode_target_cached(scene, det, obj, q, ci, scene_fp):
         # scene_fp content-hashes rgb/depth/K (invariant 2 in cache.py): the
         # BOP ids alone would silently serve stale features if the files under
@@ -621,13 +703,20 @@ def main():
                if cache else None)
         hit = cache.get_arrays("target", key) if cache else None
         if hit is not None:
-            return PointFeatures(pts=hit["pts"], feats=hit["feats"],
-                                 meta={"feats_w1": hit["feats"]})
-        t_enc.install_pca(q.meta.get("pca_vis"))
-        tgt = t_enc.encode_target(scene, det, obj, q.meta.get("canon_frame"))
-        if len(tgt.pts) >= 4 and cache:
-            cache.put_arrays("target", key, pts=tgt.pts, feats=tgt.feats)
-        tgt.meta["feats_w1"] = tgt.feats
+            tgt = PointFeatures(pts=hit["pts"], feats=hit["feats"],
+                                meta={"feats_w1": hit["feats"]})
+        else:
+            t_enc.install_pca(q.meta.get("pca_vis"))
+            tgt = t_enc.encode_target(scene, det, obj, q.meta.get("canon_frame"))
+            if len(tgt.pts) >= 4 and cache:
+                cache.put_arrays("target", key, pts=tgt.pts, feats=tgt.feats)
+            tgt.meta["feats_w1"] = tgt.feats
+        if args.icp_dense and len(tgt.pts) >= 4:
+            # Rebuilt here rather than cached: it is a pure depth back-projection
+            # (no network), so it costs microseconds, and keeping it OUT of the
+            # cached arrays is what lets an existing feature cache still hit.
+            tgt.pts_dense = dense_mask_cloud(scene, det.mask, args.icp_dense_max)
+            dense_sizes.append(0 if tgt.pts_dense is None else len(tgt.pts_dense))
         return tgt
 
     n_done = 0
@@ -790,6 +879,13 @@ def main():
                     print(f"{n_done} targets this run", flush=True)
     if cand_f is not None:
         cand_f.close()
+    if dense_sizes:
+        # Positive evidence that --icp-dense actually reached ICP: an empty or
+        # sparse-looking distribution here means the fix did nothing.
+        s = np.array(dense_sizes)
+        print(f"icp-dense: {len(s)} target clouds, |P_T^dense| "
+              f"min/median/max = {s.min()}/{int(np.median(s))}/{s.max()} "
+              f"(cap {args.icp_dense_max or 'none'})", flush=True)
     if failures:
         total = sum(failures.values())
         print(f"done WITH {total} stage failure(s) -> {args.out}", flush=True)

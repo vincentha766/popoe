@@ -313,3 +313,75 @@ def test_resolve_layout_blames_the_flag_that_was_passed(bop_eval, tmp_path):
     explicitly' — that hint belongs to the basename-inference path only."""
     with pytest.raises(SystemExit, match="--dataset 'tles' is not"):
         bop_eval.resolve_layout(tmp_path / "bop", dataset="tles")
+
+
+# ── FreeZe fidelity fixes: dense ICP target, diameter-based tau ─────────────
+
+def _icp_scene(bop_eval, depth, K=None):
+    from popoe.interfaces import Scene
+    K = np.array([[500., 0., 32.], [0., 500., 24.], [0., 0., 1.]]) if K is None else K
+    return Scene(rgb=np.zeros(depth.shape + (3,), np.uint8), depth=depth, K=K,
+                 scene_id=1, im_id=1)
+
+
+def test_dense_mask_cloud_matches_the_extractor_construction(bop_eval):
+    """--icp-dense must rebuild EXACTLY the cloud the feature extractor
+    already computes for GeDi (`pcd_dense`): valid depth inside the mask,
+    back-projected in metres. A different convention here (mm, or depth>0
+    dropped) would silently register against a cloud in another frame."""
+    depth = np.zeros((48, 64), np.float32)
+    depth[10:14, 20:25] = 0.8
+    depth[12, 22] = 0.0                     # a depth hole inside the mask
+    mask = np.zeros((48, 64), bool)
+    mask[10:14, 20:25] = True
+    sc = _icp_scene(bop_eval, depth)
+    got = bop_eval.dense_mask_cloud(sc, mask, max_pts=0)
+
+    ys, xs = np.where((depth > 0) & mask)
+    d = depth[ys, xs]
+    want = np.stack([(xs - 32.) * d / 500., (ys - 24.) * d / 500., d], 1)
+    assert got.shape == (19, 3)             # 20 masked pixels minus the hole
+    np.testing.assert_allclose(got, want, rtol=0, atol=1e-6)
+
+
+def test_dense_mask_cloud_cap_is_deterministic_and_bounded(bop_eval):
+    depth = np.full((48, 64), 0.9, np.float32)
+    mask = np.ones((48, 64), bool)
+    sc = _icp_scene(bop_eval, depth)
+    a = bop_eval.dense_mask_cloud(sc, mask, max_pts=100)
+    b = bop_eval.dense_mask_cloud(sc, mask, max_pts=100)
+    assert len(a) == 100
+    np.testing.assert_array_equal(a, b)     # same mask -> same cloud, always
+    assert len(bop_eval.dense_mask_cloud(sc, mask, max_pts=0)) == 48 * 64
+
+
+def test_dense_mask_cloud_declines_a_degenerate_mask(bop_eval):
+    depth = np.zeros((48, 64), np.float32)
+    depth[5, 5] = 0.7
+    mask = np.zeros((48, 64), bool)
+    mask[5, 5] = True
+    assert bop_eval.dense_mask_cloud(_icp_scene(bop_eval, depth), mask, 0) is None
+
+
+def test_tau_basis_switches_all_three_thresholds_together():
+    """FreeZeV2 Sec. IV-A sets tau_inlier AND tau_ICP to 3% of the DIAMETER,
+    and Eq. 5 scores over the Eq. 4 inlier set — one basis, three thresholds.
+    Passing tau_basis_m must move all of them, and passing None must leave the
+    historical extent-based values untouched."""
+    from popoe.freeze.recipes import TAU_FRAC, stages_for_object
+    extent, diam = 0.09, 0.12
+    sol, ref, sco = stages_for_object(extent, tau_basis_m=diam)
+    assert ref.tau_icp == pytest.approx(TAU_FRAC * diam)
+    assert sco.tau_abs == pytest.approx(TAU_FRAC * diam)
+    assert getattr(sol, "tau_inlier") == pytest.approx(TAU_FRAC * diam)
+
+    sol0, ref0, sco0 = stages_for_object(extent)
+    assert ref0.tau_icp == pytest.approx(TAU_FRAC * extent)
+    assert sco0.tau_abs is None             # scorer recomputes it from extent
+    assert getattr(sol0, "tau_inlier") == pytest.approx(TAU_FRAC * extent)
+
+
+def test_scorer_tau_abs_overrides_the_extent_fraction():
+    from popoe.scoring import ChampionScorer
+    assert ChampionScorer().tau_abs is None
+    assert ChampionScorer(tau_abs=0.004).tau_abs == pytest.approx(0.004)
