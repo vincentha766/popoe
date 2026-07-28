@@ -152,3 +152,32 @@ def test_n_restarts_reaches_the_solver_and_refuses_non_o3d():
     assert stages_for_object(0.1)[0].n_restarts == 1
     with pytest.raises(ValueError, match="n_restarts"):
         _build_solver("gpu", tau=0.03, n_ransac=10, n_restarts=5)
+
+
+def test_probe_half_stats_attributes_the_dead_branch():
+    """One half informative, the other scrambled: the half probe must say so.
+
+    Visual half = coordinates (discriminative), geometric half = shuffled
+    (useless). rate1_vis must be ~1 and rate1_geo near chance — the exact
+    attribution question the banana case needs answered."""
+    from examples.bop_eval import probe_half_stats
+    from popoe.interfaces import PointFeatures
+
+    rng = np.random.default_rng(9)
+    pts_q = rng.uniform(-0.05, 0.05, (300, 3))
+    ang = 0.3
+    R = np.array([[np.cos(ang), -np.sin(ang), 0],
+                  [np.sin(ang), np.cos(ang), 0], [0, 0, 1]])
+    t = np.array([0.02, 0.0, -0.01])
+    pts_t = pts_q @ R.T + t
+    vis = pts_q + rng.normal(0, 1e-6, pts_q.shape)
+    geo_q = rng.normal(size=(300, 3))
+    q = PointFeatures(pts=pts_q, feats=np.hstack([vis, geo_q]))
+    tgt = PointFeatures(pts=pts_t,
+                        feats=np.hstack([vis, rng.permutation(geo_q)]))
+    gts = [dict(R=R, t=t * 1000.0)]
+    syms = [dict(R=np.eye(3), t=np.zeros(3))]
+
+    r1v, reachv, r1g, reachg = probe_half_stats(q, tgt, gts, syms, 0.10)
+    assert r1v == 1.0 and reachv == 1.0
+    assert r1g < 0.2, f"scrambled geo half still matches: {r1g}"
