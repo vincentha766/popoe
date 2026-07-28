@@ -82,13 +82,21 @@ def validate_source_args(detections, sources):
 
 
 def cand_csv_header(score_coarse):
-    """Column header for the --cand-csv dump. The optional s_coarse column
-    (--score-coarse) is appended, then a `solver` column that stamps which pose
-    solver produced each row (so a dump self-identifies its solver, and the
-    header pins the mode on append)."""
+    """Column header for the --cand-csv dump. The optional --score-coarse block
+    (s_coarse plus the PRE-ICP pose it was measured at, R_coarse / t_coarse) is
+    appended, then a `solver` column that stamps which pose solver produced each
+    row (so a dump self-identifies its solver, and the header pins the mode on
+    append).
+
+    R_coarse / t_coarse ride along with s_coarse because they come from the same
+    switch (ICPRefiner(keep_coarse=True)) and answer the question s_coarse only
+    half answers: s_coarse says how good the pre-ICP pose LOOKED to the scorer,
+    the pose itself lets it be scored against ground truth — i.e. how many AR
+    points ICP actually moved. Same units and formatting as R / t (rotation
+    row-major, translation in mm), so the same downstream reader handles both."""
     return (["scene_id", "im_id", "obj_id", "cand", "w", "s_icp", "s_feat_1",
              "metric_fit", "score", "R", "t"]
-            + (["s_coarse"] if score_coarse else [])
+            + (["s_coarse", "R_coarse", "t_coarse"] if score_coarse else [])
             + ["solver"])
 
 
@@ -722,7 +730,11 @@ def main():
                                         f"{h.score:.6f}",
                                         " ".join(f"{v:.6f}" for v in h.R.flatten()),
                                         " ".join(f"{v:.4f}" for v in (h.t * 1000.0))]
-                                        + ([f"{h.breakdown['s_coarse']:.4f}"]
+                                        + ([f"{h.breakdown['s_coarse']:.4f}",
+                                            " ".join(f"{v:.6f}" for v in
+                                                     h.breakdown["R_coarse"].flatten()),
+                                            " ".join(f"{v:.4f}" for v in
+                                                     (h.breakdown["t_coarse"] * 1000.0))]
                                            if args.score_coarse else [])
                                         + [args.solver])
                         except Exception as e:

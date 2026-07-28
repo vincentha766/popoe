@@ -48,7 +48,11 @@ KEY = ["scene_id", "im_id", "obj_id"]           # one champion per BOP target
 # Row identity within a target: which (mask, weight) hypothesis was chosen.
 CAND = ["cand", "w"]
 # Columns that are NOT numeric rule terms (ids / pose / provenance / solver id).
-NON_TERMS = set(KEY) | set(CAND) | {"R", "t", "time", "solver"}
+# R_coarse / t_coarse are the pre-ICP POSE (--score-coarse dumps), not evidence:
+# without them here, `--rule "…*R_coarse"` would be accepted as a term and
+# ranked on a string column.
+NON_TERMS = (set(KEY) | set(CAND)
+             | {"R", "t", "time", "solver", "R_coarse", "t_coarse"})
 
 
 def parse_rule(rule: str, columns) -> dict:
