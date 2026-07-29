@@ -95,9 +95,10 @@ echo "=== split champion into pre/post-ICP poses ==="
   --cand-csv "${BASE}_cands.csv" --out-csv "$BASE.csv" --prefix "$BASE"
 
 # VSD needs the GPU rasteriser, so it runs here; MSSD/MSPD are re-derived by
-# ar_flat from the same CSV. popoe's own scorers average per OBJECT — BOP
-# weights per INSTANCE — so the quotable number is ar_flat's "BOP flat" row.
-# vsd.py is run only for the .vsd_errs.npz sidecar it persists.
+# ar_flat from the same CSV. popoe's scorers now report the BOP flat
+# (per-instance) calibre as primary too; ar_flat is kept for the side-by-side
+# view of both calibres. vsd.py is run for the .vsd_errs.npz sidecar it
+# persists (and its headline AR_VSD is now flat as well).
 for V in refined coarse; do
   echo "=== VSD($V) ==="
   "$PY" -m popoe.metrics.vsd "${BASE}_$V.csv" "$BOP/$DS" \

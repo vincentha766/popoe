@@ -3,14 +3,24 @@
 This bypasses bop_toolkit's OpenGL-based orchestration (which fails in headless
 containers without EGL drivers). Uses bop_toolkit_lib's pose_error for MSSD/MSPD.
 
-Reported:
+Reported (BOP official FLAT calibre — every annotated instance carries equal
+weight; see metrics/aggregate.py):
   AR_MSSD : mean recall over thresholds 0.05..0.50 × diameter
   AR_MSPD : mean recall over thresholds 5..50 px (re-scaled by 640/W per BOP spec)
   AR_2/3  : mean(AR_MSSD, AR_MSPD)  — ≈ 2/3 of full BOP AR
+Per-object equal-weight means (this script's former, under-reporting calibre)
+are still printed as clearly-labelled secondary output for reconciling against
+historical records.
 """
 import os, sys, csv, json
 from pathlib import Path
 import numpy as np, trimesh
+
+try:
+    from popoe.metrics import aggregate
+except ImportError:  # run as a bare file without popoe installed
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from popoe.metrics import aggregate
 
 sys.path.insert(0, os.environ.get("POPOE_BOP_TOOLKIT", "/workspace/bop_toolkit"))
 from bop_toolkit_lib import inout, misc, pose_error
@@ -95,10 +105,11 @@ for r in rows:
     errs_mspd.setdefault(obj_id, []).append(best_mspd)
 
 # BOP19 recall thresholds
-mssd_thrs = np.arange(0.05, 0.51, 0.05)  # fraction of diameter
-mspd_thrs = np.arange(5, 51, 5)  # pixels (reference W=640)
+mssd_thrs = aggregate.MSSD_THRS  # fraction of diameter
+mspd_thrs = aggregate.MSPD_THRS  # pixels (reference W=640)
 
-# Per-object recall per threshold
+# Per-object recall per threshold (diagnostic table; also feeds the legacy
+# per-object means below)
 objs = sorted(errs_mssd.keys())
 print("\n=== Per-object recall ===")
 print(f"{'obj':<5}{'#':<5}{'AR_MSSD':<10}{'AR_MSPD':<10}")
@@ -115,11 +126,26 @@ for o in objs:
     per_obj[o] = (ar_mssd, ar_mspd, n)
     print(f"{o:<5}{n:<5}{ar_mssd:<10.4f}{ar_mspd:<10.4f}")
 
-# Mean over objects
-AR_MSSD = np.mean([v[0] for v in per_obj.values()])
-AR_MSPD = np.mean([v[1] for v in per_obj.values()])
+# PRIMARY: flat aggregation over all annotated instances (BOP official).
+# The former equal-weight-per-object mean under-reported 0.5-0.9 pt on
+# LM-O/YCB-V; flat matches the BOP server to 0.03 pt (see metrics/aggregate.py).
+all_mssd = np.concatenate([np.asarray(errs_mssd[o], dtype=float) for o in objs])
+all_mspd = np.concatenate([np.asarray(errs_mspd[o], dtype=float) for o in objs])
+all_diam = np.concatenate([np.full(len(errs_mssd[o]), obj_data[o]["diameter"])
+                           for o in objs])
+AR_MSSD = aggregate.flat_ar_mssd(all_mssd, all_diam, mssd_thrs)
+AR_MSPD = aggregate.flat_ar_mspd(all_mspd, mspd_thrs)
 AR_23 = (AR_MSSD + AR_MSPD) / 2
+
+# SECONDARY: legacy per-object equal-weight means, only for reconciling
+# against records produced before the calibre fix. Do not quote as BOP AR.
+AR_MSSD_PEROBJ = float(np.mean([v[0] for v in per_obj.values()]))
+AR_MSPD_PEROBJ = float(np.mean([v[1] for v in per_obj.values()]))
+
 print(f"\n=== {Path(CSV_PATH).name} ===")
 print(f"AR_MSSD : {AR_MSSD:.4f}")
 print(f"AR_MSPD : {AR_MSPD:.4f}")
 print(f"AR(2/3) : {AR_23:.4f}   (skipped VSD; full BOP AR = mean of all three)")
+print(f"[legacy per-object calibre] AR_MSSD {AR_MSSD_PEROBJ:.4f}  "
+      f"AR_MSPD {AR_MSPD_PEROBJ:.4f}  AR(2/3) "
+      f"{(AR_MSSD_PEROBJ + AR_MSPD_PEROBJ) / 2:.4f}")
