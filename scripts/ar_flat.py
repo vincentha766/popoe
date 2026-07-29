@@ -3,12 +3,15 @@
 BOP defines recall as the fraction of *annotated object instances* that are
 correct, so every instance carries equal weight and an object contributes in
 proportion to how many instances it has. popoe's `metrics/ar.py` and
-`metrics/vsd.py` instead average per-object recalls with equal weight per
-OBJECT, which under-reports by 0.5-0.9 pt on LM-O / YCB-V (verified against the
-BOP server: flat agrees to 0.03 pt, per-object does not).
+`metrics/vsd.py` USED TO average per-object recalls with equal weight per
+OBJECT, which under-reported by 0.5-0.9 pt on LM-O / YCB-V (verified against
+the BOP server: flat agrees to 0.03 pt, per-object does not). They now report
+flat as primary (see `popoe/metrics/aggregate.py`), with the per-object mean
+kept as labelled secondary output.
 
 This script does not touch popoe's scorers — it recomputes the same errors and
 reports BOTH aggregations, so a number can always be quoted with its calibre.
+It remains useful for re-scoring historical CSVs without a GPU.
 
 MSSD / MSPD are recomputed here from the pose CSV (bop_toolkit pose_error, same
 calls popoe's ar.py makes). VSD is NOT re-rendered: popoe's vsd.py already

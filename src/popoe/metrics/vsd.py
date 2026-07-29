@@ -9,17 +9,28 @@ BOP19 spec:
   - VSD_tau = 1 - |vis_inter AND |d_est-d_gt|<tau*diam| / |vis_union|
   - Thresholds tau in [0.05, 0.50] step 0.05 (normalized by diameter)
   - Recall at each tau, average → AR_VSD
+
+AR_VSD is reported at the BOP official FLAT calibre (every annotated instance
+carries equal weight; see metrics/aggregate.py). The per-object equal-weight
+mean (this module's former, under-reporting calibre) is still printed as
+secondary output for reconciling against historical records.
 """
 import os, sys, json, csv
 from pathlib import Path
 import numpy as np, cv2, torch, trimesh
 import nvdiffrast.torch as dr
 
+try:
+    from popoe.metrics import aggregate
+except ImportError:  # run as a bare file without popoe installed
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from popoe.metrics import aggregate
+
 sys.path.insert(0, os.environ.get("POPOE_BOP_TOOLKIT", "/workspace/bop_toolkit"))
 from bop_toolkit_lib import misc
 
 VSD_DELTA_MM = 15.0  # BOP standard
-VSD_TAUS = np.arange(0.05, 0.51, 0.05)
+VSD_TAUS = aggregate.VSD_TAUS
 
 
 _ctx = None
@@ -204,11 +215,10 @@ def compute_ar_vsd(csv_path, bop_root, models_eval_dir=None):
     np.savez(raw_out, **{f"obj{oid}": np.array(v) for oid, v in errs_per_obj.items()})
     print(f"raw errors -> {raw_out}")
 
-    # Aggregate per-obj AR, then mean.
     # BOP19 protocol: recall over the FULL tau x threshold grid
     # (tau in 0.05..0.5 AND correctness threshold th in 0.05..0.5, 10x10 cells)
     # — NOT a fixed th=0.3 (the old bug here, systematically biased AR_VSD).
-    VSD_THS = np.arange(0.05, 0.51, 0.05)
+    VSD_THS = aggregate.VSD_THS
     print("\n=== Per-object AR_VSD (BOP19 tau x th grid) ===")
     print(f"{'obj':<5}{'#':<5}{'AR_VSD':<10}")
     per_obj_ar = {}
@@ -219,8 +229,19 @@ def compute_ar_vsd(csv_path, bop_root, models_eval_dir=None):
         ar = float(np.mean(rec))
         per_obj_ar[obj_id] = (ar, len(arr))
         print(f"{obj_id:<5}{len(arr):<5}{ar:<10.4f}")
-    AR_VSD = np.mean([v[0] for v in per_obj_ar.values()])
+
+    # PRIMARY: flat aggregation over all annotated instances (BOP official).
+    # The former equal-weight-per-object mean under-reported 0.5-0.9 pt;
+    # flat matches the BOP server to 0.03 pt (see metrics/aggregate.py).
+    all_errs = np.concatenate(
+        [np.array(errs_per_obj[o]) for o in sorted(errs_per_obj.keys())], axis=0)
+    AR_VSD = aggregate.flat_ar_vsd(all_errs, VSD_THS)
+
+    # SECONDARY: legacy calibre, only for reconciling pre-fix records.
+    AR_VSD_PEROBJ = float(np.mean([v[0] for v in per_obj_ar.values()]))
+
     print(f"\nAR_VSD : {AR_VSD:.4f}")
+    print(f"[legacy per-object calibre] AR_VSD {AR_VSD_PEROBJ:.4f}")
     return AR_VSD
 
 
