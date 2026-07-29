@@ -161,8 +161,34 @@ def test_assert_csv_covers_targets_missing_raises(tmp_path):
     ]
     p = tmp_path / "test_targets_bop19.json"
     p.write_text(__import__("json").dumps(targets))
-    with pytest.raises(SystemExit, match="missing 1 targets"):
+    with pytest.raises(SystemExit, match="instance-rows missing"):
         aggregate.assert_csv_covers_targets([(1, 2, 3)], p)
+
+
+def test_assert_csv_covers_targets_inst_count(tmp_path):
+    # One key, inst_count=3 → need 3 CSV rows for that key.
+    targets = [
+        {"scene_id": 2, "im_id": 3, "obj_id": 9, "inst_count": 3},
+    ]
+    p = tmp_path / "test_targets_bop19.json"
+    p.write_text(__import__("json").dumps(targets))
+    with pytest.raises(SystemExit, match="instance-rows missing"):
+        aggregate.assert_csv_covers_targets([(2, 3, 9)], p)  # only 1
+    aggregate.assert_csv_covers_targets(
+        [(2, 3, 9), (2, 3, 9), (2, 3, 9)], p)
+
+
+def test_assert_csv_covers_targets_repeated_rows(tmp_path):
+    # Two identical target rows without inst_count → need 2 CSV rows.
+    targets = [
+        {"scene_id": 2, "im_id": 3, "obj_id": 14},
+        {"scene_id": 2, "im_id": 3, "obj_id": 14},
+    ]
+    p = tmp_path / "test_targets_bop19.json"
+    p.write_text(__import__("json").dumps(targets))
+    with pytest.raises(SystemExit, match="instance-rows missing"):
+        aggregate.assert_csv_covers_targets([(2, 3, 14)], p)
+    aggregate.assert_csv_covers_targets([(2, 3, 14), (2, 3, 14)], p)
 
 
 def test_assert_csv_covers_targets_skips_missing_file(tmp_path):

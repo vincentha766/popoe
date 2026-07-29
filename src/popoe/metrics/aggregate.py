@@ -102,27 +102,49 @@ def vsd_delta_mm(dataset: str, default: float = 15.0) -> float:
 
 def assert_csv_covers_targets(csv_keys, targets_path):
     """M1 guard: flat AR denominators by CSV rows alone are wrong if the CSV
-    omits targets that appear in ``test_targets_bop19.json`` (those instances
-    must count as failures). Raise ``SystemExit`` with a clear count.
+    omits instances that appear in ``test_targets_bop19.json`` (those must
+    count as failures). Raise ``SystemExit`` with a clear count.
 
-    csv_keys: iterable of (scene_id, im_id, obj_id) — any int-like.
+    BOP target files may **repeat** a (scene, im, obj) row, or set
+    ``inst_count > 1``. Expected instance count for each key is
+    ``max(field inst_count, row-repeat count)`` (same rule as
+    ``bop_muse.load_bop_target_images``). The CSV is expected to emit that
+    many rows per key (zero-padded when fewer champions exist).
+
+    csv_keys: iterable of (scene_id, im_id, obj_id) — any int-like; duplicates
+    count as multiple instances.
     targets_path: path to test_targets_bop19.json (list of dicts).
     """
     import json
+    from collections import Counter
     from pathlib import Path
 
     path = Path(targets_path)
     if not path.is_file():
         return  # no targets file → skip (synthetic / unit tests)
     targets = json.loads(path.read_text())
-    tset = {(int(t["scene_id"]), int(t["im_id"]), int(t["obj_id"])) for t in targets}
-    cset = {(int(s), int(i), int(o)) for s, i, o in csv_keys}
-    missing = tset - cset
-    if missing:
-        sample = sorted(missing)[:5]
+    field_counts: dict[tuple[int, int, int], int] = {}
+    row_counts: Counter = Counter()
+    for t in targets:
+        key = (int(t["scene_id"]), int(t["im_id"]), int(t["obj_id"]))
+        row_counts[key] += 1
+        field_counts[key] = max(
+            field_counts.get(key, 1), int(t.get("inst_count", 1)))
+    expected = {
+        k: max(field_counts.get(k, 1), row_counts[k]) for k in row_counts
+    }
+    got = Counter((int(s), int(i), int(o)) for s, i, o in csv_keys)
+    shortfalls = {
+        k: (expected[k], got.get(k, 0))
+        for k in expected
+        if got.get(k, 0) < expected[k]
+    }
+    if shortfalls:
+        sample = sorted(shortfalls.items())[:5]
+        n_missing = sum(exp - have for exp, have in shortfalls.values())
         raise SystemExit(
-            f"CSV covers {len(cset)} keys but test_targets has {len(tset)}; "
-            f"missing {len(missing)} targets (flat AR would be inflated). "
-            f"examples: {sample}"
+            f"CSV under-covers test_targets: {len(shortfalls)} keys short, "
+            f"{n_missing} instance-rows missing (flat AR would be inflated). "
+            f"examples (key, expected, got): {sample}"
         )
 
