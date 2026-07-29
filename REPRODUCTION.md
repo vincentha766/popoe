@@ -27,6 +27,8 @@ entrypoints, under the dual-disclosure discipline of `../gedi/EXPERIMENTS.md`
 > **2026-07-26 pipeline verify COMPLETE** — popoe **`75553a1`**, pod `wrmy8k0thtxjq6` (stopped).  
 > Artifacts: `outputs/pipeline_verify_20260726/`. Full AR = mean(MSSD, MSPD, VSD).  
 > **Δ exceeds ±0.003** on full AR; all six rows land **above** the gedi archive. Do **not** rewrite the archive headline; cite this as the popoe parity measurement (dual-track). Promotion line remains 0.8201 / 0.6896.
+>
+> **Calibre note (2026-07-29, post PR #23)**: every locally scored AR in this ledger is **legacy per-object calibre** (the pre-#23 scorer averaged objects with equal weight). BOP flat (per-instance) calibre, recomputed from the same CSVs: **#1 = 0.7892** (vs 0.7781), **#2 = 0.6844** (vs 0.6792); the gedi reference figures in flat calibre are 0.7766 / 0.6777. The promotion-line figures above are also legacy calibre (fourway flat: 0.8444 / 0.7106 — see gedi `BOP_OFFICIAL_BASELINES.md`). Run-plan titles (#1/#2) and archive paths below cite the same legacy figures. Grasp rows #5/#6 use the archived grasp script's per-object-median statistics, unchanged. From #23 onward `popoe.metrics` reports flat calibre by default (legacy value kept as a trailing diagnostic line).
 
 | # | Experiment | Archive number (source) | popoe entrypoint | Class | Reproduced | popoe commit / pod / date | Status |
 |---|---|---|---|---|---|---|---|
@@ -59,9 +61,12 @@ entrypoints, under the dual-disclosure discipline of `../gedi/EXPERIMENTS.md`
 | **ARCore** | **0.6293** | | | | **0.6926** | **−6.3pt** | |
 
 **Pipeline self-validation**: YCB-V's server AR 0.787 agrees with headline
-row #1's locally scored 0.7781 (+0.9pt, RANSAC-noise scale) under an
-identical recipe — the end-to-end chain is sound, so every gap above is
-methodological, not a defect.
+row #1 under an identical recipe. Row #1's ledger value 0.7781 is legacy
+per-object calibre; re-aggregated in the server's flat calibre it is
+**0.7892**, so the genuine run-to-run difference is **+0.2pt** (RANSAC-noise
+scale). The +0.9pt previously quoted here compared across calibres — about
+1pt of it was aggregation, not noise (see PR #23). The end-to-end chain is
+sound, so every gap above is methodological, not a defect.
 
 **What the gaps are not caused by**: the official FreeZe(CNOS) row consumes
 the *same* CNOS-FastSAM detection file, so every per-dataset gap arises in

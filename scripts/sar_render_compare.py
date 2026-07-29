@@ -3,7 +3,9 @@
 The seven-set analysis left a gap that is entirely orientational: an oracle
 picking among rotational alternates of the champion gains +7.0pt AR_MSSD on
 YCB-V and +2.1pt on LM-O with zero breakage, while every score already in the
-pipeline extracts at most +0.9pt of it. Every one of those scores compares a
+pipeline extracts at most +0.9pt of it. (Calibre note: these AR_MSSD figures
+come from the gedi seven-set diagnosis scripts, which already used BOP flat
+per-instance aggregation — they are unaffected by the PR #23 calibre fix.) Every one of those scores compares a
 QUERY point cloud with a TARGET point cloud in the FUSED (GeDi|DINOv2) feature
 space attached to 3D points. FreeZe resolves the same ambiguity somewhere else
 entirely -- in image space, between two pictures.
