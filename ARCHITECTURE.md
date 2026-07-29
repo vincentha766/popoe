@@ -24,6 +24,7 @@ Scene (RGB-D, K) ──┴──────────────────
 | External coarse pose | `CoarseEstimator` | `segmentor_sam6d.SAM6DPemResultsCoarseEstimator` over already-written PEM results |
 | Refine | `PoseRefiner` | `adapters.ICPRefiner` |
 | Score | `PoseScorer` | `freeze.adapters.FreeZeScorer`; `scoring.ChampionScorer` (evaluated) |
+| Render re-rank (opt.) | `PoseRefiner` chain | `render_rerank.RenderAppearanceReranker` (knife-4 SAR-style; `--render-rerank`) |
 | Select | `Selector` | `adapters.BestScoreSelector` |
 | Metrics | `Metric` | `metrics.vsd`, `metrics.ar` |
 

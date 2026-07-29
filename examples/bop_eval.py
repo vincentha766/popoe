@@ -337,6 +337,13 @@ def main():
                          "not config, so reusing a file written without this "
                          "flag silently keeps its old scores (as with any "
                          "score-affecting knob — --merge, --weights, --grid).")
+    ap.add_argument("--render-rerank", action="store_true",
+                    help="After ICP, re-rank PCA-axis flip variants by DINOv2 "
+                         "render-vs-scene patch cosine (knife-4 / FreeZe SAR "
+                         "core; popoe.render_rerank.RenderAppearanceReranker). "
+                         "Off by default (headline path unchanged). Measured "
+                         "offline: YCB-V combo_sym full AR flat 0.8275→0.8605. "
+                         "Needs CUDA + nvdiffrast + DINOv2. Fresh --out required.")
     ap.add_argument("--solver", default="o3d",
                     choices=["o3d", "gpu", "gpu-feat", "teaser"],
                     help="pose solver: o3d (default, evaluated mainline — "
@@ -679,7 +686,8 @@ def main():
                                    use_s_coarse=args.use_s_coarse,
                                    corr_topk=args.corr_topk,
                                    solver=args.solver, seed=args.seed,
-                                   tau_basis_m=tau_basis)
+                                   tau_basis_m=tau_basis,
+                                   render_rerank=args.render_rerank)
         query_cache[obj_id] = (obj, q, stages)
         tau_note = ("" if tau_basis is None else
                     f" diam={tau_basis*1000:.0f}mm "
@@ -726,13 +734,15 @@ def main():
         hit = cache.get_arrays("target", key) if cache else None
         if hit is not None:
             tgt = PointFeatures(pts=hit["pts"], feats=hit["feats"],
-                                meta={"feats_w1": hit["feats"]})
+                                meta={"feats_w1": hit["feats"],
+                                      "detection": det})
         else:
             t_enc.install_pca(q.meta.get("pca_vis"))
             tgt = t_enc.encode_target(scene, det, obj, q.meta.get("canon_frame"))
             if len(tgt.pts) >= 4 and cache:
                 cache.put_arrays("target", key, pts=tgt.pts, feats=tgt.feats)
             tgt.meta["feats_w1"] = tgt.feats
+            tgt.meta["detection"] = det
         if args.icp_dense and len(tgt.pts) >= 4:
             # Rebuilt here rather than cached: it is a pure depth back-projection
             # (no network), so it costs microseconds, and keeping it OUT of the
