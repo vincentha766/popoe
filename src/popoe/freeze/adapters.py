@@ -132,8 +132,12 @@ class FreeZeTargetEncoder:
         )
         if pts is None:
             return PointFeatures(pts=np.empty((0, 3), np.float32),
-                                 feats=np.empty((0, 1), np.float32))
-        return PointFeatures(pts=np.asarray(pts), feats=np.asarray(feats))
+                                 feats=np.empty((0, 1), np.float32),
+                                 meta={"detection": det})
+        # Keep the Detection on meta so post-ICP stages (e.g. render re-rank)
+        # can recover the mask/bbox without re-segmenting.
+        return PointFeatures(pts=np.asarray(pts), feats=np.asarray(feats),
+                             meta={"detection": det})
 
 
 def make_freeze_encoders(query_extractor, target_extractor, n_points: int = 3000):

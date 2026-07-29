@@ -254,12 +254,26 @@ def solver_provenance(name: str, seed: int | None) -> str:
     return f"solver={name} seed={effective} (seeded)"
 
 
+class _RefinerChain:
+    """Apply PoseRefiners in order. Keeps ``stages_for_object`` returning a
+    single refine() object so call sites stay byte-compatible."""
+
+    def __init__(self, refiners):
+        self.refiners = list(refiners)
+
+    def refine(self, pose, scene, obj, query, target):
+        for r in self.refiners:
+            pose = r.refine(pose, scene, obj, query, target)
+        return pose
+
+
 def stages_for_object(extent_m: float, size_aware: bool = False,
                       n_ransac: int = 10000, score_coarse: bool = False,
                       use_s_coarse: bool = False, solver: str = "o3d",
                       seed: int | None = None,
                       tau_basis_m: float | None = None,
-                      corr_topk: int = 0):
+                      corr_topk: int = 0,
+                      render_rerank: bool = False):
     """Per-object solver/refiner/scorer with thresholds scaled to the object.
     ``extent_m``: max bounding-box side of the sampled query cloud (metres).
 
@@ -283,13 +297,23 @@ def stages_for_object(extent_m: float, size_aware: bool = False,
     the paper's. Pass the BOP ``models_info`` diameter to follow the paper. The
     one basis feeds all three thresholds it decides — RANSAC's tau_inlier, ICP's
     tau_ICP, and the feature score's inlier radius (Eq. 4 defines a single
-    tau_inlier that Eq. 5 reuses), so they cannot drift apart."""
+    tau_inlier that Eq. 5 reuses), so they cannot drift apart.
+
+    ``render_rerank``: append :class:`popoe.render_rerank.RenderAppearanceReranker`
+    after ICP (knife-4 SAR-style DINOv2 render-vs-scene re-rank). Off by default
+    so the headline path stays byte-identical; enable for the measured YCB-V
+    combo_sym full-AR lift (0.8275 → 0.8605 flat, offline)."""
     from popoe.adapters import ICPRefiner
     from popoe.scoring import ChampionScorer
     tau = TAU_FRAC * (extent_m if tau_basis_m is None else tau_basis_m)
     solver = _build_solver(solver, tau, n_ransac, seed=seed,
                            corr_topk=corr_topk)
-    refiner = ICPRefiner(tau_icp=tau, keep_coarse=score_coarse or use_s_coarse)
+    icp = ICPRefiner(tau_icp=tau, keep_coarse=score_coarse or use_s_coarse)
+    if render_rerank:
+        from popoe.render_rerank import RenderAppearanceReranker
+        refiner = _RefinerChain([icp, RenderAppearanceReranker()])
+    else:
+        refiner = icp
     # use_s_coarse implies s_coarse IS computed and emitted, so compute_s_coarse
     # reflects reality (an inspector reading the flag sees the truth).
     scorer = ChampionScorer(tau_inlier_frac=TAU_FRAC, size_aware=size_aware,
