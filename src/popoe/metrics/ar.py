@@ -45,13 +45,44 @@ if len(_keys) != len(set(_keys)):
         "local AR scorer assumes one row per target. Score with the official "
         "bop_toolkit, or extend this script with one-to-one GT assignment.")
 
-# Index GT
+# M1: flat AR denominators by CSV alone inflate if targets are missing.
+_targets = BOP_PATH / "test_targets_bop19.json"
+aggregate.assert_csv_covers_targets(_keys, _targets)
+
+# Default image widths (BOP dataset_params) when no depth/rgb is on disk.
+_DATASET_IM_WIDTH = {
+    "lmo": 640, "lm": 640, "ycbv": 640, "tless": 720, "itodd": 1280,
+    "hb": 640, "icbin": 640, "tudl": 640, "hope": 640, "ruapc": 640,
+}
+_ds_name = BOP_PATH.name.lower()
+_default_w = float(os.environ.get(
+    "BOP_IMAGE_WIDTH", _DATASET_IM_WIDTH.get(_ds_name, aggregate.MSPD_REF_WIDTH)))
+
+# Index GT + per-scene image width (for MSPD 640/W normalisation).
 scenes = sorted({int(r["scene_id"]) for r in rows})
 gt_by_scene_im_obj = {}
+scene_im_width = {}  # scene_id -> W
 for s in scenes:
     sdir = BOP_PATH / "test" / f"{s:06d}"
     scene_gt = json.load(open(sdir / "scene_gt.json"))
     scene_cam = json.load(open(sdir / "scene_camera.json"))
+    # Prefer real image size (depth/rgb) so T-LESS/ITODD get the right W.
+    w = None
+    for im_id_str in scene_gt.keys():
+        for sub in ("depth", "rgb", "gray"):
+            p = sdir / sub / f"{int(im_id_str):06d}.png"
+            if p.is_file():
+                try:
+                    import cv2
+                    im = cv2.imread(str(p), cv2.IMREAD_UNCHANGED)
+                    if im is not None:
+                        w = float(im.shape[1])
+                        break
+                except Exception:
+                    pass
+        if w is not None:
+            break
+    scene_im_width[s] = w if w is not None else _default_w
     for im_id_str, gts in scene_gt.items():
         im_id = int(im_id_str)
         K = np.array(scene_cam[im_id_str]["cam_K"]).reshape(3, 3)
@@ -61,7 +92,10 @@ for s in scenes:
                 R=np.array(g["cam_R_m2c"]).reshape(3, 3),
                 t=np.array(g["cam_t_m2c"]).reshape(3),
                 K=K))
-
+print(f"MSPD image widths (scenes): "
+      f"min={min(scene_im_width.values()):.0f} "
+      f"max={max(scene_im_width.values()):.0f} "
+      f"(dataset default {_default_w:.0f})", flush=True)
 # Load per-obj model pts + symmetries + diameters from models_eval/models_info.json
 models_info = json.load(open(BOP_PATH / "models_eval" / "models_info.json"))
 obj_data = {}
@@ -101,12 +135,17 @@ for r in rows:
     # For each GT instance (usually 1), compute error and take the best (min).
     best_mssd = min(pose_error.mssd(R_est, t_est, g["R"], g["t"], d["pts"], d["syms"]) for g in gts)
     best_mspd = min(pose_error.mspd(R_est, t_est, g["R"], g["t"], g["K"], d["pts"], d["syms"]) for g in gts)
+    # N3: BOP normalises MSPD by image width before thresholding
+    # (eval_calc_scores.py: err *= 640/W). Store the *normalised* error so
+    # fixed thr in {5..50} stay correct for T-LESS (720) / ITODD (1280).
+    factor = aggregate.mspd_normalize_factor(scene_im_width[scene_id])
+    best_mspd_norm = best_mspd * factor
     errs_mssd.setdefault(obj_id, []).append(best_mssd)
-    errs_mspd.setdefault(obj_id, []).append(best_mspd)
+    errs_mspd.setdefault(obj_id, []).append(best_mspd_norm)
 
 # BOP19 recall thresholds
 mssd_thrs = aggregate.MSSD_THRS  # fraction of diameter
-mspd_thrs = aggregate.MSPD_THRS  # pixels (reference W=640)
+mspd_thrs = aggregate.MSPD_THRS  # px on the 640-wide reference frame
 
 # Per-object recall per threshold (diagnostic table; also feeds the legacy
 # per-object means below)
@@ -117,7 +156,7 @@ per_obj = {}
 for o in objs:
     d_mm = obj_data[o]["diameter"]
     mssd_errs = np.array(errs_mssd[o])
-    mspd_errs = np.array(errs_mspd[o])
+    mspd_errs = np.array(errs_mspd[o])  # already 640-normalised
     n = len(mssd_errs)
     mssd_recalls = [(mssd_errs < thr * d_mm).mean() for thr in mssd_thrs]
     mspd_recalls = [(mspd_errs < thr).mean() for thr in mspd_thrs]
@@ -129,6 +168,7 @@ for o in objs:
 # PRIMARY: flat aggregation over all annotated instances (BOP official).
 # The former equal-weight-per-object mean under-reported 0.5-0.9 pt on
 # LM-O/YCB-V; flat matches the BOP server to 0.03 pt (see metrics/aggregate.py).
+# M3 call-site: headline MUST use flat_ar_*; tests assert this symbol path.
 all_mssd = np.concatenate([np.asarray(errs_mssd[o], dtype=float) for o in objs])
 all_mspd = np.concatenate([np.asarray(errs_mspd[o], dtype=float) for o in objs])
 all_diam = np.concatenate([np.full(len(errs_mssd[o]), obj_data[o]["diameter"])
