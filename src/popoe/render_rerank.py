@@ -102,6 +102,11 @@ def bbox_from_mask(mask: np.ndarray) -> Optional[tuple[int, int, int, int]]:
 # PoseRefiner
 # ---------------------------------------------------------------------------
 
+# Process-wide shared backends so ``stages_for_object`` per object does not
+# re-load DINOv2 / nvdiffrast once per obj_id (Codex P2 / multi-object BOP).
+_SHARED: dict = {}
+
+
 class RenderAppearanceReranker:
     """Re-rank PCA flip variants by DINOv2 render-vs-scene patch cosine.
 
@@ -119,16 +124,17 @@ class RenderAppearanceReranker:
         enabled: bool = True,
         include_azimuth: bool = True,
         device: str = "cuda",
-        dino_name: str = "dinov2_vitl14",
         crop_size: int = 224,
+        re_icp: bool = True,
     ):
         self.enabled = enabled
         self.include_azimuth = include_azimuth
         self.device = device
-        self.dino_name = dino_name
         self.crop_size = crop_size
+        self.re_icp = re_icp
         self._ready = False
         self._dino = None
+        self._dino_layer = None
         self._pose_renderer = None
         self._asset_cache: dict = {}
 
@@ -136,8 +142,9 @@ class RenderAppearanceReranker:
         """Load scripts/sar_render_compare.py by path (not a package)."""
         import importlib.util
         from pathlib import Path
-        if getattr(self, "_sar_mod_cached", None) is not None:
-            return self._sar_mod_cached
+        key = "sar_mod"
+        if key in _SHARED:
+            return _SHARED[key]
         path = Path(__file__).resolve().parents[2] / "scripts" / "sar_render_compare.py"
         if not path.is_file():
             raise BackendUnavailable(
@@ -146,7 +153,7 @@ class RenderAppearanceReranker:
         mod = importlib.util.module_from_spec(spec)
         assert spec.loader is not None
         spec.loader.exec_module(mod)
-        self._sar_mod_cached = mod
+        _SHARED[key] = mod
         return mod
 
     def _ensure(self) -> None:
@@ -157,16 +164,18 @@ class RenderAppearanceReranker:
             if str(self.device).startswith("cuda") and not torch.cuda.is_available():
                 raise BackendUnavailable(
                     "RenderAppearanceReranker needs CUDA; none available")
-            try:
-                from popoe.freeze.feature_extractor import load_dinov2
-                self._dino = load_dinov2(self.dino_name, device=self.device)
-            except Exception:
-                self._dino = torch.hub.load(
-                    "facebookresearch/dinov2", self.dino_name, pretrained=True
-                ).to(self.device)
-                self._dino.eval()
-            mod = self._sar_mod()
-            self._pose_renderer = mod.PoseRenderer(device=self.device)
+            dkey = f"dino:{self.device}"
+            if dkey not in _SHARED:
+                from popoe.freeze.feature_extractor import load_dinov2, _dino_layer
+                # load_dinov2(device=...) only — FreeZe ViT-g, same as SAR script.
+                dino = load_dinov2(device=self.device)
+                _SHARED[dkey] = (dino, _dino_layer(dino))
+            self._dino, self._dino_layer = _SHARED[dkey]
+            rkey = f"renderer:{self.device}"
+            if rkey not in _SHARED:
+                mod = self._sar_mod()
+                _SHARED[rkey] = mod.PoseRenderer(device=self.device)
+            self._pose_renderer = _SHARED[rkey]
             self._ready = True
         except BackendUnavailable:
             raise
@@ -176,11 +185,12 @@ class RenderAppearanceReranker:
             ) from e
 
     def _load_asset(self, mesh_path: str):
-        if mesh_path in self._asset_cache:
-            return self._asset_cache[mesh_path]
+        cache = _SHARED.setdefault("assets", {})
+        if mesh_path in cache:
+            return cache[mesh_path]
         mod = self._sar_mod()
         asset = mod.load_asset(mesh_path, device=self.device)
-        self._asset_cache[mesh_path] = asset
+        cache[mesh_path] = asset
         return asset
 
     def _embed_crop(self, crop_rgb01: np.ndarray):
@@ -194,13 +204,9 @@ class RenderAppearanceReranker:
         x = (im.astype(np.float32) - mean) / std
         t = torch.from_numpy(x.transpose(2, 0, 1)[None]).float().to(self.device)
         with torch.no_grad():
-            if hasattr(self._dino, "get_intermediate_layers"):
-                toks = self._dino.get_intermediate_layers(t, n=1)[0]
-                n_pat = (self.crop_size // 14) ** 2
-                if toks.shape[1] == n_pat + 1:
-                    toks = toks[:, 1:, :]
-            else:
-                toks = self._dino.forward_features(t)["x_norm_patchtokens"]
+            # Same intermediate layer as FreeZe / scripts/sar_render_compare.
+            toks = self._dino.get_intermediate_layers(
+                t, n=[self._dino_layer], return_class_token=False)[0]
         toks = toks[0]
         toks = toks / (toks.norm(dim=-1, keepdim=True) + 1e-8)
         return toks
@@ -276,10 +282,30 @@ class RenderAppearanceReranker:
             scores[name] = self._sar_ti(scene, obj, Rv, pose.t, bbox)
 
         name, R_best, s_best = pick_by_scores(variants, scores)
+        t_best = np.asarray(pose.t, float).copy()
         bd = dict(pose.breakdown)
         bd["pre_rerank_score"] = float(pose.score)
         bd["render_rerank"] = name
         bd["sar_ti"] = float(s_best)
         bd["sar_ti_by_variant"] = {k: float(v) for k, v in scores.items()}
-        return PoseHypothesis(R_best.copy(), np.asarray(pose.t, float).copy(),
-                              float(s_best), bd)
+
+        # Re-ICP after a non-champion rotation so translation / s_icp match the
+        # new R (ChampionScorer then re-scores on consistent geometry).
+        if self.re_icp and name != "champion":
+            dense = target.pts_dense if target.pts_dense is not None else target.pts
+            if dense is not None and len(dense) >= 4 and len(query.pts) >= 4:
+                try:
+                    from popoe.registration import icp_refinement
+                    tau = float(pose.breakdown.get("tau_icp", 0.03))
+                    # tau may be relative; fall back to 3% of query extent
+                    if tau <= 0 or tau > 0.5:
+                        tau = 0.03 * float(np.ptp(query.pts, axis=0).max())
+                    R_f, t_f, fit = icp_refinement(
+                        query.pts, dense, R_best, t_best, tau_icp=tau)
+                    R_best, t_best = R_f, t_f
+                    bd["s_icp"] = float(fit)
+                    bd["render_rerank_re_icp"] = True
+                except Exception as e:
+                    bd["render_rerank_re_icp"] = f"failed:{type(e).__name__}"
+
+        return PoseHypothesis(R_best.copy(), t_best, float(s_best), bd)
