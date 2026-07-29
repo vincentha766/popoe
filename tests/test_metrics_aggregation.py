@@ -4,9 +4,12 @@ The defining property of the flat calibre: every annotated instance carries
 equal weight, so it must equal the instance-count-weighted mean of per-object
 recalls — NOT the equal-weight-per-object mean popoe used to report.
 """
+from pathlib import Path
+
 import numpy as np
 import pytest
 
+from popoe.metrics import aggregate
 from popoe.metrics.aggregate import (
     MSSD_THRS,
     MSPD_THRS,
@@ -94,3 +97,118 @@ def test_shape_validation():
         flat_ar_mssd(np.zeros(3), np.zeros(4))
     with pytest.raises(ValueError):
         flat_ar_vsd(np.zeros(5))  # 1-D: needs (N, n_taus)
+
+
+# --- N3 / M1 / M3 guards (2026-07-29) -----------------------------------------
+
+def test_mspd_normalize_factor_identity_at_ref_width():
+    assert aggregate.mspd_normalize_factor(640) == pytest.approx(1.0)
+    assert aggregate.mspd_normalize_factor(640.0) == pytest.approx(1.0)
+
+
+def test_mspd_normalize_factor_scales_with_width():
+    # T-LESS 720: factor 640/720; ITODD 1280: 0.5
+    assert aggregate.mspd_normalize_factor(720) == pytest.approx(640 / 720)
+    assert aggregate.mspd_normalize_factor(1280) == pytest.approx(0.5)
+    # Normalising a raw error then comparing to thr 5..50 equals
+    # comparing the raw error to thr * (W/640).
+    raw_err = 10.0
+    w = 1280.0
+    thr = 5.0
+    assert (raw_err * aggregate.mspd_normalize_factor(w) < thr) == (
+        raw_err < thr * (w / 640.0)
+    )
+
+
+def test_mspd_normalize_factor_rejects_nonpositive():
+    with pytest.raises(ValueError):
+        aggregate.mspd_normalize_factor(0)
+    with pytest.raises(ValueError):
+        aggregate.mspd_normalize_factor(-1)
+
+
+def test_vsd_delta_mm_itodd_is_5():
+    assert aggregate.vsd_delta_mm("itodd") == 5.0
+    assert aggregate.vsd_delta_mm("ITODD") == 5.0
+    assert aggregate.vsd_delta_mm("itoddmv") == 5.0
+
+
+def test_vsd_delta_mm_default_15():
+    for ds in ("lmo", "ycbv", "tless", "hb", "icbin", "tudl"):
+        assert aggregate.vsd_delta_mm(ds) == 15.0
+    assert aggregate.vsd_delta_mm("unknown_dataset") == 15.0
+
+
+def test_assert_csv_covers_targets_ok(tmp_path):
+    targets = [
+        {"scene_id": 1, "im_id": 2, "obj_id": 3},
+        {"scene_id": 1, "im_id": 2, "obj_id": 4},
+    ]
+    p = tmp_path / "test_targets_bop19.json"
+    p.write_text(__import__("json").dumps(targets))
+    # exact cover
+    aggregate.assert_csv_covers_targets(
+        [(1, 2, 3), (1, 2, 4)], p)
+    # extra CSV keys are fine
+    aggregate.assert_csv_covers_targets(
+        [(1, 2, 3), (1, 2, 4), (9, 9, 9)], p)
+
+
+def test_assert_csv_covers_targets_missing_raises(tmp_path):
+    targets = [
+        {"scene_id": 1, "im_id": 2, "obj_id": 3},
+        {"scene_id": 1, "im_id": 2, "obj_id": 4},
+    ]
+    p = tmp_path / "test_targets_bop19.json"
+    p.write_text(__import__("json").dumps(targets))
+    with pytest.raises(SystemExit, match="instance-rows missing"):
+        aggregate.assert_csv_covers_targets([(1, 2, 3)], p)
+
+
+def test_assert_csv_covers_targets_inst_count(tmp_path):
+    # One key, inst_count=3 → need 3 CSV rows for that key.
+    targets = [
+        {"scene_id": 2, "im_id": 3, "obj_id": 9, "inst_count": 3},
+    ]
+    p = tmp_path / "test_targets_bop19.json"
+    p.write_text(__import__("json").dumps(targets))
+    with pytest.raises(SystemExit, match="instance-rows missing"):
+        aggregate.assert_csv_covers_targets([(2, 3, 9)], p)  # only 1
+    aggregate.assert_csv_covers_targets(
+        [(2, 3, 9), (2, 3, 9), (2, 3, 9)], p)
+
+
+def test_assert_csv_covers_targets_repeated_rows(tmp_path):
+    # Two identical target rows without inst_count → need 2 CSV rows.
+    targets = [
+        {"scene_id": 2, "im_id": 3, "obj_id": 14},
+        {"scene_id": 2, "im_id": 3, "obj_id": 14},
+    ]
+    p = tmp_path / "test_targets_bop19.json"
+    p.write_text(__import__("json").dumps(targets))
+    with pytest.raises(SystemExit, match="instance-rows missing"):
+        aggregate.assert_csv_covers_targets([(2, 3, 14)], p)
+    aggregate.assert_csv_covers_targets([(2, 3, 14), (2, 3, 14)], p)
+
+
+def test_assert_csv_covers_targets_skips_missing_file(tmp_path):
+    # No targets file → no-op (synthetic / unit tests).
+    aggregate.assert_csv_covers_targets(
+        [(1, 2, 3)], tmp_path / "does_not_exist.json")
+
+
+def test_m3_ar_py_headline_uses_flat_ar_mssd():
+    """M3: ar.py's primary AR assignment must call aggregate.flat_ar_*."""
+    src = Path(__file__).resolve().parents[1] / "src" / "popoe" / "metrics" / "ar.py"
+    text = src.read_text()
+    assert "AR_MSSD = aggregate.flat_ar_mssd(" in text
+    assert "AR_MSPD = aggregate.flat_ar_mspd(" in text
+    # Must not reintroduce a primary equal-weight mean assignment.
+    assert "AR_MSSD = np.mean([v[0] for v in per_obj.values()])" not in text
+
+
+def test_m3_vsd_py_headline_uses_flat_ar_vsd():
+    src = Path(__file__).resolve().parents[1] / "src" / "popoe" / "metrics" / "vsd.py"
+    text = src.read_text()
+    assert "AR_VSD = aggregate.flat_ar_vsd(" in text
+    assert "AR_VSD = float(np.mean([v[0] for v in per_obj_ar.values()]))" not in text

@@ -29,7 +29,7 @@ except ImportError:  # run as a bare file without popoe installed
 sys.path.insert(0, os.environ.get("POPOE_BOP_TOOLKIT", "/workspace/bop_toolkit"))
 from bop_toolkit_lib import misc
 
-VSD_DELTA_MM = 15.0  # BOP standard
+VSD_DELTA_MM = 15.0  # default fallback; prefer aggregate.vsd_delta_mm(dataset)
 VSD_TAUS = aggregate.VSD_TAUS
 
 
@@ -122,6 +122,10 @@ def compute_ar_vsd(csv_path, bop_root, models_eval_dir=None):
         models_eval_dir = bop_root / "models_eval"
     models_eval_dir = Path(models_eval_dir)
 
+    # N3: dataset-specific VSD visibility delta (ITODD = 5 mm, else 15 mm).
+    delta_mm = aggregate.vsd_delta_mm(bop_root.name)
+    print(f"VSD delta = {delta_mm} mm (dataset={bop_root.name})", flush=True)
+
     # Load meshes + symmetries + diameters once
     models_info = json.load(open(models_eval_dir / "models_info.json"))
     obj_data = {}
@@ -153,7 +157,8 @@ def compute_ar_vsd(csv_path, bop_root, models_eval_dir=None):
         raise SystemExit(
             "multi-instance CSV detected (duplicate (scene,im,obj) rows): "
             "this local VSD scorer assumes one row per target.")
-
+    # M1: missing targets would inflate flat AR.
+    aggregate.assert_csv_covers_targets(keys, bop_root / "test_targets_bop19.json")
     # Index GT + scene depth
     scene_cache = {}
 
@@ -202,7 +207,8 @@ def compute_ar_vsd(csv_path, bop_root, models_eval_dir=None):
                 R_gt_s = R_gt @ sym["R"]
                 t_gt_s = (R_gt @ sym["t"].reshape(3, 1)).reshape(3) + t_gt
                 d_gt = render_depth_k(d["V"], d["F"], R_gt_s, t_gt_s, sc["K"], sc["H"], sc["W"])
-                errs = vsd_per_tau(d_est, d_gt, sc["depth"], d["diameter"])
+                errs = vsd_per_tau(
+                    d_est, d_gt, sc["depth"], d["diameter"], delta_mm=delta_mm)
                 if best_err is None or sum(errs) < sum(best_err):
                     best_err = errs
         errs_per_obj.setdefault(obj_id, []).append(best_err)
@@ -233,6 +239,7 @@ def compute_ar_vsd(csv_path, bop_root, models_eval_dir=None):
     # PRIMARY: flat aggregation over all annotated instances (BOP official).
     # The former equal-weight-per-object mean under-reported 0.5-0.9 pt;
     # flat matches the BOP server to 0.03 pt (see metrics/aggregate.py).
+    # M3 call-site: headline MUST use flat_ar_vsd (tested).
     all_errs = np.concatenate(
         [np.array(errs_per_obj[o]) for o in sorted(errs_per_obj.keys())], axis=0)
     AR_VSD = aggregate.flat_ar_vsd(all_errs, VSD_THS)
