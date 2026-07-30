@@ -60,6 +60,7 @@ env | grep '^POPOE_' | sort
   --detections "$DET_JSON" \
   --merge none --topk 2 --grid 16 --solver o3d --seed "$SEED" \
   --weights 1.0 \
+  `# Eq.7 coarse term (paper formula, unit exponents per yi-11) — NOT the tuned-line per-dataset S_coarse rule; gedi CONSOLIDATION §2.1` \
   --use-s-coarse \
   --corr-topk 10 \
   --tau-diameter \
