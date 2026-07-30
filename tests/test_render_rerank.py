@@ -80,3 +80,5 @@ def test_reranker_skips_without_bbox():
     out = rr.refine(pose, scene, obj, q, t)
     assert out.breakdown.get("render_rerank") == "skipped_no_bbox"
     assert out.score == 0.42
+    assert np.allclose(out.breakdown["R_prererank"], pose.R)
+    assert np.allclose(out.breakdown["t_prererank"], pose.t)

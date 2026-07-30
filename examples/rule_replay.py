@@ -52,7 +52,8 @@ CAND = ["cand", "w"]
 # without them here, `--rule "…*R_coarse"` would be accepted as a term and
 # ranked on a string column.
 NON_TERMS = (set(KEY) | set(CAND)
-             | {"R", "t", "time", "solver", "R_coarse", "t_coarse"})
+             | {"R", "t", "time", "solver", "source", "R_coarse", "t_coarse",
+                "R_prererank", "t_prererank"})
 
 
 def parse_rule(rule: str, columns) -> dict:

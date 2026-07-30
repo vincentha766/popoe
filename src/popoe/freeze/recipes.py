@@ -129,7 +129,8 @@ def best_segmentor(detections_json: str | None = None, topk: int = 2,
                    merge_labels: dict | None = None, sources=None,
                    size_select: str | None = None,
                    confusable_diameters: dict | None = None,
-                   size_select_fallback: bool = True):
+                   size_select_fallback: bool = True,
+                   source: str | None = None):
     """Detections segmentor over one file (`detections_json`) or a union of
     NAMED backends (`sources` — dict {name: path}, DetectionSource/(name, path)
     list, or 'name=path' strings; see BOPDetectionsSegmentor). Exactly one of
@@ -151,7 +152,7 @@ def best_segmentor(detections_json: str | None = None, topk: int = 2,
     )
     if sources is not None:
         return BOPDetectionsSegmentor(sources=sources, **kw)
-    return BOPDetectionsSegmentor(detections_json, **kw)
+    return BOPDetectionsSegmentor(detections_json, source=source, **kw)
 
 
 def ycbv_lab_segmentor(detections_json: str | None = None, topk: int = 2,

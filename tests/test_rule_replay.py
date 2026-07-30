@@ -55,8 +55,10 @@ def test_parse_rule_missing_column_is_loud(rr):
 def test_parse_rule_rejects_non_numeric_columns(rr):
     """id / pose / provenance columns (incl. the new `solver`) are not scoring
     terms — referencing one is a loud error, not a string-arithmetic crash."""
-    cols = list(_df().columns) + ["solver"]
-    for bad in ("solver", "R", "scene_id"):
+    cols = list(_df().columns) + ["solver", "source", "R_prererank",
+                                  "t_prererank"]
+    for bad in ("solver", "source", "R", "R_prererank", "t_prererank",
+                "scene_id"):
         with pytest.raises(SystemExit, match="not a numeric scoring term"):
             rr.parse_rule(f"s_icp * {bad}", cols)
 

@@ -262,6 +262,10 @@ class RenderAppearanceReranker:
         if not self.enabled:
             return pose
 
+        bd = dict(pose.breakdown)
+        bd["R_prererank"] = pose.R.copy()
+        bd["t_prererank"] = pose.t.copy()
+
         det = target.meta.get("detection")
         bbox = None
         if det is not None and getattr(det, "bbox", None) is not None:
@@ -271,7 +275,6 @@ class RenderAppearanceReranker:
         elif det is not None and getattr(det, "mask", None) is not None:
             bbox = bbox_from_mask(det.mask)
         if bbox is None:
-            bd = dict(pose.breakdown)
             bd["render_rerank"] = "skipped_no_bbox"
             return PoseHypothesis(pose.R, pose.t, pose.score, bd)
 
@@ -283,7 +286,6 @@ class RenderAppearanceReranker:
 
         name, R_best, s_best = pick_by_scores(variants, scores)
         t_best = np.asarray(pose.t, float).copy()
-        bd = dict(pose.breakdown)
         bd["pre_rerank_score"] = float(pose.score)
         bd["render_rerank"] = name
         bd["sar_ti"] = float(s_best)

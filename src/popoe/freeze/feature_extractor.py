@@ -48,10 +48,69 @@ def _dino_layer(dino):
     return max(0, min(n - 1, round(0.78 * (n - 1))))
 
 
+def icosphere_directions(n_subdiv: int = 2) -> "np.ndarray":
+    """Unit view directions from a subdivided icosahedron: 12 -> 42 -> 162."""
+    t = (1 + 5 ** 0.5) / 2
+    verts = [(-1, t, 0), (1, t, 0), (-1, -t, 0), (1, -t, 0),
+             (0, -1, t), (0, 1, t), (0, -1, -t), (0, 1, -t),
+             (t, 0, -1), (t, 0, 1), (-t, 0, -1), (-t, 0, 1)]
+    faces = [(0, 11, 5), (0, 5, 1), (0, 1, 7), (0, 7, 10),
+             (0, 10, 11), (1, 5, 9), (5, 11, 4), (11, 10, 2),
+             (10, 7, 6), (7, 1, 8), (3, 9, 4), (3, 4, 2),
+             (3, 2, 6), (3, 6, 8), (3, 8, 9), (4, 9, 5),
+             (2, 4, 11), (6, 2, 10), (8, 6, 7), (9, 8, 1)]
+    v = [np.asarray(x, dtype=float) for x in verts]
+    v = [x / np.linalg.norm(x) for x in v]
+    for _ in range(n_subdiv):
+        mid, nf = {}, []
+
+        def mp(a, b):
+            k = (min(a, b), max(a, b))
+            if k not in mid:
+                m = v[a] + v[b]
+                v.append(m / np.linalg.norm(m))
+                mid[k] = len(v) - 1
+            return mid[k]
+
+        for a, b, c in faces:
+            ab, bc, ca = mp(a, b), mp(b, c), mp(c, a)
+            nf += [(a, ab, ca), (b, bc, ab), (c, ca, bc), (ab, bc, ca)]
+        faces = nf
+    return np.stack(v)
+
+
 def load_dinov2(device='cuda'):
     model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitg14_reg', pretrained=True)
     model = model.to(device).eval()
     return model
+
+
+def _row_count(x) -> int:
+    return int(x.shape[0])
+
+
+def _append_last_row(x):
+    if hasattr(x, "detach"):
+        return torch.cat([x, x[-1:].clone()], dim=0)
+    return np.concatenate([x, x[-1:].copy()], axis=0)
+
+
+class _NoSingletonGeDiBatches:
+    """Avoid GeDi's LRF singleton-batch squeeze bug without changing other calls."""
+
+    def __init__(self, descriptor, samples_per_batch: int):
+        self.descriptor = descriptor
+        self.samples_per_batch = int(samples_per_batch)
+
+    def compute(self, pts, pcd):
+        n = _row_count(pts)
+        pad = (
+            n > 0 and self.samples_per_batch > 1
+            and n % self.samples_per_batch == 1
+        )
+        pts_in = _append_last_row(pts) if pad else pts
+        out = self.descriptor.compute(pts_in, pcd)
+        return out[:n] if pad else out
 
 
 def _make_gedi_single(r_lrf):
@@ -69,7 +128,7 @@ def _make_gedi_single(r_lrf):
         'r_lrf': r_lrf,
         'fchkpt_gedi_net': os.environ.get('POPOE_GEDI_PATH', '/workspace/gedi') + '/data/chkpts/3dmatch/chkpt.tar',
     }
-    return GeDi(cfg)
+    return _NoSingletonGeDiBatches(GeDi(cfg), cfg['samples_per_batch'])
 
 
 class _TwoScaleGeDi:
@@ -637,14 +696,28 @@ class QueryFeatureExtractor:
         golden = (1 + math.sqrt(5)) / 2
         radius_cam = max(mesh.extents) * 1.5
 
+        layout = os.environ.get("POPOE_QUERY_VIEWS", "spiral")
+        if layout == "ico162":
+            ico = icosphere_directions(2)
+            if n_views != len(ico):
+                raise RuntimeError(
+                    f"POPOE_QUERY_VIEWS=ico162 provides exactly {len(ico)} "
+                    f"directions but n_views={n_views}; set POPOE_N_VIEWS=162 "
+                    f"or drop the layout override.")
+        elif layout != "spiral":
+            raise RuntimeError(f"unknown POPOE_QUERY_VIEWS {layout!r}")
+
         for i in range(n_views):
-            theta = math.acos(1 - 2*(i+0.5)/n_views)
-            phi = 2*math.pi*i/golden
-            cam_pos = radius_cam * np.array([
-                math.sin(theta)*math.cos(phi),
-                math.sin(theta)*math.sin(phi),
-                math.cos(theta)
-            ])
+            if layout == "ico162":
+                cam_pos = radius_cam * ico[i]
+            else:
+                theta = math.acos(1 - 2*(i+0.5)/n_views)
+                phi = 2*math.pi*i/golden
+                cam_pos = radius_cam * np.array([
+                    math.sin(theta)*math.cos(phi),
+                    math.sin(theta)*math.sin(phi),
+                    math.cos(theta)
+                ])
 
             img_pil, depth_render, fx, fy, cx, cy = self._raycast_render(mesh, cam_pos, H, W)
 
@@ -742,6 +815,11 @@ class TargetFeatureExtractor:
         self.gedi = gedi if gedi is not None else load_gedi(device)
         # See QueryFeatureExtractor: fusion owns the PCA, `_pca_vis` proxies it.
         self.fusion = DinoGeDiFusion()
+        self._last_target_skip_reason = None
+
+    def _skip_target(self, reason):
+        self._last_target_skip_reason = reason
+        return None, None
 
     @property
     def _pca_vis(self):
@@ -769,6 +847,7 @@ class TargetFeatureExtractor:
         """
         import cv2
 
+        self._last_target_skip_reason = None
         H, W = depth.shape
         fx, fy, cx, cy = intrinsics['fx'], intrinsics['fy'], intrinsics['cx'], intrinsics['cy']
 
@@ -776,7 +855,7 @@ class TargetFeatureExtractor:
         grid_size = int(os.environ.get("POPOE_TARGET_GRID", "16"))
         ys, xs = np.where(mask)
         if len(ys) == 0:
-            return None, None
+            return self._skip_target("empty mask")
         y0, y1 = ys.min(), ys.max()
         x0, x1 = xs.min(), xs.max()
 
@@ -791,25 +870,40 @@ class TargetFeatureExtractor:
         patch_u = patch_u[in_mask]
         patch_v = patch_v[in_mask]
 
+        ys_all, xs_all = np.where((depth > 0) & mask)
+        if len(ys_all) < 4:
+            return self._skip_target(
+                f"only {len(ys_all)} valid depth pixel(s) in mask")
+
         # 2D -> 3D backprojection using depth
         d = depth[patch_v, patch_u]
         valid_depth = d > 0
         patch_u = patch_u[valid_depth]
         patch_v = patch_v[valid_depth]
         d = d[valid_depth]
+        n_unique = len(np.unique(np.stack([patch_u, patch_v], axis=1), axis=0))
+        if len(d) == 0 or n_unique < 4:
+            max_sparse = grid_size * grid_size
+            idx = np.arange(len(ys_all))
+            if max_sparse and len(idx) > max_sparse:
+                idx = np.sort(np.random.default_rng(0).choice(
+                    len(idx), max_sparse, replace=False))
+            patch_u = xs_all[idx]
+            patch_v = ys_all[idx]
+            d = depth[patch_v, patch_u]
 
         X = (patch_u - cx) * d / fx
         Y = (patch_v - cy) * d / fy
         pts_sparse = np.stack([X, Y, d], axis=1).astype(np.float32)  # (N_T, 3)
 
         if len(pts_sparse) < 4:
-            return None, None
+            return self._skip_target(
+                f"only {len(pts_sparse)} sparse target point(s)")
 
         # Visual features: extract DINOv2 patch features at these 2D locations
         vis_feats = self._extract_dino_at_points(rgb, patch_u, patch_v)
 
         # Dense depth point cloud for GeDi neighbourhood
-        ys_all, xs_all = np.where((depth > 0) & mask)
         d_all = depth[ys_all, xs_all]
         X_all = (xs_all - cx) * d_all / fx
         Y_all = (ys_all - cy) * d_all / fy
