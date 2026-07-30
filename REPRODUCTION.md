@@ -22,6 +22,355 @@ script line** (the dissertation's reproduction headline) through popoe
 entrypoints, under the dual-disclosure discipline of `../gedi/EXPERIMENTS.md`
 §0: the reproduction headline is never rewritten by the popoe line.
 
+## Two-line formal recipes (frozen 2026-07-30)
+
+> Formal score = BOP evaluation server only. Local full AR in
+> `AR_SUMMARY.md` is a development self-check, not the dissertation score.
+> All four recipes are pinned to code tag `twoline-prep-20260730`
+> (`618693141470445bc3084d11f8d6bbb2b6f3bb34`, merge `6186931`). Values marked
+> **pinned-by-us** are frozen project choices where the public recipe is silent:
+> `--seed 1234`, A-line Eq.7 unit exponents (`alpha=beta=gamma=1`) for the
+> `--use-s-coarse` product term, and `POPOE_QUERY_CANON=476` (render canvas;
+> the paper names 480²/50% — 476/0.5 is our measured-equivalent pin). The
+> `--render-rerank` switch is score-affecting, so every one of the eight runs
+> below must use fresh `poses.csv` and `cand.csv` paths.
+>
+> **Smoke first**: before any full run, execute the same block with
+> `--objs 1` appended and `smoke_`-prefixed `--out/--cand-csv/--cache` paths;
+> accept only if the log echoes every env pin, rerank breakdown lines appear,
+> and zero Tracebacks (RERANK-SMOKE card format).
+>
+> **Post-run (no GPU)**: per dataset dir fill the remaining four artifacts —
+> `RECIPE.md` (copy the exact block + commit + date), `AR_SUMMARY.md`
+> (local `ar_flat`/VSD scripts; self-check only), `bop_server.md` (score +
+> submission id after the private upload), `grasp_summary.md` (same-CSV
+> ADD(-S) via the gedi grasp script).
+
+Artifact convention for every dataset run follows `../gedi/CONSOLIDATION.md`
+§3.2:
+
+```
+out_dir/
+  poses.csv        # main pose CSV
+  cand.csv         # candidate-level dump (--cand-csv; replay/ablation input)
+  RECIPE.md        # flags, detection sources, commit, seed, date
+  AR_SUMMARY.md    # local full AR + MSSD/MSPD/VSD self-check only
+  bop_server.md    # official BOP server score + submission id
+  grasp_summary.md # ADD(-S) computed from the same poses.csv
+```
+
+### faithful-cnos
+
+| Field | Frozen value |
+|---|---|
+| Report point | A / single-source |
+| Code | `twoline-prep-20260730` (`6186931`) |
+| Datasets | LM-O + YCB-V; one full BOP test run each |
+| Detection inputs | CNOS only: `data/detections/cnos/cnos-fastsam_lmo-test.json`, `data/detections/cnos/cnos-fastsam_ycbv-test.json` |
+| Scoring | Paper Eq.7 three-term form with `--use-s-coarse`; Eq.7 exponents are **pinned-by-us** to unit exponents |
+| Leaderboard comparator | A / single-source -> FreeZe(CNOS) LM-O/YCB-V = 0.689 / 0.853 |
+| Artifacts | `$RUN/{lmo,ycbv}/` each contains `poses.csv`, `cand.csv`, `RECIPE.md`, `AR_SUMMARY.md`, `bop_server.md`, `grasp_summary.md` |
+| Cautions | Rerank scope differs from official SAR: popoe only reorders PCA flip variants. Dense resampling uses `rng(0)` where invoked and is independent of `--seed`. Encoding degradation is explicit in logs as `DEGRADE`. These runs are not bit/row comparable to historical anchors because seed, rerank and implementation fixes are new variables. |
+
+```bash
+set -euo pipefail
+
+POPOE="${POPOE:-/workspace/popoe}"
+BOP="${BOP:-/workspace/bop_data}"
+DET="${DET:-$POPOE/data/detections}"
+RUN_ROOT="${RUN_ROOT:-/workspace/results/twoline_20260730}"
+RUN="$RUN_ROOT/faithful-cnos"
+PY="${PY:-python}"
+SEED=1234
+
+cd "$POPOE"
+if [ "$(git rev-parse HEAD)" != "618693141470445bc3084d11f8d6bbb2b6f3bb34" ]; then
+  echo "wrong popoe commit; checkout tag twoline-prep-20260730" >&2
+  exit 1
+fi
+
+export BOP DET RUN SEED
+export OMP_NUM_THREADS=8
+export TORCH_HOME="${TORCH_HOME:-/workspace/torch_cache}"
+export POPOE_GEDI_PATH=/workspace/gedi
+export POPOE_BOP_TOOLKIT=/workspace/bop_toolkit
+unset POPOE_TARGET_GRID POPOE_TARGET_CANON POPOE_TARGET_FILL POPOE_TARGET_CROP
+unset POPOE_VIS_DIM POPOE_VIS_WEIGHT POPOE_SKIP_VIS POPOE_DINO_LAYER
+unset POPOE_TWO_SCALE_GEDI POPOE_DGEDI_MODE POPOE_GEOM_BACKBONE POPOE_MESH_SHADING
+unset POPOE_FPFH_RADII POPOE_FPFH_VOXEL_FRAC POPOE_FPFH_NORMAL_FRAC POPOE_FPFH_ORIENT
+export POPOE_CANON_BASIS=diameter
+export POPOE_QUERY_POINTS=5000
+export POPOE_N_VIEWS=162
+export POPOE_QUERY_CANON=476
+export POPOE_QUERY_FILL=0.5
+export POPOE_QUERY_MIN_VIEWS=18
+export POPOE_QUERY_VIEWS=ico162
+
+mkdir -p "$RUN/lmo" "$RUN/ycbv"
+for f in "$RUN/lmo/poses.csv" "$RUN/lmo/cand.csv" \
+         "$RUN/ycbv/poses.csv" "$RUN/ycbv/cand.csv"; do
+  # NOT `test ! -e a && test ! -e b`: under set -e a failing left-hand test
+  # is errexit-exempt and the guard silently passes (second-review P0).
+  if [ -e "$f" ]; then echo "refusing: $f exists — rerank requires FRESH --out" >&2; exit 1; fi
+done
+
+"$PY" examples/bop_eval.py \
+  --bop "$BOP/lmo" --dataset lmo \
+  --detections "$DET/cnos/cnos-fastsam_lmo-test.json" \
+  --merge none --topk 2 --grid 16 --solver o3d --seed "$SEED" \
+  --weights 1.0 \
+  --use-s-coarse \
+  --corr-topk 10 \
+  --tau-diameter \
+  --icp-dense --icp-dense-max 3000 \
+  --render-rerank \
+  --render-backend nvdiffrast \
+  --out "$RUN/lmo/poses.csv" --cache "$RUN/lmo/cache" \
+  --cand-csv "$RUN/lmo/cand.csv"
+
+"$PY" examples/bop_eval.py \
+  --bop "$BOP/ycbv" --dataset ycbv \
+  --detections "$DET/cnos/cnos-fastsam_ycbv-test.json" \
+  --merge none --topk 2 --grid 16 --solver o3d --seed "$SEED" \
+  --weights 1.0 \
+  --use-s-coarse \
+  --corr-topk 10 \
+  --tau-diameter \
+  --icp-dense --icp-dense-max 3000 \
+  --render-rerank \
+  --render-backend nvdiffrast \
+  --out "$RUN/ycbv/poses.csv" --cache "$RUN/ycbv/cache" \
+  --cand-csv "$RUN/ycbv/cand.csv"
+```
+
+### faithful-3way
+
+| Field | Frozen value |
+|---|---|
+| Report point | A / three-way |
+| Code | `twoline-prep-20260730` (`6186931`) |
+| Datasets | LM-O + YCB-V; one full BOP test run each |
+| Detection inputs | CNOS + SAM6D + NIDS official JSONs under `data/detections/`; `--merge none` keeps the paper-style union unfiltered |
+| Scoring | Paper Eq.7 three-term form with `--use-s-coarse`; Eq.7 exponents are **pinned-by-us** to unit exponents |
+| Leaderboard comparator | A / three-way -> FreeZeV2(756) LM-O/YCB-V = 0.764 / 0.906 — **detection-matched** to 756's three-source self-description (no MUSE) |
+| Artifacts | `$RUN/{lmo,ycbv}/` each contains `poses.csv`, `cand.csv`, `RECIPE.md`, `AR_SUMMARY.md`, `bop_server.md`, `grasp_summary.md` |
+| Cautions | Rerank scope differs from official SAR: popoe only reorders PCA flip variants. Dense resampling uses `rng(0)` where invoked and is independent of `--seed`. Encoding degradation is explicit in logs as `DEGRADE`. These runs are not bit/row comparable to historical anchors because seed, rerank and implementation fixes are new variables. |
+
+```bash
+set -euo pipefail
+
+POPOE="${POPOE:-/workspace/popoe}"
+BOP="${BOP:-/workspace/bop_data}"
+DET="${DET:-$POPOE/data/detections}"
+RUN_ROOT="${RUN_ROOT:-/workspace/results/twoline_20260730}"
+RUN="$RUN_ROOT/faithful-3way"
+PY="${PY:-python}"
+SEED=1234
+
+cd "$POPOE"
+if [ "$(git rev-parse HEAD)" != "618693141470445bc3084d11f8d6bbb2b6f3bb34" ]; then
+  echo "wrong popoe commit; checkout tag twoline-prep-20260730" >&2
+  exit 1
+fi
+
+export BOP DET RUN SEED
+export OMP_NUM_THREADS=8
+export TORCH_HOME="${TORCH_HOME:-/workspace/torch_cache}"
+export POPOE_GEDI_PATH=/workspace/gedi
+export POPOE_BOP_TOOLKIT=/workspace/bop_toolkit
+unset POPOE_TARGET_GRID POPOE_TARGET_CANON POPOE_TARGET_FILL POPOE_TARGET_CROP
+unset POPOE_VIS_DIM POPOE_VIS_WEIGHT POPOE_SKIP_VIS POPOE_DINO_LAYER
+unset POPOE_TWO_SCALE_GEDI POPOE_DGEDI_MODE POPOE_GEOM_BACKBONE POPOE_MESH_SHADING
+unset POPOE_FPFH_RADII POPOE_FPFH_VOXEL_FRAC POPOE_FPFH_NORMAL_FRAC POPOE_FPFH_ORIENT
+export POPOE_CANON_BASIS=diameter
+export POPOE_QUERY_POINTS=5000
+export POPOE_N_VIEWS=162
+export POPOE_QUERY_CANON=476
+export POPOE_QUERY_FILL=0.5
+export POPOE_QUERY_MIN_VIEWS=18
+export POPOE_QUERY_VIEWS=ico162
+
+mkdir -p "$RUN/lmo" "$RUN/ycbv"
+for f in "$RUN/lmo/poses.csv" "$RUN/lmo/cand.csv" \
+         "$RUN/ycbv/poses.csv" "$RUN/ycbv/cand.csv"; do
+  # NOT `test ! -e a && test ! -e b`: under set -e a failing left-hand test
+  # is errexit-exempt and the guard silently passes (second-review P0).
+  if [ -e "$f" ]; then echo "refusing: $f exists — rerank requires FRESH --out" >&2; exit 1; fi
+done
+
+"$PY" examples/bop_eval.py \
+  --bop "$BOP/lmo" --dataset lmo \
+  --sources "cnos=$DET/cnos/cnos-fastsam_lmo-test.json,sam6d=$DET/sam6d/sam6d_ism_lmo.json,nids=$DET/nids/nids_wa_sappe_lmo.json" \
+  --merge none --topk 2 --grid 16 --solver o3d --seed "$SEED" \
+  --weights 1.0 \
+  --use-s-coarse \
+  --corr-topk 10 \
+  --tau-diameter \
+  --icp-dense --icp-dense-max 3000 \
+  --render-rerank \
+  --render-backend nvdiffrast \
+  --out "$RUN/lmo/poses.csv" --cache "$RUN/lmo/cache" \
+  --cand-csv "$RUN/lmo/cand.csv"
+
+"$PY" examples/bop_eval.py \
+  --bop "$BOP/ycbv" --dataset ycbv \
+  --sources "cnos=$DET/cnos/cnos-fastsam_ycbv-test.json,sam6d=$DET/sam6d/sam6d_ism_ycbv.json,nids=$DET/nids/nids_wa_sappe_ycbv.json" \
+  --merge none --topk 2 --grid 16 --solver o3d --seed "$SEED" \
+  --weights 1.0 \
+  --use-s-coarse \
+  --corr-topk 10 \
+  --tau-diameter \
+  --icp-dense --icp-dense-max 3000 \
+  --render-rerank \
+  --render-backend nvdiffrast \
+  --out "$RUN/ycbv/poses.csv" --cache "$RUN/ycbv/cache" \
+  --cand-csv "$RUN/ycbv/cand.csv"
+```
+
+### tuned-cnos
+
+| Field | Frozen value |
+|---|---|
+| Report point | B / single-source |
+| Code | `twoline-prep-20260730` (`6186931`) |
+| Datasets | LM-O + YCB-V; one full BOP test run each |
+| Detection inputs | CNOS only: `data/detections/cnos/cnos-fastsam_lmo-test.json`, `data/detections/cnos/cnos-fastsam_ycbv-test.json` |
+| Scoring | Campaign2 tuned ChampionScorer: grid32, weights `1.0,0.7,0.5,0.3,0.2`; YCB-V uses `--merge ycbv --use-s-coarse`, LM-O uses `--merge none` and no `--use-s-coarse` |
+| Leaderboard comparator | B / single-source -> FreeZe(CNOS) LM-O/YCB-V = 0.689 / 0.853 |
+| Artifacts | `$RUN/{lmo,ycbv}/` each contains `poses.csv`, `cand.csv`, `RECIPE.md`, `AR_SUMMARY.md`, `bop_server.md`, `grasp_summary.md` |
+| Cautions | Rerank scope differs from official SAR: popoe only reorders PCA flip variants. Dense resampling uses `rng(0)` where invoked and is independent of `--seed`. Encoding degradation is explicit in logs as `DEGRADE`. These runs are not bit/row comparable to historical anchors because seed, rerank and implementation fixes are new variables. |
+
+```bash
+set -euo pipefail
+
+POPOE="${POPOE:-/workspace/popoe}"
+BOP="${BOP:-/workspace/bop_data}"
+DET="${DET:-$POPOE/data/detections}"
+RUN_ROOT="${RUN_ROOT:-/workspace/results/twoline_20260730}"
+RUN="$RUN_ROOT/tuned-cnos"
+PY="${PY:-python}"
+SEED=1234
+
+cd "$POPOE"
+if [ "$(git rev-parse HEAD)" != "618693141470445bc3084d11f8d6bbb2b6f3bb34" ]; then
+  echo "wrong popoe commit; checkout tag twoline-prep-20260730" >&2
+  exit 1
+fi
+
+export BOP DET RUN SEED
+export OMP_NUM_THREADS=16
+export TORCH_HOME="${TORCH_HOME:-/workspace/torch_cache}"
+export POPOE_GEDI_PATH=/workspace/gedi
+export POPOE_BOP_TOOLKIT=/workspace/bop_toolkit
+unset POPOE_CANON_BASIS POPOE_QUERY_POINTS POPOE_N_VIEWS POPOE_QUERY_CANON
+unset POPOE_QUERY_FILL POPOE_QUERY_MIN_VIEWS POPOE_QUERY_VIEWS
+unset POPOE_TARGET_GRID POPOE_TARGET_CANON POPOE_TARGET_FILL POPOE_TARGET_CROP
+unset POPOE_VIS_DIM POPOE_VIS_WEIGHT POPOE_SKIP_VIS POPOE_DINO_LAYER
+unset POPOE_TWO_SCALE_GEDI POPOE_DGEDI_MODE POPOE_GEOM_BACKBONE POPOE_MESH_SHADING
+unset POPOE_FPFH_RADII POPOE_FPFH_VOXEL_FRAC POPOE_FPFH_NORMAL_FRAC POPOE_FPFH_ORIENT
+
+mkdir -p "$RUN/lmo" "$RUN/ycbv"
+for f in "$RUN/lmo/poses.csv" "$RUN/lmo/cand.csv" \
+         "$RUN/ycbv/poses.csv" "$RUN/ycbv/cand.csv"; do
+  # NOT `test ! -e a && test ! -e b`: under set -e a failing left-hand test
+  # is errexit-exempt and the guard silently passes (second-review P0).
+  if [ -e "$f" ]; then echo "refusing: $f exists — rerank requires FRESH --out" >&2; exit 1; fi
+done
+
+"$PY" examples/bop_eval.py \
+  --bop "$BOP/lmo" --dataset lmo \
+  --detections "$DET/cnos/cnos-fastsam_lmo-test.json" \
+  --merge none --topk 2 --grid 32 --solver o3d --seed "$SEED" \
+  --weights 1.0,0.7,0.5,0.3,0.2 \
+  --render-rerank \
+  --render-backend nvdiffrast \
+  --out "$RUN/lmo/poses.csv" --cache "$RUN/lmo/cache" \
+  --cand-csv "$RUN/lmo/cand.csv"
+
+"$PY" examples/bop_eval.py \
+  --bop "$BOP/ycbv" --dataset ycbv \
+  --detections "$DET/cnos/cnos-fastsam_ycbv-test.json" \
+  --merge ycbv --topk 2 --grid 32 --solver o3d --seed "$SEED" \
+  --weights 1.0,0.7,0.5,0.3,0.2 \
+  --use-s-coarse \
+  --render-rerank \
+  --render-backend nvdiffrast \
+  --out "$RUN/ycbv/poses.csv" --cache "$RUN/ycbv/cache" \
+  --cand-csv "$RUN/ycbv/cand.csv"
+```
+
+### tuned-4way
+
+| Field | Frozen value |
+|---|---|
+| Report point | B / four-way |
+| Code | `twoline-prep-20260730` (`6186931`) |
+| Datasets | LM-O + YCB-V; one full BOP test run each |
+| Detection inputs | CNOS + SAM6D + NIDS + official MUSE JSONs under `data/detections/`; `muse` means downloaded official artefacts, not `muse-repro` |
+| Scoring | Campaign2 tuned ChampionScorer: grid32, weights `1.0,0.7,0.5,0.3,0.2`; YCB-V uses `--merge ycbv --use-s-coarse`, LM-O uses `--merge none` and no `--use-s-coarse` |
+| Leaderboard comparator | B / four-way -> FreeZeV2(756) LM-O/YCB-V = 0.764 / 0.906 — detection carries **one extra source (MUSE)** vs 756's self-description; the detection-matched like-for-like lives at A/three-way, state this in prose |
+| Artifacts | `$RUN/{lmo,ycbv}/` each contains `poses.csv`, `cand.csv`, `RECIPE.md`, `AR_SUMMARY.md`, `bop_server.md`, `grasp_summary.md` |
+| Cautions | Rerank scope differs from official SAR: popoe only reorders PCA flip variants. Dense resampling uses `rng(0)` where invoked and is independent of `--seed`. Encoding degradation is explicit in logs as `DEGRADE`. These runs are not bit/row comparable to historical anchors because seed, rerank and implementation fixes are new variables. |
+
+```bash
+set -euo pipefail
+
+POPOE="${POPOE:-/workspace/popoe}"
+BOP="${BOP:-/workspace/bop_data}"
+DET="${DET:-$POPOE/data/detections}"
+RUN_ROOT="${RUN_ROOT:-/workspace/results/twoline_20260730}"
+RUN="$RUN_ROOT/tuned-4way"
+PY="${PY:-python}"
+SEED=1234
+
+cd "$POPOE"
+if [ "$(git rev-parse HEAD)" != "618693141470445bc3084d11f8d6bbb2b6f3bb34" ]; then
+  echo "wrong popoe commit; checkout tag twoline-prep-20260730" >&2
+  exit 1
+fi
+
+export BOP DET RUN SEED
+export OMP_NUM_THREADS=16
+export TORCH_HOME="${TORCH_HOME:-/workspace/torch_cache}"
+export POPOE_GEDI_PATH=/workspace/gedi
+export POPOE_BOP_TOOLKIT=/workspace/bop_toolkit
+unset POPOE_CANON_BASIS POPOE_QUERY_POINTS POPOE_N_VIEWS POPOE_QUERY_CANON
+unset POPOE_QUERY_FILL POPOE_QUERY_MIN_VIEWS POPOE_QUERY_VIEWS
+unset POPOE_TARGET_GRID POPOE_TARGET_CANON POPOE_TARGET_FILL POPOE_TARGET_CROP
+unset POPOE_VIS_DIM POPOE_VIS_WEIGHT POPOE_SKIP_VIS POPOE_DINO_LAYER
+unset POPOE_TWO_SCALE_GEDI POPOE_DGEDI_MODE POPOE_GEOM_BACKBONE POPOE_MESH_SHADING
+unset POPOE_FPFH_RADII POPOE_FPFH_VOXEL_FRAC POPOE_FPFH_NORMAL_FRAC POPOE_FPFH_ORIENT
+
+mkdir -p "$RUN/lmo" "$RUN/ycbv"
+for f in "$RUN/lmo/poses.csv" "$RUN/lmo/cand.csv" \
+         "$RUN/ycbv/poses.csv" "$RUN/ycbv/cand.csv"; do
+  # NOT `test ! -e a && test ! -e b`: under set -e a failing left-hand test
+  # is errexit-exempt and the guard silently passes (second-review P0).
+  if [ -e "$f" ]; then echo "refusing: $f exists — rerank requires FRESH --out" >&2; exit 1; fi
+done
+
+"$PY" examples/bop_eval.py \
+  --bop "$BOP/lmo" --dataset lmo \
+  --sources "cnos=$DET/cnos/cnos-fastsam_lmo-test.json,sam6d=$DET/sam6d/sam6d_ism_lmo.json,nids=$DET/nids/nids_wa_sappe_lmo.json,muse=$DET/muse/muse-full_lmo-test.json" \
+  --merge none --topk 2 --grid 32 --solver o3d --seed "$SEED" \
+  --weights 1.0,0.7,0.5,0.3,0.2 \
+  --render-rerank \
+  --render-backend nvdiffrast \
+  --out "$RUN/lmo/poses.csv" --cache "$RUN/lmo/cache" \
+  --cand-csv "$RUN/lmo/cand.csv"
+
+"$PY" examples/bop_eval.py \
+  --bop "$BOP/ycbv" --dataset ycbv \
+  --sources "cnos=$DET/cnos/cnos-fastsam_ycbv-test.json,sam6d=$DET/sam6d/sam6d_ism_ycbv.json,nids=$DET/nids/nids_wa_sappe_ycbv.json,muse=$DET/muse/muse-full_ycbv-test.json" \
+  --merge ycbv --topk 2 --grid 32 --solver o3d --seed "$SEED" \
+  --weights 1.0,0.7,0.5,0.3,0.2 \
+  --use-s-coarse \
+  --render-rerank \
+  --render-backend nvdiffrast \
+  --out "$RUN/ycbv/poses.csv" --cache "$RUN/ycbv/cache" \
+  --cand-csv "$RUN/ycbv/cand.csv"
+```
+
 ## Headline ledger
 
 > **2026-07-26 pipeline verify COMPLETE** — popoe **`75553a1`**, pod `wrmy8k0thtxjq6` (stopped).  
