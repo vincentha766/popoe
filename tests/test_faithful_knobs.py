@@ -79,3 +79,13 @@ def test_correspondence_path_recovers_a_planted_pose():
                                            -1, 1)))
     assert ang_err < 5.0, f"rotation off by {ang_err:.1f} deg"
     assert np.linalg.norm(t - t_true) < 0.005
+
+
+def test_icosphere_directions_shape_norms_and_determinism():
+    from popoe.freeze.feature_extractor import icosphere_directions
+
+    d = icosphere_directions(2)
+    assert d.shape == (162, 3)
+    assert np.allclose(np.linalg.norm(d, axis=1), 1.0, atol=1e-9)
+    assert len({tuple(np.round(x, 9)) for x in d}) == 162
+    assert np.allclose(icosphere_directions(2), d)

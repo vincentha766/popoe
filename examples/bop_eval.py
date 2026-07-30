@@ -82,12 +82,17 @@ def validate_source_args(detections, sources):
         raise SystemExit("--sources is empty")
 
 
+CAND_BASE_HEADER = ["scene_id", "im_id", "obj_id", "cand", "w", "s_icp",
+                    "s_feat_1", "metric_fit", "score", "R", "t"]
+CAND_COARSE_HEADER = ["s_coarse", "R_coarse", "t_coarse"]
+CAND_EXTRA_HEADER = ["source", "R_prererank", "t_prererank"]
+
+
 def cand_csv_header(score_coarse):
     """Column header for the --cand-csv dump. The optional --score-coarse block
-    (s_coarse plus the PRE-ICP pose it was measured at, R_coarse / t_coarse) is
-    appended, then a `solver` column that stamps which pose solver produced each
-    row (so a dump self-identifies its solver, and the header pins the mode on
-    append).
+    (s_coarse plus the PRE-ICP pose it was measured at, R_coarse / t_coarse),
+    `solver`, and new provenance/replay columns are appended after the original
+    candidate payload.
 
     R_coarse / t_coarse ride along with s_coarse because they come from the same
     switch (ICPRefiner(keep_coarse=True)) and answer the question s_coarse only
@@ -95,10 +100,83 @@ def cand_csv_header(score_coarse):
     the pose itself lets it be scored against ground truth — i.e. how many AR
     points ICP actually moved. Same units and formatting as R / t (rotation
     row-major, translation in mm), so the same downstream reader handles both."""
-    return (["scene_id", "im_id", "obj_id", "cand", "w", "s_icp", "s_feat_1",
-             "metric_fit", "score", "R", "t"]
-            + (["s_coarse", "R_coarse", "t_coarse"] if score_coarse else [])
-            + ["solver"])
+    return (CAND_BASE_HEADER
+            + (CAND_COARSE_HEADER if score_coarse else [])
+            + ["solver"] + CAND_EXTRA_HEADER)
+
+
+def cand_csv_compatible_headers(score_coarse):
+    """Headers this run can append to without corrupting column alignment.
+
+    campaign2-era dumps exist in a few schemas. A fresh file gets the current
+    header; appending to a legacy file writes only the columns that header names.
+    """
+    if score_coarse:
+        return [
+            CAND_BASE_HEADER + ["s_coarse"],
+            CAND_BASE_HEADER + ["s_coarse", "solver"],
+            CAND_BASE_HEADER + CAND_COARSE_HEADER + ["solver"],
+            cand_csv_header(True),
+        ]
+    return [
+        CAND_BASE_HEADER,
+        CAND_BASE_HEADER + ["solver"],
+        cand_csv_header(False),
+    ]
+
+
+def infer_detection_source(path):
+    """Best-effort source tag for the single --detections form."""
+    s = os.fspath(path).lower().replace("\\", "/")
+    if "muse-repro" in s:
+        return "muse-repro"
+    if "sam6d" in s or "sam-6d" in s:
+        return "sam6d"
+    if "nids" in s:
+        return "nids"
+    if "muse" in s:
+        return "muse"
+    if "cnos" in s or "fastsam" in s:
+        return "cnos"
+    return None
+
+
+def _fmt_R(R):
+    return "" if R is None else " ".join(f"{v:.6f}" for v in np.asarray(R).flatten())
+
+
+def _fmt_t_mm(t):
+    return "" if t is None else " ".join(f"{v:.4f}" for v in (np.asarray(t) * 1000.0))
+
+
+def cand_csv_row(scene_id, im_id, obj_id, cand, w, hyp, source, solver,
+                 score_coarse, header=None):
+    bd = hyp.breakdown
+    values = {
+        "scene_id": scene_id,
+        "im_id": im_id,
+        "obj_id": obj_id,
+        "cand": cand,
+        "w": w,
+        "s_icp": f"{bd.get('s_icp', 0):.4f}",
+        "s_feat_1": f"{bd.get('s_feat_1', 0):.4f}",
+        "metric_fit": f"{bd.get('metric_fit', 1):.4f}",
+        "score": f"{hyp.score:.6f}",
+        "R": _fmt_R(hyp.R),
+        "t": _fmt_t_mm(hyp.t),
+        "solver": solver,
+        "source": source or "",
+        "R_prererank": _fmt_R(bd.get("R_prererank")),
+        "t_prererank": _fmt_t_mm(bd.get("t_prererank")),
+    }
+    if score_coarse:
+        values.update({
+            "s_coarse": f"{bd['s_coarse']:.4f}",
+            "R_coarse": _fmt_R(bd["R_coarse"]),
+            "t_coarse": _fmt_t_mm(bd["t_coarse"]),
+        })
+    header = header or cand_csv_header(score_coarse)
+    return [values.get(c, "") for c in header]
 
 
 def resolve_layout(bop: Path, dataset=None, split=None, models_dir=None):
@@ -275,7 +353,8 @@ def resolve_segmentor(detections, sources, topk, merge_labels,
     )
     if sources:
         return best_segmentor(sources=_parse_sources_arg(sources), **kw)
-    return best_segmentor(detections, **kw)
+    return best_segmentor(detections, source=infer_detection_source(detections),
+                          **kw)
 
 
 def main():
@@ -601,6 +680,7 @@ def main():
         "query_fill": ("POPOE_QUERY_FILL", "0.45"),       # object fill fraction
         "query_min_views": ("POPOE_QUERY_MIN_VIEWS", "0"),  # visibility gate
         "canon_basis": ("POPOE_CANON_BASIS", "extent"),   # GeDi radius basis
+        "query_views": ("POPOE_QUERY_VIEWS", "spiral"),   # view placement
     }.items():
         _val = os.environ.get(_env, _dflt)
         if _val != _dflt:
@@ -703,8 +783,10 @@ def main():
               f"encode={time.time()-t0:.1f}s{tau_note}", flush=True)
 
     cand_f = None
+    cand_header = None
     if args.cand_csv:
         header = cand_csv_header(args.score_coarse)
+        cand_header = header
         new = not os.path.exists(args.cand_csv)
         if not new:
             # Appending: the existing header must match this run's column set,
@@ -712,11 +794,15 @@ def main():
             # mismatched header (silent schema corruption).
             with open(args.cand_csv, newline="") as fchk:
                 existing = next(csv.reader(fchk), [])
-            if existing != header:
+            if existing not in cand_csv_compatible_headers(args.score_coarse):
                 raise SystemExit(
                     f"--cand-csv {args.cand_csv} has header {existing} but this "
-                    f"run would write {header} (—score-coarse mismatch). Use a "
+                    f"run would write {header} (score-coarse mismatch). Use a "
                     f"fresh file or match the flag.")
+            cand_header = existing
+            if existing != header:
+                print(f"--cand-csv appending with legacy header {existing}",
+                      flush=True)
         cand_f = open(args.cand_csv, "a", newline="")
         cand_wr = csv.writer(cand_f)
         if new:
@@ -857,21 +943,12 @@ def main():
                                 h = scorer.score(h, qw, tw)
                                 hyps_by_det.setdefault(ci, []).append(h)
                                 if cand_f is not None:
-                                    cand_wr.writerow([
-                                        scene_id, im_id, obj_id, ci, w,
-                                        f"{h.breakdown.get('s_icp', 0):.4f}",
-                                        f"{h.breakdown.get('s_feat_1', 0):.4f}",
-                                        f"{h.breakdown.get('metric_fit', 1):.4f}",
-                                        f"{h.score:.6f}",
-                                        " ".join(f"{v:.6f}" for v in h.R.flatten()),
-                                        " ".join(f"{v:.4f}" for v in (h.t * 1000.0))]
-                                        + ([f"{h.breakdown['s_coarse']:.4f}",
-                                            " ".join(f"{v:.6f}" for v in
-                                                     h.breakdown["R_coarse"].flatten()),
-                                            " ".join(f"{v:.4f}" for v in
-                                                     (h.breakdown["t_coarse"] * 1000.0))]
-                                           if args.score_coarse else [])
-                                        + [args.solver])
+                                    cand_wr.writerow(cand_csv_row(
+                                        scene_id, im_id, obj_id, ci, w, h,
+                                        getattr(det, "source", ""),
+                                        args.solver, args.score_coarse,
+                                        cand_header,
+                                    ))
                         except Exception as e:
                             note_failure("solve/refine/score", f"obj{obj_id}", e)
                             continue

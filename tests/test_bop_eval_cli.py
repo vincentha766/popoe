@@ -41,6 +41,7 @@ def _mask(r0, c0):
 
 
 def _file(tmp_path, name, dets):
+    tmp_path.mkdir(parents=True, exist_ok=True)
     recs = [{"scene_id": 1, "image_id": 7, "category_id": cat,
              "score": sc, "segmentation": _rle(mask)} for cat, sc, mask in dets]
     p = tmp_path / f"{name}.json"
@@ -72,6 +73,13 @@ def test_single_detections_file(bop_eval, tmp_path):
     assert [s.name for s in seg.sources] == ["bop-detections"]
 
 
+def test_single_detections_known_path_gets_source_tag(bop_eval, tmp_path):
+    p = _file(tmp_path / "cnos", "cnos-fastsam_lmo-test",
+              [(5, 0.9, _mask(2, 2))])
+    seg = bop_eval.resolve_segmentor(p, "", topk=2, merge_labels=None)
+    assert [s.name for s in seg.sources] == ["cnos"]
+
+
 def test_sources_list_builds_named_union(bop_eval, tmp_path):
     a = _file(tmp_path, "a", [(5, 0.9, _mask(2, 2))])
     b = _file(tmp_path, "b", [(5, 0.8, _mask(2, 40))])
@@ -89,10 +97,23 @@ def test_cand_csv_header_s_coarse_and_solver_columns(bop_eval):
     ICPRefiner(keep_coarse=True) is what produces both."""
     off = bop_eval.cand_csv_header(False)
     on = bop_eval.cand_csv_header(True)
-    assert off[-1] == "solver" and "s_coarse" not in off
+    assert off[-4:] == ["solver", "source", "R_prererank", "t_prererank"]
+    assert "s_coarse" not in off
     assert "R_coarse" not in off and "t_coarse" not in off
-    assert on[-1] == "solver"
-    assert on == off[:-1] + ["s_coarse", "R_coarse", "t_coarse", "solver"]
+    assert on[-4:] == ["solver", "source", "R_prererank", "t_prererank"]
+    assert on == (off[:-4]
+                  + ["s_coarse", "R_coarse", "t_coarse"]
+                  + ["solver", "source", "R_prererank", "t_prererank"])
+
+
+def test_cand_csv_legacy_headers_are_compatible(bop_eval):
+    base = ["scene_id", "im_id", "obj_id", "cand", "w", "s_icp",
+            "s_feat_1", "metric_fit", "score", "R", "t"]
+    assert base in bop_eval.cand_csv_compatible_headers(False)
+    assert base + ["solver"] in bop_eval.cand_csv_compatible_headers(False)
+    assert base + ["s_coarse"] in bop_eval.cand_csv_compatible_headers(True)
+    assert (base + ["s_coarse", "R_coarse", "t_coarse", "solver"]
+            in bop_eval.cand_csv_compatible_headers(True))
 
 
 def test_floored_topk(bop_eval):
@@ -108,6 +129,69 @@ def _scene():
     return Scene(rgb=np.zeros((48, 64, 3), np.uint8),
                  depth=np.zeros((48, 64), np.float32), K=np.eye(3),
                  scene_id=1, im_id=7)
+
+
+def _obj():
+    from popoe.interfaces import ObjectModel
+    return ObjectModel(obj_id=5, mesh_path="x", diameter=0.1)
+
+
+def _hyp(R=None, t=None, breakdown=None, score=0.123456):
+    from popoe.interfaces import PoseHypothesis
+    return PoseHypothesis(
+        np.eye(3) if R is None else R,
+        np.zeros(3) if t is None else t,
+        score,
+        {} if breakdown is None else breakdown,
+    )
+
+
+def _row_dict(bop_eval, hyp, source="", score_coarse=False):
+    header = bop_eval.cand_csv_header(score_coarse)
+    row = bop_eval.cand_csv_row(1, 7, 5, 0, 1.0, hyp, source, "o3d",
+                                score_coarse, header)
+    return dict(zip(header, row))
+
+
+def test_cand_csv_row_writes_single_and_multi_source_values(bop_eval, tmp_path):
+    single = _file(tmp_path / "cnos", "cnos-fastsam_lmo-test",
+                   [(5, 0.9, _mask(2, 2))])
+    seg = bop_eval.resolve_segmentor(single, "", topk=2, merge_labels=None)
+    det = seg.segment(_scene(), _obj())[0]
+    assert _row_dict(bop_eval, _hyp(), det.source)["source"] == "cnos"
+
+    a = _file(tmp_path, "a", [(5, 0.9, _mask(2, 2))])
+    b = _file(tmp_path, "b", [(5, 0.8, _mask(2, 40))])
+    seg = bop_eval.resolve_segmentor(None, f"cnos={a},nids={b}",
+                                     topk=2, merge_labels=None)
+    by_source = {d.source: _row_dict(bop_eval, _hyp(), d.source)["source"]
+                 for d in seg.segment(_scene(), _obj())}
+    assert by_source == {"cnos": "cnos", "nids": "nids"}
+
+
+def test_cand_csv_prererank_columns_blank_without_breakdown(bop_eval):
+    row = _row_dict(bop_eval, _hyp(), "cnos")
+    assert row["R_prererank"] == ""
+    assert row["t_prererank"] == ""
+
+
+def test_cand_csv_prererank_columns_written_from_breakdown(bop_eval):
+    pre_R = np.array([[0, -1, 0], [1, 0, 0], [0, 0, 1]], dtype=float)
+    pre_t = np.array([0.001, 0.002, 0.003])
+    post_t = np.array([0.004, 0.005, 0.006])
+    h = _hyp(t=post_t, breakdown={"R_prererank": pre_R,
+                                  "t_prererank": pre_t})
+    row = _row_dict(bop_eval, h, "cnos")
+    assert row["R"] == (
+        "1.000000 0.000000 0.000000 0.000000 1.000000 0.000000 "
+        "0.000000 0.000000 1.000000"
+    )
+    assert row["t"] == "4.0000 5.0000 6.0000"
+    assert row["R_prererank"] == (
+        "0.000000 -1.000000 0.000000 1.000000 0.000000 0.000000 "
+        "0.000000 0.000000 1.000000"
+    )
+    assert row["t_prererank"] == "1.0000 2.0000 3.0000"
 
 
 def test_topk_is_per_source_in_union(bop_eval, tmp_path):

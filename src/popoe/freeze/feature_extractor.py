@@ -48,6 +48,37 @@ def _dino_layer(dino):
     return max(0, min(n - 1, round(0.78 * (n - 1))))
 
 
+def icosphere_directions(n_subdiv: int = 2) -> "np.ndarray":
+    """Unit view directions from a subdivided icosahedron: 12 -> 42 -> 162."""
+    t = (1 + 5 ** 0.5) / 2
+    verts = [(-1, t, 0), (1, t, 0), (-1, -t, 0), (1, -t, 0),
+             (0, -1, t), (0, 1, t), (0, -1, -t), (0, 1, -t),
+             (t, 0, -1), (t, 0, 1), (-t, 0, -1), (-t, 0, 1)]
+    faces = [(0, 11, 5), (0, 5, 1), (0, 1, 7), (0, 7, 10),
+             (0, 10, 11), (1, 5, 9), (5, 11, 4), (11, 10, 2),
+             (10, 7, 6), (7, 1, 8), (3, 9, 4), (3, 4, 2),
+             (3, 2, 6), (3, 6, 8), (3, 8, 9), (4, 9, 5),
+             (2, 4, 11), (6, 2, 10), (8, 6, 7), (9, 8, 1)]
+    v = [np.asarray(x, dtype=float) for x in verts]
+    v = [x / np.linalg.norm(x) for x in v]
+    for _ in range(n_subdiv):
+        mid, nf = {}, []
+
+        def mp(a, b):
+            k = (min(a, b), max(a, b))
+            if k not in mid:
+                m = v[a] + v[b]
+                v.append(m / np.linalg.norm(m))
+                mid[k] = len(v) - 1
+            return mid[k]
+
+        for a, b, c in faces:
+            ab, bc, ca = mp(a, b), mp(b, c), mp(c, a)
+            nf += [(a, ab, ca), (b, bc, ab), (c, ca, bc), (ab, bc, ca)]
+        faces = nf
+    return np.stack(v)
+
+
 def load_dinov2(device='cuda'):
     model = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitg14_reg', pretrained=True)
     model = model.to(device).eval()
@@ -637,14 +668,28 @@ class QueryFeatureExtractor:
         golden = (1 + math.sqrt(5)) / 2
         radius_cam = max(mesh.extents) * 1.5
 
+        layout = os.environ.get("POPOE_QUERY_VIEWS", "spiral")
+        if layout == "ico162":
+            ico = icosphere_directions(2)
+            if n_views != len(ico):
+                raise RuntimeError(
+                    f"POPOE_QUERY_VIEWS=ico162 provides exactly {len(ico)} "
+                    f"directions but n_views={n_views}; set POPOE_N_VIEWS=162 "
+                    f"or drop the layout override.")
+        elif layout != "spiral":
+            raise RuntimeError(f"unknown POPOE_QUERY_VIEWS {layout!r}")
+
         for i in range(n_views):
-            theta = math.acos(1 - 2*(i+0.5)/n_views)
-            phi = 2*math.pi*i/golden
-            cam_pos = radius_cam * np.array([
-                math.sin(theta)*math.cos(phi),
-                math.sin(theta)*math.sin(phi),
-                math.cos(theta)
-            ])
+            if layout == "ico162":
+                cam_pos = radius_cam * ico[i]
+            else:
+                theta = math.acos(1 - 2*(i+0.5)/n_views)
+                phi = 2*math.pi*i/golden
+                cam_pos = radius_cam * np.array([
+                    math.sin(theta)*math.cos(phi),
+                    math.sin(theta)*math.sin(phi),
+                    math.cos(theta)
+                ])
 
             img_pil, depth_render, fx, fy, cx, cy = self._raycast_render(mesh, cam_pos, H, W)
 
