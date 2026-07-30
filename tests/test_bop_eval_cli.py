@@ -116,6 +116,13 @@ def test_cand_csv_legacy_headers_are_compatible(bop_eval):
             in bop_eval.cand_csv_compatible_headers(True))
 
 
+def test_missing_target_encoder_is_explicit_not_attributeerror(bop_eval):
+    """Regression for the removed cache-only probe path: a target cache miss
+    with no live encoder used to call None.install_pca()."""
+    with pytest.raises(RuntimeError, match="target cache miss"):
+        bop_eval.require_target_encoder(None, "target cache miss")
+
+
 def test_floored_topk(bop_eval):
     """The floor lifts topk to at least max_inst (so a k-instance target can get
     k champions), but never LOWERS a larger user topk."""

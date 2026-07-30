@@ -131,9 +131,11 @@ class FreeZeTargetEncoder:
             scene.rgb, scene.depth, det.mask, _intrinsics_dict(scene.K),
         )
         if pts is None:
+            reason = getattr(self.ex, "_last_target_skip_reason", None)
             return PointFeatures(pts=np.empty((0, 3), np.float32),
                                  feats=np.empty((0, 1), np.float32),
-                                 meta={"detection": det})
+                                 meta={"detection": det,
+                                       "skip_reason": reason or "not encodable"})
         # Keep the Detection on meta so post-ICP stages (e.g. render re-rank)
         # can recover the mask/bbox without re-segmenting.
         return PointFeatures(pts=np.asarray(pts), feats=np.asarray(feats),

@@ -179,6 +179,13 @@ def cand_csv_row(scene_id, im_id, obj_id, cand, w, hyp, source, solver,
     return [values.get(c, "") for c in header]
 
 
+def require_target_encoder(t_enc, context: str):
+    if t_enc is None:
+        raise RuntimeError(
+            f"{context}: target cache miss requires a live target encoder")
+    return t_enc
+
+
 def resolve_layout(bop: Path, dataset=None, split=None, models_dir=None):
     """Dataset name + directory layout for --bop, name defaulting to the --bop
     basename. Both feed correctness-relevant decisions (split dir, image
@@ -823,8 +830,11 @@ def main():
                                 meta={"feats_w1": hit["feats"],
                                       "detection": det})
         else:
-            t_enc.install_pca(q.meta.get("pca_vis"))
-            tgt = t_enc.encode_target(scene, det, obj, q.meta.get("canon_frame"))
+            enc = require_target_encoder(
+                t_enc, f"scene{scene.scene_id}/im{scene.im_id}/"
+                       f"obj{obj.obj_id}/cand{ci}")
+            enc.install_pca(q.meta.get("pca_vis"))
+            tgt = enc.encode_target(scene, det, obj, q.meta.get("canon_frame"))
             if len(tgt.pts) >= 4 and cache:
                 cache.put_arrays("target", key, pts=tgt.pts, feats=tgt.feats)
             tgt.meta["feats_w1"] = tgt.feats
@@ -845,6 +855,7 @@ def main():
     # failure prints, the first of each (stage, type) prints its traceback,
     # and the run ends with a summary instead of a clean-looking "done".
     failures: dict = {}
+    degrades: dict = {}
 
     def note_failure(stage, label, e):
         import traceback
@@ -853,6 +864,11 @@ def main():
         print(f"[FAIL {stage}] {label}: {type(e).__name__}: {e}", flush=True)
         if failures[key] == 1:
             traceback.print_exc()
+
+    def note_degrade(stage, label, reason):
+        key = (stage, reason)
+        degrades[key] = degrades.get(key, 0) + 1
+        print(f"[DEGRADE {stage}] {label}: {reason}", flush=True)
 
     header_needed = not os.path.exists(args.out)
     with open(args.out, "a", newline="") as f:
@@ -921,18 +937,24 @@ def main():
                 try:
                     dets = segmentor.segment(scene, obj)
                 except Exception as e:
-                    note_failure("segment", f"obj{obj_id}", e)
+                    note_failure("segment",
+                                 f"scene{scene_id}/im{im_id}/obj{obj_id}", e)
                     dets = []
                 for ci, det in enumerate(dets):
+                    label = f"scene{scene_id}/im{im_id}/obj{obj_id}/cand{ci}"
                     try:
                         tgt = encode_target_cached(scene, det, obj, q, ci,
                                                    scene_fp)
                     except Exception as e:
                         # Often a degenerate mask cloud (e.g. GeDi LRF) — but
                         # logged, because "often" is not "always".
-                        note_failure("encode_target", f"obj{obj_id}", e)
+                        note_failure("encode_target", label, e)
                         continue
                     if len(tgt.pts) < 4:
+                        reason = tgt.meta.get(
+                            "skip_reason",
+                            f"only {len(tgt.pts)} encoded target point(s)")
+                        note_degrade("encode_target", label, reason)
                         continue
                     for w in weights:
                         qw = q if w == 1.0 else _reweighted(q, w, vis_split)
@@ -995,11 +1017,17 @@ def main():
         print(f"icp-dense: {len(s)} target clouds, |P_T^dense| "
               f"min/median/max = {s.min()}/{int(np.median(s))}/{s.max()} "
               f"(cap {args.icp_dense_max or 'none'})", flush=True)
-    if failures:
-        total = sum(failures.values())
-        print(f"done WITH {total} stage failure(s) -> {args.out}", flush=True)
+    if failures or degrades:
+        parts = []
+        if failures:
+            parts.append(f"{sum(failures.values())} stage failure(s)")
+        if degrades:
+            parts.append(f"{sum(degrades.values())} explicit degrade(s)")
+        print(f"done WITH {', '.join(parts)} -> {args.out}", flush=True)
         for (stage, etype), n in sorted(failures.items()):
             print(f"  {stage}: {etype} x{n}", flush=True)
+        for (stage, reason), n in sorted(degrades.items()):
+            print(f"  {stage}: skipped {reason} x{n}", flush=True)
         print("  affected targets wrote zero/degraded rows and are marked done;"
               " delete their rows from the CSV to re-run them.", flush=True)
     else:

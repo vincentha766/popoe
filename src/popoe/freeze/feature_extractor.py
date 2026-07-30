@@ -85,6 +85,34 @@ def load_dinov2(device='cuda'):
     return model
 
 
+def _row_count(x) -> int:
+    return int(x.shape[0])
+
+
+def _append_last_row(x):
+    if hasattr(x, "detach"):
+        return torch.cat([x, x[-1:].clone()], dim=0)
+    return np.concatenate([x, x[-1:].copy()], axis=0)
+
+
+class _NoSingletonGeDiBatches:
+    """Avoid GeDi's LRF singleton-batch squeeze bug without changing other calls."""
+
+    def __init__(self, descriptor, samples_per_batch: int):
+        self.descriptor = descriptor
+        self.samples_per_batch = int(samples_per_batch)
+
+    def compute(self, pts, pcd):
+        n = _row_count(pts)
+        pad = (
+            n > 0 and self.samples_per_batch > 1
+            and n % self.samples_per_batch == 1
+        )
+        pts_in = _append_last_row(pts) if pad else pts
+        out = self.descriptor.compute(pts_in, pcd)
+        return out[:n] if pad else out
+
+
 def _make_gedi_single(r_lrf):
     if GeDi is None:
         raise ImportError(
@@ -100,7 +128,7 @@ def _make_gedi_single(r_lrf):
         'r_lrf': r_lrf,
         'fchkpt_gedi_net': os.environ.get('POPOE_GEDI_PATH', '/workspace/gedi') + '/data/chkpts/3dmatch/chkpt.tar',
     }
-    return GeDi(cfg)
+    return _NoSingletonGeDiBatches(GeDi(cfg), cfg['samples_per_batch'])
 
 
 class _TwoScaleGeDi:
@@ -787,6 +815,11 @@ class TargetFeatureExtractor:
         self.gedi = gedi if gedi is not None else load_gedi(device)
         # See QueryFeatureExtractor: fusion owns the PCA, `_pca_vis` proxies it.
         self.fusion = DinoGeDiFusion()
+        self._last_target_skip_reason = None
+
+    def _skip_target(self, reason):
+        self._last_target_skip_reason = reason
+        return None, None
 
     @property
     def _pca_vis(self):
@@ -814,6 +847,7 @@ class TargetFeatureExtractor:
         """
         import cv2
 
+        self._last_target_skip_reason = None
         H, W = depth.shape
         fx, fy, cx, cy = intrinsics['fx'], intrinsics['fy'], intrinsics['cx'], intrinsics['cy']
 
@@ -821,7 +855,7 @@ class TargetFeatureExtractor:
         grid_size = int(os.environ.get("POPOE_TARGET_GRID", "16"))
         ys, xs = np.where(mask)
         if len(ys) == 0:
-            return None, None
+            return self._skip_target("empty mask")
         y0, y1 = ys.min(), ys.max()
         x0, x1 = xs.min(), xs.max()
 
@@ -836,25 +870,40 @@ class TargetFeatureExtractor:
         patch_u = patch_u[in_mask]
         patch_v = patch_v[in_mask]
 
+        ys_all, xs_all = np.where((depth > 0) & mask)
+        if len(ys_all) < 4:
+            return self._skip_target(
+                f"only {len(ys_all)} valid depth pixel(s) in mask")
+
         # 2D -> 3D backprojection using depth
         d = depth[patch_v, patch_u]
         valid_depth = d > 0
         patch_u = patch_u[valid_depth]
         patch_v = patch_v[valid_depth]
         d = d[valid_depth]
+        n_unique = len(np.unique(np.stack([patch_u, patch_v], axis=1), axis=0))
+        if len(d) == 0 or n_unique < 4:
+            max_sparse = grid_size * grid_size
+            idx = np.arange(len(ys_all))
+            if max_sparse and len(idx) > max_sparse:
+                idx = np.sort(np.random.default_rng(0).choice(
+                    len(idx), max_sparse, replace=False))
+            patch_u = xs_all[idx]
+            patch_v = ys_all[idx]
+            d = depth[patch_v, patch_u]
 
         X = (patch_u - cx) * d / fx
         Y = (patch_v - cy) * d / fy
         pts_sparse = np.stack([X, Y, d], axis=1).astype(np.float32)  # (N_T, 3)
 
         if len(pts_sparse) < 4:
-            return None, None
+            return self._skip_target(
+                f"only {len(pts_sparse)} sparse target point(s)")
 
         # Visual features: extract DINOv2 patch features at these 2D locations
         vis_feats = self._extract_dino_at_points(rgb, patch_u, patch_v)
 
         # Dense depth point cloud for GeDi neighbourhood
-        ys_all, xs_all = np.where((depth > 0) & mask)
         d_all = depth[ys_all, xs_all]
         X_all = (xs_all - cx) * d_all / fx
         Y_all = (ys_all - cy) * d_all / fy
