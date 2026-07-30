@@ -26,10 +26,13 @@ entrypoints, under the dual-disclosure discipline of `../gedi/EXPERIMENTS.md`
 
 > Formal score = BOP evaluation server only. Local full AR in
 > `AR_SUMMARY.md` is a development self-check, not the dissertation score.
-> All four recipes are pinned to code tag `twoline-prep-20260730`
-> (`618693141470445bc3084d11f8d6bbb2b6f3bb34`, merge `6186931`). Values marked
+> All four recipes are pinned to code tag `twoline-prep-20260730a`
+> (seed amendment over `twoline-prep-20260730`; src/ unchanged, caches valid).
+> Values marked
 > **pinned-by-us** are frozen project choices where the public recipe is silent:
-> `--seed 1234`, A-line Eq.7 unit exponents (`alpha=beta=gamma=1`) for the
+> `--seed 42` (re-pinned from 1234 on 2026-07-30, Vincent's call — conventional
+> value; the smoke batch ran at 1234, which validated mechanics only and is
+> unaffected), A-line Eq.7 unit exponents (`alpha=beta=gamma=1`) for the
 > `--use-s-coarse` product term, and `POPOE_QUERY_CANON=476` (render canvas;
 > the paper names 480²/50% — 476/0.5 is our measured-equivalent pin). The
 > `--render-rerank` switch is score-affecting, so every one of the eight runs
@@ -81,11 +84,11 @@ DET="${DET:-$POPOE/data/detections}"
 RUN_ROOT="${RUN_ROOT:-/workspace/results/twoline_20260730}"
 RUN="$RUN_ROOT/faithful-cnos"
 PY="${PY:-python}"
-SEED=1234
+SEED=42
 
 cd "$POPOE"
-if [ "$(git rev-parse HEAD)" != "618693141470445bc3084d11f8d6bbb2b6f3bb34" ]; then
-  echo "wrong popoe commit; checkout tag twoline-prep-20260730" >&2
+if [ "$(git describe --tags --exact-match 2>/dev/null)" != "twoline-prep-20260730a" ]; then
+  echo "wrong popoe checkout; need tag twoline-prep-20260730a" >&2
   exit 1
 fi
 
@@ -165,11 +168,11 @@ DET="${DET:-$POPOE/data/detections}"
 RUN_ROOT="${RUN_ROOT:-/workspace/results/twoline_20260730}"
 RUN="$RUN_ROOT/faithful-3way"
 PY="${PY:-python}"
-SEED=1234
+SEED=42
 
 cd "$POPOE"
-if [ "$(git rev-parse HEAD)" != "618693141470445bc3084d11f8d6bbb2b6f3bb34" ]; then
-  echo "wrong popoe commit; checkout tag twoline-prep-20260730" >&2
+if [ "$(git describe --tags --exact-match 2>/dev/null)" != "twoline-prep-20260730a" ]; then
+  echo "wrong popoe checkout; need tag twoline-prep-20260730a" >&2
   exit 1
 fi
 
@@ -249,11 +252,11 @@ DET="${DET:-$POPOE/data/detections}"
 RUN_ROOT="${RUN_ROOT:-/workspace/results/twoline_20260730}"
 RUN="$RUN_ROOT/tuned-cnos"
 PY="${PY:-python}"
-SEED=1234
+SEED=42
 
 cd "$POPOE"
-if [ "$(git rev-parse HEAD)" != "618693141470445bc3084d11f8d6bbb2b6f3bb34" ]; then
-  echo "wrong popoe commit; checkout tag twoline-prep-20260730" >&2
+if [ "$(git describe --tags --exact-match 2>/dev/null)" != "twoline-prep-20260730a" ]; then
+  echo "wrong popoe checkout; need tag twoline-prep-20260730a" >&2
   exit 1
 fi
 
@@ -321,11 +324,11 @@ DET="${DET:-$POPOE/data/detections}"
 RUN_ROOT="${RUN_ROOT:-/workspace/results/twoline_20260730}"
 RUN="$RUN_ROOT/tuned-4way"
 PY="${PY:-python}"
-SEED=1234
+SEED=42
 
 cd "$POPOE"
-if [ "$(git rev-parse HEAD)" != "618693141470445bc3084d11f8d6bbb2b6f3bb34" ]; then
-  echo "wrong popoe commit; checkout tag twoline-prep-20260730" >&2
+if [ "$(git describe --tags --exact-match 2>/dev/null)" != "twoline-prep-20260730a" ]; then
+  echo "wrong popoe checkout; need tag twoline-prep-20260730a" >&2
   exit 1
 fi
 

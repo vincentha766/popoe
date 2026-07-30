@@ -14,7 +14,7 @@ OUT="${2:-${OUT:-/workspace/results/faithful_eval}}"
 BOP="${BOP:-/workspace/bop_data}"
 DET="${DET:-$PWD/data/detections}"
 PY="${PY:-python}"
-SEED="${SEED:-1234}"
+SEED="${SEED:-42}"
 
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-8}"
 export POPOE_CANON_BASIS=diameter
