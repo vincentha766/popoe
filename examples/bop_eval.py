@@ -415,10 +415,10 @@ def main():
                          "historical path, byte-identical. o3d solver only.")
     ap.add_argument("--tau-diameter", action="store_true",
                     help="FIDELITY FIX (FreeZeV2 Sec. IV-A): set tau_inlier / "
-                         "tau_ICP / the feature-score inlier radius to 3% of "
-                         "the BOP models_info DIAMETER, not 3% of the sampled "
+                         "tau_ICP / the feature-score inlier radius to 3%% of "
+                         "the BOP models_info DIAMETER, not 3%% of the sampled "
                          "query cloud's largest bounding-box side (which is "
-                         "2-35% smaller on LM-O). Pose-side only; caches hit. "
+                         "2-35%% smaller on LM-O). Pose-side only; caches hit. "
                          "Score-affecting — use a FRESH --out.")
     ap.add_argument("--render-backend", default="nvdiffrast",
                     choices=["nvdiffrast", "trimesh", "auto"],
