@@ -169,6 +169,16 @@ list honest — it is what stops these numbers being read as an exact replicatio
 | — | No union-bbox box-prompt refinement (CNOS-lab has one) | The GD+SAM2 cascade is the paper's largest ablation lever (+0.108 mAP over plain SAM proposals); it should not need the patch |
 | Naive softmax | Max-subtracted softmax | Identical on any input the reference handles; additionally keeps an all-failed proposal row from becoming NaN and poisoning every class's ranking |
 
+**One divergence has been found and closed.** It was never in the table above,
+which is the honest reason this list is worth re-auditing: the crop handed to
+DINOv2 kept its background pixels, so the class token embedded the surroundings
+along with the object, while the paper (§4.1) preserves "only the object region
+inside the box". G3 measured it as the dominant AP hole (+16 pt on LM-O) and
+`mask_rgb=True` / `gem_tokens="all"` are now the defaults — see
+[§ Gap-closing plan](#gap-closing-plan-g1g5--status). The historical recipe is
+still reachable via `--no-mask-rgb` / `--gem-tokens fg`, so numbers filed before
+2026-07-26 are reproducible, not silently rebased.
+
 Two departures from the reference script itself (not from the paper), both
 tightening behaviour rather than changing the method:
 
@@ -245,6 +255,35 @@ margin below that is a tie.
 
 Nothing has been registered in `REPRODUCTION.md`: this run verifies the port
 against its reference, it does not produce a benchmark number.
+
+## Gap-closing plan (G1–G5) — status
+
+The single status copy for the `muse-repro` AP gap. `gedi/TODO.md` points here;
+do not keep a second copy of this table anywhere. Each row's evidence lives in
+the result section named in the last column.
+
+Starting point (2026-07-26, same harness, LM-O / YCB-V segmentation AP):
+`muse-repro` **0.228 / 0.326** against official `muse` **0.471 / 0.690**.
+
+| # | Probe | Verdict | Where |
+|---|---|---|---|
+| G1 | Depth size gate off / relaxed | **Refuted** — 0.224 vs 0.228 gate-on, noise-level | § G1 result |
+| G2 | `patch_sim` cosine (paper Eqs. 2–3) vs Tanimoto | **Refuted** — 0.219, slightly worse than Tanimoto | § G2 result |
+| G3 | `mask_rgb` + `gem_tokens=all` | **Confirmed** — LM-O 0.388, YCB-V 0.684; promoted to default | § G3 result, § G3 YCB-V confirm |
+| G4 | `square_crop` convention vs the reference | **Documented, not chased** — ~0.017 score sensitivity; bit-parity explicitly declined | § Verification Status |
+| G5 | Write back the frozen default | **Done** — defaults changed here, AP rows ledgered in `REPRODUCTION.md` § `muse-repro` G3 AP, narrative in `gedi/progress.md` | — |
+
+**Where this leaves the gap.** YCB-V is at parity (−0.006, inside run-to-run
+noise). LM-O keeps a **−0.083** residual, unattributed; the candidates are
+templates, GD/SAM2 cascade details, the ranker, and αβτγ tuning. Nothing cheap
+is left on this line — G1 and G2 spent a pod each to refute a hypothesis, and
+the one that paid off (G3) was a hygiene bug, not a hyperparameter.
+
+**What stays open.** The G3 recipe has only been measured on *segmentation* AP.
+Its effect on **pose** is unmeasured (needs GPU; `REPRODUCTION.md` §
+Remaining follow-up). Until that runs, FreeZe four-way **pose** keeps using the
+authors' official `muse` JSON, per the naming rule at the top of this file —
+`muse-repro` numbers must never be filed as `muse`.
 
 ## G1 result (2026-07-26) — depth size gate A/B
 
