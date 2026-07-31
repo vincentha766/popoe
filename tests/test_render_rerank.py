@@ -66,6 +66,90 @@ def test_reranker_disabled_is_identity():
     assert np.allclose(out.R, pose.R)
 
 
+def _icp_scene(n=400, seed=0):
+    """A query cloud, an identical dense target, and the surrounding stubs.
+
+    Clouds are metres with ~0.1 m extent — the real BOP scale, which is the
+    whole point: 3% of it is ~3 mm, and the regression being guarded is a stage
+    that used 0.03 *metres* instead.
+    """
+    rng = np.random.default_rng(seed)
+    pts = rng.normal(scale=0.03, size=(n, 3))
+    q = PointFeatures(pts=pts, feats=rng.normal(size=(n, 4)))
+    t = PointFeatures(pts=pts.copy(), feats=rng.normal(size=(n, 4)),
+                      pts_dense=pts.copy(), meta={"bbox": (0, 0, 8, 8)})
+    scene = Scene(rgb=np.zeros((8, 8, 3), np.uint8),
+                  depth=np.zeros((8, 8), np.float32), K=np.eye(3))
+    obj = ObjectModel(obj_id=1, mesh_path="/tmp/x.ply", diameter=0.1)
+    return q, t, scene, obj
+
+
+def test_icp_refiner_records_its_tau():
+    """Whoever re-runs ICP downstream needs the tau, and must not guess it."""
+    from popoe.adapters import ICPRefiner
+    q, t, scene, obj = _icp_scene()
+    ref = ICPRefiner(tau_icp=0.0031)
+    out = ref.refine(PoseHypothesis(np.eye(3), np.zeros(3), 1.0, {}),
+                     scene, obj, q, t)
+    assert out.breakdown["tau_icp"] == pytest.approx(0.0031)
+
+
+def test_tau_icp_reuses_recorded_value_not_a_default():
+    q, _, _, _ = _icp_scene()
+    pose = PoseHypothesis(np.eye(3), np.zeros(3), 1.0, {"tau_icp": 0.0031})
+    assert RenderAppearanceReranker._tau_icp(pose, q) == pytest.approx(0.0031)
+
+
+def test_tau_icp_fallback_is_metres_scaled_not_0_03():
+    """No recorded tau → 3% of extent. The old code's 0.03 default was 30 mm,
+    ~10x too loose on a 0.1 m object, which inflated fitness ~4x."""
+    q, _, _, _ = _icp_scene()
+    pose = PoseHypothesis(np.eye(3), np.zeros(3), 1.0, {})
+    tau = RenderAppearanceReranker._tau_icp(pose, q)
+    extent = float(np.ptp(q.pts, axis=0).max())
+    assert tau == pytest.approx(0.03 * extent)
+    assert tau < 0.03 / 2      # i.e. nowhere near the old 0.03 m default
+
+
+def test_champion_is_re_icped_too(monkeypatch):
+    """Every variant must be measured the same way.
+
+    Re-ICP'ing only the flipped variants left them with a fitness from a second
+    ICP pass while the champion kept the first one — and s_icp reaches
+    ChampionScorer as a multiplicative factor, so flips won on measurement
+    asymmetry alone (LM-O AR(2/3) 0.77 -> 0.25 on the 2026-07-30 two-line runs).
+    Here the champion WINS the appearance vote, and re-ICP must still have run.
+    """
+    q, t, scene, obj = _icp_scene()
+    rr = RenderAppearanceReranker(re_icp=True)
+    monkeypatch.setattr(
+        rr, "_sar_ti",
+        lambda scene, obj, R, t_m, bbox: 1.0 if np.allclose(R, np.eye(3)) else 0.0)
+    pose = PoseHypothesis(np.eye(3), np.zeros(3), 1.0,
+                          {"s_icp": 0.11, "tau_icp": 0.03 * 0.1})
+    out = rr.refine(pose, scene, obj, q, t)
+    assert out.breakdown["render_rerank"] == "champion"
+    assert out.breakdown["render_rerank_re_icp"] is True
+    # And the re-measured fitness replaced the stale one it was handed.
+    assert out.breakdown["s_icp"] != pytest.approx(0.11)
+
+
+def test_re_icp_uses_recorded_tau(monkeypatch):
+    """A 10x-too-loose tau shows up directly as an inflated inlier ratio."""
+    from popoe.registration import icp_refinement
+    q, t, scene, obj = _icp_scene()
+    seen = []
+    monkeypatch.setattr("popoe.registration.icp_refinement",
+                        lambda *a, **kw: (seen.append(kw["tau_icp"]),
+                                          icp_refinement(*a, **kw))[1])
+    rr = RenderAppearanceReranker(re_icp=True)
+    monkeypatch.setattr(rr, "_sar_ti",
+                        lambda scene, obj, R, t_m, bbox: 1.0)
+    rr.refine(PoseHypothesis(np.eye(3), np.zeros(3), 1.0, {"tau_icp": 0.0031}),
+              scene, obj, q, t)
+    assert seen == [pytest.approx(0.0031)]
+
+
 def test_reranker_skips_without_bbox():
     rr = RenderAppearanceReranker(enabled=True)
     # Force enabled path but no bbox → skip without loading GPU backends.

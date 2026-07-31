@@ -251,6 +251,25 @@ class RenderAppearanceReranker:
         b = self._embed_crop(crop_r)
         return float((a * b).sum(dim=-1).mean().item())
 
+    @staticmethod
+    def _tau_icp(pose: PoseHypothesis, query: PointFeatures) -> float:
+        """ICP inlier threshold, absolute, in the clouds' units (metres).
+
+        ICPRefiner records the tau it used; reuse it, never guess. The previous
+        ``breakdown.get("tau_icp", 0.03)`` never found that key (nothing wrote
+        it) and so always meant 0.03 **metres** = 30 mm — clouds are metres
+        (adapters.py converts BOP mm), where the real 3%-of-extent tau is
+        3-8 mm. Its `if tau > 0.5: expand` guard could not help: it separates
+        relative from absolute by magnitude, and 0.03 is exactly the value both
+        readings claim.
+        """
+        tau = pose.breakdown.get("tau_icp")
+        if tau is not None:
+            return float(tau)
+        # No ICP upstream in this chain — rebuild the same rule ICPRefiner uses.
+        from popoe.freeze.recipes import TAU_FRAC
+        return TAU_FRAC * float(np.ptp(query.pts, axis=0).max())
+
     def refine(
         self,
         pose: PoseHypothesis,
@@ -291,17 +310,20 @@ class RenderAppearanceReranker:
         bd["sar_ti"] = float(s_best)
         bd["sar_ti_by_variant"] = {k: float(v) for k, v in scores.items()}
 
-        # Re-ICP after a non-champion rotation so translation / s_icp match the
-        # new R (ChampionScorer then re-scores on consistent geometry).
-        if self.re_icp and name != "champion":
+        # Re-ICP so translation / s_icp match the chosen R (ChampionScorer then
+        # re-scores on consistent geometry). The champion goes through it TOO,
+        # even though its R is unchanged: a variant that just had an ICP pass is
+        # not comparable to one that did not, and s_icp reaches the scorer as a
+        # multiplicative factor. Re-ICP'ing only the flips inflated their s_icp
+        # ~4x, so the selector preferred a flip on measurement asymmetry alone
+        # (LM-O AR(2/3) 0.77 -> 0.25). scripts/freezev2_flip_post.py in the gedi
+        # archive hit the same trap offline and guards it the same way.
+        if self.re_icp:
             dense = target.pts_dense if target.pts_dense is not None else target.pts
             if dense is not None and len(dense) >= 4 and len(query.pts) >= 4:
                 try:
                     from popoe.registration import icp_refinement
-                    tau = float(pose.breakdown.get("tau_icp", 0.03))
-                    # tau may be relative; fall back to 3% of query extent
-                    if tau <= 0 or tau > 0.5:
-                        tau = 0.03 * float(np.ptp(query.pts, axis=0).max())
+                    tau = self._tau_icp(pose, query)
                     R_f, t_f, fit = icp_refinement(
                         query.pts, dense, R_best, t_best, tau_icp=tau)
                     R_best, t_best = R_f, t_f

@@ -81,7 +81,13 @@ class ICPRefiner:
         extra = {"R_coarse": pose.R, "t_coarse": pose.t} if self.keep_coarse else {}
         return PoseHypothesis(
             R=R_f, t=t_f, score=pose.score,     # provisional; FreeZeScorer sets final
-            breakdown={**pose.breakdown, "s_icp": s_icp, "fitness": s_icp, **extra},
+            breakdown={**pose.breakdown, "s_icp": s_icp, "fitness": s_icp,
+                       # Absolute, in the clouds' units (metres). A later stage
+                       # that re-runs ICP must reuse THIS tau or its fitness is
+                       # on a different scale than ours, and s_icp feeds the
+                       # scorer directly. Guessing a default silently meant
+                       # 30 mm (see render_rerank._tau_icp).
+                       "tau_icp": float(self.tau_icp), **extra},
         )
 
 
