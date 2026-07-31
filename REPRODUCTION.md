@@ -26,8 +26,22 @@ entrypoints, under the dual-disclosure discipline of `../gedi/EXPERIMENTS.md`
 
 > Formal score = BOP evaluation server only. Local full AR in
 > `AR_SUMMARY.md` is a development self-check, not the dissertation score.
-> All four recipes are pinned to code tag `twoline-prep-20260730a`
-> (seed amendment over `twoline-prep-20260730`; src/ unchanged, caches valid).
+> All four recipes are pinned to code tag `twoline-rerank-fix-20260731`.
+>
+> > ⚠️ **The 2026-07-30 batch of eight runs is void.** It ran at
+> > `twoline-prep-20260730a`, where `--render-rerank` re-ICP'd only the flipped
+> > variants and did so at a 4-10x too loose threshold, inflating their `s_icp`
+> > 3-4x and corrupting selection (LM-O AR(2/3) 0.2489, vs 0.7745 for the same
+> > candidate pool with those picks excluded). Fixed in PR #29; this tag is the
+> > first one whose runs count. **src/ changed, so the run identity changed** —
+> > do not quote any number produced under the old tag. The ~10GB of feature
+> > caches on volume `8rf4r42sf1` stay valid (PR #29 touches only the
+> > pose/scoring path; the stage-cache key is byte-identical), but every
+> > `poses.csv` / `cand.csv` from that batch must be moved aside before a
+> > re-run — `bop_eval` resumes by ROW COUNT (`adapters.resolve_resume`), so a
+> > stale CSV makes the re-run declare every target done and exit "successfully"
+> > with the bad data still in place.
+>
 > Values marked
 > **pinned-by-us** are frozen project choices where the public recipe is silent:
 > `--seed 42` (re-pinned from 1234 on 2026-07-30, Vincent's call — conventional
@@ -39,9 +53,23 @@ entrypoints, under the dual-disclosure discipline of `../gedi/EXPERIMENTS.md`
 > below must use fresh `poses.csv` and `cand.csv` paths.
 >
 > **Smoke first**: before any full run, execute the same block with
-> `--objs 1` appended and `smoke_`-prefixed `--out/--cand-csv/--cache` paths;
-> accept only if the log echoes every env pin, rerank breakdown lines appear,
-> and zero Tracebacks (RERANK-SMOKE card format).
+> `--objs 1` appended and `smoke_`-prefixed `--out/--cand-csv/--cache` paths.
+>
+> > **A smoke must assert a NUMBER, not just survival.** The 2026-07-29
+> > RERANK-SMOKE passed on "every env pin echoed, rerank breakdown lines
+> > present, zero Tracebacks" — and the stage it was gating was, at that moment,
+> > destroying 52 AR points. Liveness criteria cannot see a wrong answer. Any
+> > stage that can change the score must clear a falsifiable numeric bar:
+> >
+> > 1. **Measurement symmetry** — from `smoke_cand.csv`, split candidates by
+> >    whether the reranker moved R (>5 deg vs `R_prererank`) and compare the two
+> >    `s_icp` medians. **Accept only if the ratio is within [0.7, 1.4].** The
+> >    bug read 3.0-4.1x. This one test is the direct guard and it is cheap.
+> > 2. **Score sanity** — `ar_flat.py` on the smoke CSV must land within 5pt of
+> >    the same subset scored with the reranker's picks excluded. Rerank-on
+> >    should be >=, never far below.
+> > 3. Then the liveness checks (env pins echoed, breakdown lines, 0 Tracebacks)
+> >    — necessary, never sufficient.
 >
 > **Post-run (no GPU)**: per dataset dir fill the remaining four artifacts —
 > `RECIPE.md` (copy the exact block + commit + date), `AR_SUMMARY.md`
@@ -87,8 +115,8 @@ PY="${PY:-python}"
 SEED=42
 
 cd "$POPOE"
-if [ "$(git describe --tags --exact-match 2>/dev/null)" != "twoline-prep-20260730a" ]; then
-  echo "wrong popoe checkout; need tag twoline-prep-20260730a" >&2
+if [ "$(git describe --tags --exact-match 2>/dev/null)" != "twoline-rerank-fix-20260731" ]; then
+  echo "wrong popoe checkout; need tag twoline-rerank-fix-20260731" >&2
   exit 1
 fi
 
@@ -171,8 +199,8 @@ PY="${PY:-python}"
 SEED=42
 
 cd "$POPOE"
-if [ "$(git describe --tags --exact-match 2>/dev/null)" != "twoline-prep-20260730a" ]; then
-  echo "wrong popoe checkout; need tag twoline-prep-20260730a" >&2
+if [ "$(git describe --tags --exact-match 2>/dev/null)" != "twoline-rerank-fix-20260731" ]; then
+  echo "wrong popoe checkout; need tag twoline-rerank-fix-20260731" >&2
   exit 1
 fi
 
@@ -255,8 +283,8 @@ PY="${PY:-python}"
 SEED=42
 
 cd "$POPOE"
-if [ "$(git describe --tags --exact-match 2>/dev/null)" != "twoline-prep-20260730a" ]; then
-  echo "wrong popoe checkout; need tag twoline-prep-20260730a" >&2
+if [ "$(git describe --tags --exact-match 2>/dev/null)" != "twoline-rerank-fix-20260731" ]; then
+  echo "wrong popoe checkout; need tag twoline-rerank-fix-20260731" >&2
   exit 1
 fi
 
@@ -327,8 +355,8 @@ PY="${PY:-python}"
 SEED=42
 
 cd "$POPOE"
-if [ "$(git describe --tags --exact-match 2>/dev/null)" != "twoline-prep-20260730a" ]; then
-  echo "wrong popoe checkout; need tag twoline-prep-20260730a" >&2
+if [ "$(git describe --tags --exact-match 2>/dev/null)" != "twoline-rerank-fix-20260731" ]; then
+  echo "wrong popoe checkout; need tag twoline-rerank-fix-20260731" >&2
   exit 1
 fi
 
