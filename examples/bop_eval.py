@@ -186,6 +186,45 @@ def require_target_encoder(t_enc, context: str):
     return t_enc
 
 
+
+def probe_corr_stats(q, tgt, gts, syms, diam_m):
+    """Of the correspondences the matcher would hand RANSAC, how many are
+    geometrically right under GT?
+
+      rate1   inlier fraction of the top-1 set (the k=1 path's whole pool)
+      rate10  inlier fraction of the top-10 set (the corr_topk=10 pool)
+      reach10 targets whose true match is anywhere in their 10 - the
+              ceiling any sampler over that pool could reach
+
+    tau = 3% of the object diameter (the paper's basis). Distances are the
+    min over GT instances AND symmetry transforms, else a perfectly matched
+    symmetric object would score 0%. Features are the cached w=1 canonical
+    space - the same space s_feat_1 scores in."""
+    qn = q.feats / np.maximum(
+        np.linalg.norm(q.feats, axis=1, keepdims=True), 1e-12)
+    tn = tgt.feats / np.maximum(
+        np.linalg.norm(tgt.feats, axis=1, keepdims=True), 1e-12)
+    sim = tn @ qn.T                                   # (Nt, Nq)
+    k = min(10, sim.shape[1])
+    top = np.argpartition(-sim, k - 1, axis=1)[:, :k]
+    row = np.arange(sim.shape[0])[:, None]
+    top = top[row, np.argsort(-sim[row, top], axis=1)]  # col 0 = argmax
+    tau = 0.03 * diam_m
+    best = np.full((sim.shape[0], k), np.inf)
+    for g in gts:
+        Rg, tg = g["R"], g["t"] / 1000.0              # GT t is mm
+        for sym in syms:
+            Rs = np.asarray(sym["R"], dtype=float)
+            ts = np.asarray(sym["t"], dtype=float).reshape(3) / 1000.0
+            posed = (q.pts @ Rs.T + ts) @ Rg.T + tg   # (Nq, 3), metres
+            d = np.linalg.norm(posed[top] - tgt.pts[:, None, :], axis=2)
+            best = np.minimum(best, d)
+    return (float((best[:, 0] < tau).mean()),
+            float((best < tau).mean()),
+            float((best < tau).any(axis=1).mean()),
+            float(np.median(best[:, 0]) * 1000.0),
+            tau * 1000.0)
+
 def resolve_layout(bop: Path, dataset=None, split=None, models_dir=None):
     """Dataset name + directory layout for --bop, name defaulting to the --bop
     basename. Both feed correctness-relevant decisions (split dir, image
@@ -493,6 +532,16 @@ def main():
                          "Two of those three numbers are still unmatched here: "
                          "P_Q is 3000 against the paper's 5k, and --grid 32 "
                          "gives P_T^sparse up to 1024 against its 256.")
+    ap.add_argument("--probe-corr", default="",
+                    help="CORRESPONDENCE PROBE: instead of solving, measure "
+                         "how many of the correspondences the matcher would "
+                         "hand RANSAC are geometrically right under GT (w=1 "
+                         "canonical features; tau = 3%% of the diameter). "
+                         "Writes one row per (target, mask) to this CSV. "
+                         "Cache-only and CPU-capable: encoders never load, "
+                         "every cache miss is fatal or counted. Feature "
+                         "quality gets measured WITHOUT RANSAC in the way, "
+                         "which is the point.")
     ap.add_argument("--corr-topk", type=int, default=0,
                     help="FIDELITY KNOB (FreeZeV2 Sec. IV-A: 'a top-k strategy "
                          "with k = 10'): precompute, for each target point, its "
@@ -501,10 +550,10 @@ def main():
                          "historical path, byte-identical. o3d solver only.")
     ap.add_argument("--tau-diameter", action="store_true",
                     help="FIDELITY FIX (FreeZeV2 Sec. IV-A): set tau_inlier / "
-                         "tau_ICP / the feature-score inlier radius to 3% of "
-                         "the BOP models_info DIAMETER, not 3% of the sampled "
+                         "tau_ICP / the feature-score inlier radius to 3%% of "
+                         "the BOP models_info DIAMETER, not 3%% of the sampled "
                          "query cloud's largest bounding-box side (which is "
-                         "2-35% smaller on LM-O). Pose-side only; caches hit. "
+                         "2-35%% smaller on LM-O). Pose-side only; caches hit. "
                          "Score-affecting — use a FRESH --out.")
     ap.add_argument("--render-backend", default="nvdiffrast",
                     choices=["nvdiffrast", "trimesh", "auto"],
@@ -520,6 +569,19 @@ def main():
     # Validate the source-mode BEFORE any file work (resume cleanup rewrites
     # --out): a CLI-argument error must not fire after destructive steps.
     validate_source_args(args.detections, args.sources)
+    if args.probe_corr:
+        # Fail-fast guards, BEFORE any filesystem work. CPU-capable by
+        # construction: every feature comes from the cache, so the heavy
+        # encoders never load. 'auto' would make the render_backend key part
+        # describe THIS box's GPU rather than the box that built the cache —
+        # demand the explicit value the cache was built with.
+        if args.render_backend == "auto":
+            raise SystemExit("--probe-corr needs an explicit --render-backend "
+                             "(the value the cache was built with; the "
+                             "campaign caches say nvdiffrast).")
+        if not args.cache:
+            raise SystemExit("--probe-corr reads features, it does not create "
+                             "them; pass --cache.")
 
     bop = Path(args.bop)
     ds_name, layout = resolve_layout(bop, args.dataset, args.split,
@@ -630,8 +692,11 @@ def main():
     # gpu solvers are deterministic by default and teaser has no RNG, so a flat
     # "UNSEEDED" would be a false claim in a cited run's log.
     print(solver_provenance(args.solver, args.seed), flush=True)
-    q_enc, t_enc = best_encoders(target_grid=args.grid,
-                                 render_backend=args.render_backend)
+    if args.probe_corr:
+        q_enc = t_enc = None    # guards ran at arg-validation time
+    else:
+        q_enc, t_enc = best_encoders(target_grid=args.grid,
+                                     render_backend=args.render_backend)
     selector = BestScoreSelector()
 
     # Config-addressed stage cache: keys fingerprint the encoder configuration
@@ -668,7 +733,8 @@ def main():
         # trimesh CPU ray-caster produce different CAD views, hence different
         # query features. It used to be absent from the key, so a cache built on
         # a box without nvdiffrast was silently reused on one with it.
-        "render_backend": q_enc.render_backend,
+        "render_backend": (args.render_backend if args.probe_corr
+                           else q_enc.render_backend),
     }
     # .lower() to match how load_gedi() resolves the backbone: POPOE_GEOM_BACKBONE
     # =FPFH loads FPFH, and its knobs must reach the key or a radius sweep reuses
@@ -711,11 +777,11 @@ def main():
     # that was actually encoded. Read once, up front, so a missing/renamed
     # models_info.json fails before any GPU work.
     diameters_m: dict = {}
-    if args.tau_diameter:
+    if args.tau_diameter or args.probe_corr:
         mi_path = bop / layout["models_dir"] / "models_info.json"
         if not mi_path.exists():
-            raise SystemExit(f"--tau-diameter needs {mi_path} (BOP ships it "
-                             f"next to the meshes); not found.")
+            raise SystemExit(f"--tau-diameter/--probe-corr need {mi_path} "
+                             f"(BOP ships it next to the meshes); not found.")
         diameters_m = {int(k): float(v["diameter"]) / 1000.0
                        for k, v in json.load(open(mi_path)).items()}
 
@@ -751,6 +817,12 @@ def main():
             from popoe.interfaces import CanonFrame
             q.meta["canon_frame"] = CanonFrame.from_points(q.pts)
         else:
+            if args.probe_corr:
+                raise SystemExit(
+                    f"--probe-corr: query cache miss for obj {obj_id} — the "
+                    f"probe reads features, it does not create them. Point "
+                    f"--cache at the campaign cache and match its enc_cfg env "
+                    f"knobs (grid, POPOE_QUERY_*, POPOE_CANON_BASIS, ...).")
             q = q_enc.encode_query(obj)
             if cache:
                 # Sidecar FIRST, arrays second: the .npz is the commit marker,
@@ -814,6 +886,26 @@ def main():
         cand_wr = csv.writer(cand_f)
         if new:
             cand_wr.writerow(header)
+
+    # --probe-corr: GT, symmetries, output writer, and the stats function.
+    probe_wr = None
+    probe_gt_cache: dict = {}
+    probe_syms: dict = {}
+    if args.probe_corr:
+        import sys as _sys
+        _sys.path.insert(0, os.environ.get("POPOE_BOP_TOOLKIT",
+                                           "/workspace/bop_toolkit"))
+        from bop_toolkit_lib import misc as _btk_misc
+        mi_raw = json.load(open(bop / layout["models_dir"] / "models_info.json"))
+        for _k, _v in mi_raw.items():
+            # Continuous symmetries discretised the way the AR metric does it;
+            # without syms a perfectly matched sym object would read as 0%.
+            probe_syms[int(_k)] = _btk_misc.get_symmetry_transformations(_v, 0.01)
+        probe_f = open(args.probe_corr, "w", newline="")
+        probe_wr = csv.writer(probe_f)
+        probe_wr.writerow(["scene_id", "im_id", "obj_id", "cand", "n_t", "n_q",
+                           "n_gt", "rate1", "rate10", "reach10", "med1_mm",
+                           "tau_mm"])
 
     dense_sizes: list = []
 
@@ -956,6 +1048,29 @@ def main():
                             f"only {len(tgt.pts)} encoded target point(s)")
                         note_degrade("encode_target", label, reason)
                         continue
+                    if probe_wr is not None:
+                        if scene_id not in probe_gt_cache:
+                            probe_gt_cache[scene_id] = json.load(
+                                open(sdir / "scene_gt.json"))
+                        gts = [dict(R=np.array(g["cam_R_m2c"]).reshape(3, 3),
+                                    t=np.array(g["cam_t_m2c"], dtype=float))
+                               for g in probe_gt_cache[scene_id].get(str(im_id), [])
+                               if g["obj_id"] == obj_id]
+                        if gts:
+                            r1, r10, reach, med1, tau_mm = probe_corr_stats(
+                                q, tgt, gts, probe_syms[obj_id],
+                                diameters_m[obj_id])
+                        else:
+                            # A detection with no GT instance (false-positive
+                            # mask): recorded, not scored - dropping it would
+                            # overstate the pool quality.
+                            r1 = r10 = reach = med1 = tau_mm = -1.0
+                        probe_wr.writerow([scene_id, im_id, obj_id, ci,
+                                           len(tgt.pts), len(q.pts), len(gts),
+                                           f"{r1:.4f}", f"{r10:.4f}",
+                                           f"{reach:.4f}", f"{med1:.2f}",
+                                           f"{tau_mm:.2f}"])
+                        continue
                     for w in weights:
                         qw = q if w == 1.0 else _reweighted(q, w, vis_split)
                         tw = tgt if w == 1.0 else _reweighted(tgt, w, vis_split)
@@ -976,6 +1091,13 @@ def main():
                             continue
                 elapsed = f"{time.time()-t_start:.3f}"
                 buffered[obj_id] = (inst_count, hyps_by_det, elapsed)
+
+            if probe_wr is not None:
+                # Probe mode never writes pose rows: the out CSV stays empty
+                # and resume semantics do not apply. The probe CSV is the
+                # product.
+                n_done += len(pending)
+                continue
 
             for obj_id, (inst_count, hyps_by_det, elapsed) in buffered.items():
                 # THE COMPLETION INVARIANT: a finished target emits EXACTLY
@@ -1010,6 +1132,18 @@ def main():
                     print(f"{n_done} targets this run", flush=True)
     if cand_f is not None:
         cand_f.close()
+    if probe_wr is not None:
+        probe_f.close()
+        rows_p = list(csv.DictReader(open(args.probe_corr)))
+        scored = [r for r in rows_p if float(r["n_gt"]) > 0]
+        if scored:
+            a = np.array([[float(r["rate1"]), float(r["rate10"]),
+                           float(r["reach10"])] for r in scored])
+            print(f"probe: {len(rows_p)} (target,mask) rows, {len(scored)} "
+                  f"with GT | mean rate1={a[:,0].mean():.4f} "
+                  f"rate10={a[:,1].mean():.4f} reach10={a[:,2].mean():.4f} | "
+                  f"median rate1={np.median(a[:,0]):.4f}", flush=True)
+        print(f"probe -> {args.probe_corr}", flush=True)
     if dense_sizes:
         # Positive evidence that --icp-dense actually reached ICP: an empty or
         # sparse-looking distribution here means the fix did nothing.

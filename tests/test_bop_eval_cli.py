@@ -476,3 +476,25 @@ def test_scorer_tau_abs_overrides_the_extent_fraction():
     from popoe.scoring import ChampionScorer
     assert ChampionScorer().tau_abs is None
     assert ChampionScorer(tau_abs=0.004).tau_abs == pytest.approx(0.004)
+
+
+def test_help_renders(tmp_path):
+    """`--help` must actually print.
+
+    argparse runs every help string through %-interpolation, so one literal
+    "3%" in a help text is enough to make the whole CLI's --help raise
+    `TypeError: %o format: an integer is required, not dict` — which is what
+    happened on main until 2026-07-30. Nothing else catches it: the flag
+    itself worked fine, only the help did not, so every run passed while the
+    CLI was undiscoverable.
+
+    Asserted as a subprocess because the parser is built inside main(); this
+    tests the thing a user actually types.
+    """
+    import subprocess
+    import sys
+    r = subprocess.run([sys.executable, str(_EXAMPLE), "--help"],
+                       capture_output=True, text=True, timeout=300)
+    assert r.returncode == 0, f"--help failed:\n{r.stderr[-2000:]}"
+    assert "--tau-diameter" in r.stdout          # the flag that carried the bug
+    assert "3% of" in r.stdout                   # %% must render back as one %
