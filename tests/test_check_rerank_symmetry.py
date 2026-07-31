@@ -1,7 +1,8 @@
-"""The rerank symmetry gate must fire on skew and stay quiet on parity.
+"""The rerank symmetry gate must fire on *inflation* and stay quiet on deflation.
 
-An acceptance gate nobody tested is a liability: it can pass everything and read
-like reassurance. Both directions are pinned here.
+An acceptance gate nobody tested is a liability. Both directions are pinned:
+the 2026-07-30 skew (flips too high) fails; a healthy post-fix dump with
+flips lower than unflipped (smoke 2026-07-31, ratio ~0.17) passes with WARN.
 """
 import csv
 import importlib.util
@@ -33,8 +34,8 @@ def _dump(path, rows):
     return str(path)
 
 
-def _run(path):
-    return subprocess.run([sys.executable, str(SCRIPT), path],
+def _run(path, *extra):
+    return subprocess.run([sys.executable, str(SCRIPT), path, *extra],
                           capture_output=True, text=True)
 
 
@@ -54,7 +55,18 @@ def test_gate_fires_on_the_2026_07_30_skew(tmp_path):
     rows += [(float(v), False) for v in rng.normal(0.21, 0.02, 200)]
     r = _run(_dump(tmp_path / "bad.csv", rows))
     assert r.returncode == 1, r.stdout
-    assert "different scales" in r.stdout
+    assert "inflated" in r.stdout
+
+
+def test_gate_passes_with_warn_on_post_fix_deflation(tmp_path):
+    """Smoke 2026-07-31 shape: flipped median ~0.045, unflipped ~0.27 → 0.17x."""
+    rng = np.random.default_rng(2)
+    rows = [(float(v), True) for v in rng.normal(0.045, 0.005, 200)]
+    rows += [(float(v), False) for v in rng.normal(0.270, 0.02, 200)]
+    r = _run(_dump(tmp_path / "deflate.csv", rows))
+    assert r.returncode == 0, r.stdout
+    assert "PASS" in r.stdout
+    assert "WARN" in r.stdout
 
 
 def test_gate_refuses_to_judge_without_flips(tmp_path):
@@ -76,9 +88,17 @@ def test_gate_refuses_to_judge_without_the_prererank_column(tmp_path):
     assert "lacks" in r.stdout
 
 
-@pytest.mark.parametrize("ratio,expected", [(1.0, 0), (1.3, 0), (2.0, 1), (0.4, 1)])
-def test_gate_boundary(tmp_path, ratio, expected):
+@pytest.mark.parametrize("ratio,expected,need_warn", [
+    (1.0, 0, False),   # parity
+    (1.3, 0, False),   # mild, under hi
+    (2.0, 1, False),   # inflation — FAIL
+    (0.4, 0, True),    # deflation — PASS + WARN (was FAIL under bilateral)
+    (0.17, 0, True),   # smoke 2026-07-31 shape
+])
+def test_gate_boundary_onesided(tmp_path, ratio, expected, need_warn):
     base = 0.30
     rows = [(base * ratio, True)] * 100 + [(base, False)] * 100
     r = _run(_dump(tmp_path / f"r{ratio}.csv", rows))
     assert r.returncode == expected, r.stdout
+    if need_warn:
+        assert "WARN" in r.stdout

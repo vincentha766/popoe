@@ -71,13 +71,17 @@ entrypoints, under the dual-disclosure discipline of `../gedi/EXPERIMENTS.md`
 > > stage that can change the score must clear a falsifiable numeric bar.
 > > **S1 and S2 are co-equal hard gates; S3 alone is never enough.**
 > >
-> > 1. **Measurement symmetry (S1, hard)** — run the shipped checker, do not
-> >    re-implement ad hoc:
+> > 1. **Measurement symmetry (S1, hard, one-sided)** — run the shipped checker,
+> >    do not re-implement ad hoc:
 > >    ```bash
 > >    python scripts/check_rerank_symmetry.py smoke_cand.csv   # exit 0 = pass
 > >    ```
-> >    Accept only if the moved/unmoved `s_icp` median ratio is within
-> >    **[0.7, 1.4]** (defaults in the script). The bug read 3.0-4.1x.
+> >    **Fail only if** flipped/unflipped `s_icp` median ratio **> 1.4**
+> >    (flip *inflation* — the 2026-07-30 bug was 3.0-4.1x). After PR #29 every
+> >    variant is re-ICP'd at the real tau, so wrong flips get *lower* fitness;
+> >    a ratio **below 0.7 prints WARN but still passes** (smoke 2026-07-31:
+> >    0.17x with AR(2/3) 0.816). Bilateral `[0.7, 1.4]` is retired — it
+> >    conflated "different measurement" with "different pose quality".
 > > 2. **Score floor (S2, hard)** — `ar_flat` on the smoke poses CSV.
 > >    Reference smoke (`tuned-4way` LM-O `--objs 1`): **AR(2/3) ≥ 0.65**.
 > >    Offline on the void-batch cand for that subset: bad-code ~**0.036**,
