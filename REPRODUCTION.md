@@ -26,7 +26,13 @@ entrypoints, under the dual-disclosure discipline of `../gedi/EXPERIMENTS.md`
 
 > Formal score = BOP evaluation server only. Local full AR in
 > `AR_SUMMARY.md` is a development self-check, not the dissertation score.
-> All four recipes are pinned to code tag `twoline-rerank-fix-20260731`.
+> All four recipes are pinned to code tag **`twoline-rerank-fix-20260731`**
+> (commit pin recorded in each recipe table; verify with
+> `git rev-parse HEAD` == `git rev-parse twoline-rerank-fix-20260731^{commit}`,
+> **not** tag-name-only `describe` — this annotated tag was moved once already).
+> Run root default: `/workspace/results/twoline_20260731_rerankfix`
+> (void batch lived at `…/twoline_20260730` — do not write new poses there).
+> Orchestration / go-no-go: `../gedi/EXPERIMENT_PLAN_TWOLINE_RERUN.md`.
 >
 > > ⚠️ **The 2026-07-30 batch of eight runs is void.** It ran at
 > > `twoline-prep-20260730a`, where `--render-rerank` re-ICP'd only the flipped
@@ -40,7 +46,7 @@ entrypoints, under the dual-disclosure discipline of `../gedi/EXPERIMENTS.md`
 > > `poses.csv` / `cand.csv` from that batch must be moved aside before a
 > > re-run — `bop_eval` resumes by ROW COUNT (`adapters.resolve_resume`), so a
 > > stale CSV makes the re-run declare every target done and exit "successfully"
-> > with the bad data still in place.
+> > with the bad data still in place. **Do not BOP-submit any void-batch CSV.**
 >
 > Values marked
 > **pinned-by-us** are frozen project choices where the public recipe is silent:
@@ -53,23 +59,38 @@ entrypoints, under the dual-disclosure discipline of `../gedi/EXPERIMENTS.md`
 > below must use fresh `poses.csv` and `cand.csv` paths.
 >
 > **Smoke first**: before any full run, execute the same block with
-> `--objs 1` appended and `smoke_`-prefixed `--out/--cand-csv/--cache` paths.
+> `--objs 1` appended and `smoke_`-prefixed `--out/--cand-csv` paths
+> (cache may point at a verified warm directory; see gedi experiment plan §3.4).
+> Reference smoke: **`tuned-4way` LM-O `--objs 1`** (~175 targets). Every
+> recipe needs its own S1/S2/S3 record before that recipe's full run.
 >
 > > **A smoke must assert a NUMBER, not just survival.** The 2026-07-29
 > > RERANK-SMOKE passed on "every env pin echoed, rerank breakdown lines
 > > present, zero Tracebacks" — and the stage it was gating was, at that moment,
 > > destroying 52 AR points. Liveness criteria cannot see a wrong answer. Any
-> > stage that can change the score must clear a falsifiable numeric bar:
+> > stage that can change the score must clear a falsifiable numeric bar.
+> > **S1 and S2 are co-equal hard gates; S3 alone is never enough.**
 > >
-> > 1. **Measurement symmetry** — from `smoke_cand.csv`, split candidates by
-> >    whether the reranker moved R (>5 deg vs `R_prererank`) and compare the two
-> >    `s_icp` medians. **Accept only if the ratio is within [0.7, 1.4].** The
-> >    bug read 3.0-4.1x. This one test is the direct guard and it is cheap.
-> > 2. **Score sanity** — `ar_flat.py` on the smoke CSV must land within 5pt of
-> >    the same subset scored with the reranker's picks excluded. Rerank-on
-> >    should be >=, never far below.
-> > 3. Then the liveness checks (env pins echoed, breakdown lines, 0 Tracebacks)
-> >    — necessary, never sufficient.
+> > 1. **Measurement symmetry (S1, hard)** — run the shipped checker, do not
+> >    re-implement ad hoc:
+> >    ```bash
+> >    python scripts/check_rerank_symmetry.py smoke_cand.csv   # exit 0 = pass
+> >    ```
+> >    Accept only if the moved/unmoved `s_icp` median ratio is within
+> >    **[0.7, 1.4]** (defaults in the script). The bug read 3.0-4.1x.
+> > 2. **Score floor (S2, hard)** — `ar_flat` on the smoke poses CSV.
+> >    Reference smoke (`tuned-4way` LM-O `--objs 1`): **AR(2/3) ≥ 0.65**.
+> >    Offline on the void-batch cand for that subset: bad-code ~**0.036**,
+> >    exclude-flipped reselect (rule C ≈ rerank-off) ~**0.816**. Use 0.65 as
+> >    a floor with margin — **do not treat 0.816 as a post-fix must-hit**
+> >    (that is rerank-off waterline, not measured post-fix AR).
+> >    Optional one-sided relative check: `rerank-on ≥ exclude_flipped − 5pt`
+> >    (no upper cap; a large gain must not FAIL).
+> >    **Forbidden reference:** reselect using pre-rerank pose of the *chosen*
+> >    hyp (triage rule B; measured worse than the bug). Exclude *flipped*
+> >    candidates, then argmax — that is the only valid control pool.
+> > 3. **Liveness (S3)** — env pins echoed, rerank breakdown lines, 0
+> >    Tracebacks, rows > 0. Necessary, never sufficient.
 >
 > **Post-run (no GPU)**: per dataset dir fill the remaining four artifacts —
 > `RECIPE.md` (copy the exact block + commit + date), `AR_SUMMARY.md`
@@ -95,7 +116,7 @@ out_dir/
 | Field | Frozen value |
 |---|---|
 | Report point | A / single-source |
-| Code | `twoline-prep-20260730` (`6186931`) |
+| Code | `twoline-rerank-fix-20260731` (src pin `2b8c0eb`; docs tip = `git rev-parse twoline-rerank-fix-20260731^{commit}`) |
 | Datasets | LM-O + YCB-V; one full BOP test run each |
 | Detection inputs | CNOS only: `data/detections/cnos/cnos-fastsam_lmo-test.json`, `data/detections/cnos/cnos-fastsam_ycbv-test.json` |
 | Scoring | Paper Eq.7 three-term form with `--use-s-coarse`; Eq.7 exponents are **pinned-by-us** to unit exponents |
@@ -109,14 +130,37 @@ set -euo pipefail
 POPOE="${POPOE:-/workspace/popoe}"
 BOP="${BOP:-/workspace/bop_data}"
 DET="${DET:-$POPOE/data/detections}"
-RUN_ROOT="${RUN_ROOT:-/workspace/results/twoline_20260730}"
+RUN_ROOT="${RUN_ROOT:-/workspace/results/twoline_20260731_rerankfix}"
 RUN="$RUN_ROOT/faithful-cnos"
 PY="${PY:-python}"
 SEED=42
 
 cd "$POPOE"
-if [ "$(git describe --tags --exact-match 2>/dev/null)" != "twoline-rerank-fix-20260731" ]; then
-  echo "wrong popoe checkout; need tag twoline-rerank-fix-20260731" >&2
+# Pin by dereferenced tag commit, not tag *name* via describe. This annotated
+# tag was moved (22653d2 → 2b8c0eb → docs tip); plain `git fetch --tags` does
+# not clobber a local tag, so a stale tip can still `describe` clean while
+# missing scripts/check_rerank_symmetry.py. On pods: fresh clone +
+# `git fetch --tags --force` before checkout. Optional POPOE_PIN=fullsha
+# forces an exact match (set it from the recipe Code row after retag).
+TAG=twoline-rerank-fix-20260731
+TAG_COMMIT=$(git rev-parse "${TAG}^{commit}" 2>/dev/null) || {
+  echo "tag $TAG missing; run: git fetch --tags --force" >&2
+  exit 1
+}
+if [ "$(git rev-parse HEAD)" != "$TAG_COMMIT" ]; then
+  echo "wrong popoe checkout; need $TAG @ $TAG_COMMIT (got HEAD=$(git rev-parse HEAD))" >&2
+  exit 1
+fi
+if [ -n "${POPOE_PIN:-}" ] && [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
+  echo "POPOE_PIN=$POPOE_PIN does not match HEAD=$(git rev-parse HEAD)" >&2
+  exit 1
+fi
+if [ ! -f scripts/check_rerank_symmetry.py ]; then
+  echo "missing scripts/check_rerank_symmetry.py — stale tag tip; fetch --tags --force" >&2
+  exit 1
+fi
+if [ -n "$(git status --porcelain)" ]; then
+  echo "refusing dirty popoe worktree" >&2
   exit 1
 fi
 
@@ -179,7 +223,7 @@ done
 | Field | Frozen value |
 |---|---|
 | Report point | A / three-way |
-| Code | `twoline-prep-20260730` (`6186931`) |
+| Code | `twoline-rerank-fix-20260731` (src pin `2b8c0eb`; docs tip = `git rev-parse twoline-rerank-fix-20260731^{commit}`) |
 | Datasets | LM-O + YCB-V; one full BOP test run each |
 | Detection inputs | CNOS + SAM6D + NIDS official JSONs under `data/detections/`; `--merge none` keeps the paper-style union unfiltered |
 | Scoring | Paper Eq.7 three-term form with `--use-s-coarse`; Eq.7 exponents are **pinned-by-us** to unit exponents |
@@ -193,14 +237,37 @@ set -euo pipefail
 POPOE="${POPOE:-/workspace/popoe}"
 BOP="${BOP:-/workspace/bop_data}"
 DET="${DET:-$POPOE/data/detections}"
-RUN_ROOT="${RUN_ROOT:-/workspace/results/twoline_20260730}"
+RUN_ROOT="${RUN_ROOT:-/workspace/results/twoline_20260731_rerankfix}"
 RUN="$RUN_ROOT/faithful-3way"
 PY="${PY:-python}"
 SEED=42
 
 cd "$POPOE"
-if [ "$(git describe --tags --exact-match 2>/dev/null)" != "twoline-rerank-fix-20260731" ]; then
-  echo "wrong popoe checkout; need tag twoline-rerank-fix-20260731" >&2
+# Pin by dereferenced tag commit, not tag *name* via describe. This annotated
+# tag was moved (22653d2 → 2b8c0eb → docs tip); plain `git fetch --tags` does
+# not clobber a local tag, so a stale tip can still `describe` clean while
+# missing scripts/check_rerank_symmetry.py. On pods: fresh clone +
+# `git fetch --tags --force` before checkout. Optional POPOE_PIN=fullsha
+# forces an exact match (set it from the recipe Code row after retag).
+TAG=twoline-rerank-fix-20260731
+TAG_COMMIT=$(git rev-parse "${TAG}^{commit}" 2>/dev/null) || {
+  echo "tag $TAG missing; run: git fetch --tags --force" >&2
+  exit 1
+}
+if [ "$(git rev-parse HEAD)" != "$TAG_COMMIT" ]; then
+  echo "wrong popoe checkout; need $TAG @ $TAG_COMMIT (got HEAD=$(git rev-parse HEAD))" >&2
+  exit 1
+fi
+if [ -n "${POPOE_PIN:-}" ] && [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
+  echo "POPOE_PIN=$POPOE_PIN does not match HEAD=$(git rev-parse HEAD)" >&2
+  exit 1
+fi
+if [ ! -f scripts/check_rerank_symmetry.py ]; then
+  echo "missing scripts/check_rerank_symmetry.py — stale tag tip; fetch --tags --force" >&2
+  exit 1
+fi
+if [ -n "$(git status --porcelain)" ]; then
+  echo "refusing dirty popoe worktree" >&2
   exit 1
 fi
 
@@ -263,7 +330,7 @@ done
 | Field | Frozen value |
 |---|---|
 | Report point | B / single-source |
-| Code | `twoline-prep-20260730` (`6186931`) |
+| Code | `twoline-rerank-fix-20260731` (src pin `2b8c0eb`; docs tip = `git rev-parse twoline-rerank-fix-20260731^{commit}`) |
 | Datasets | LM-O + YCB-V; one full BOP test run each |
 | Detection inputs | CNOS only: `data/detections/cnos/cnos-fastsam_lmo-test.json`, `data/detections/cnos/cnos-fastsam_ycbv-test.json` |
 | Scoring | Campaign2 tuned ChampionScorer: grid32, weights `1.0,0.7,0.5,0.3,0.2`; YCB-V uses `--merge ycbv --use-s-coarse`, LM-O uses `--merge none` and no `--use-s-coarse` |
@@ -277,14 +344,37 @@ set -euo pipefail
 POPOE="${POPOE:-/workspace/popoe}"
 BOP="${BOP:-/workspace/bop_data}"
 DET="${DET:-$POPOE/data/detections}"
-RUN_ROOT="${RUN_ROOT:-/workspace/results/twoline_20260730}"
+RUN_ROOT="${RUN_ROOT:-/workspace/results/twoline_20260731_rerankfix}"
 RUN="$RUN_ROOT/tuned-cnos"
 PY="${PY:-python}"
 SEED=42
 
 cd "$POPOE"
-if [ "$(git describe --tags --exact-match 2>/dev/null)" != "twoline-rerank-fix-20260731" ]; then
-  echo "wrong popoe checkout; need tag twoline-rerank-fix-20260731" >&2
+# Pin by dereferenced tag commit, not tag *name* via describe. This annotated
+# tag was moved (22653d2 → 2b8c0eb → docs tip); plain `git fetch --tags` does
+# not clobber a local tag, so a stale tip can still `describe` clean while
+# missing scripts/check_rerank_symmetry.py. On pods: fresh clone +
+# `git fetch --tags --force` before checkout. Optional POPOE_PIN=fullsha
+# forces an exact match (set it from the recipe Code row after retag).
+TAG=twoline-rerank-fix-20260731
+TAG_COMMIT=$(git rev-parse "${TAG}^{commit}" 2>/dev/null) || {
+  echo "tag $TAG missing; run: git fetch --tags --force" >&2
+  exit 1
+}
+if [ "$(git rev-parse HEAD)" != "$TAG_COMMIT" ]; then
+  echo "wrong popoe checkout; need $TAG @ $TAG_COMMIT (got HEAD=$(git rev-parse HEAD))" >&2
+  exit 1
+fi
+if [ -n "${POPOE_PIN:-}" ] && [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
+  echo "POPOE_PIN=$POPOE_PIN does not match HEAD=$(git rev-parse HEAD)" >&2
+  exit 1
+fi
+if [ ! -f scripts/check_rerank_symmetry.py ]; then
+  echo "missing scripts/check_rerank_symmetry.py — stale tag tip; fetch --tags --force" >&2
+  exit 1
+fi
+if [ -n "$(git status --porcelain)" ]; then
+  echo "refusing dirty popoe worktree" >&2
   exit 1
 fi
 
@@ -335,7 +425,7 @@ done
 | Field | Frozen value |
 |---|---|
 | Report point | B / four-way |
-| Code | `twoline-prep-20260730` (`6186931`) |
+| Code | `twoline-rerank-fix-20260731` (src pin `2b8c0eb`; docs tip = `git rev-parse twoline-rerank-fix-20260731^{commit}`) |
 | Datasets | LM-O + YCB-V; one full BOP test run each |
 | Detection inputs | CNOS + SAM6D + NIDS + official MUSE JSONs under `data/detections/`; `muse` means downloaded official artefacts, not `muse-repro` |
 | Scoring | Campaign2 tuned ChampionScorer: grid32, weights `1.0,0.7,0.5,0.3,0.2`; YCB-V uses `--merge ycbv --use-s-coarse`, LM-O uses `--merge none` and no `--use-s-coarse` |
@@ -349,14 +439,37 @@ set -euo pipefail
 POPOE="${POPOE:-/workspace/popoe}"
 BOP="${BOP:-/workspace/bop_data}"
 DET="${DET:-$POPOE/data/detections}"
-RUN_ROOT="${RUN_ROOT:-/workspace/results/twoline_20260730}"
+RUN_ROOT="${RUN_ROOT:-/workspace/results/twoline_20260731_rerankfix}"
 RUN="$RUN_ROOT/tuned-4way"
 PY="${PY:-python}"
 SEED=42
 
 cd "$POPOE"
-if [ "$(git describe --tags --exact-match 2>/dev/null)" != "twoline-rerank-fix-20260731" ]; then
-  echo "wrong popoe checkout; need tag twoline-rerank-fix-20260731" >&2
+# Pin by dereferenced tag commit, not tag *name* via describe. This annotated
+# tag was moved (22653d2 → 2b8c0eb → docs tip); plain `git fetch --tags` does
+# not clobber a local tag, so a stale tip can still `describe` clean while
+# missing scripts/check_rerank_symmetry.py. On pods: fresh clone +
+# `git fetch --tags --force` before checkout. Optional POPOE_PIN=fullsha
+# forces an exact match (set it from the recipe Code row after retag).
+TAG=twoline-rerank-fix-20260731
+TAG_COMMIT=$(git rev-parse "${TAG}^{commit}" 2>/dev/null) || {
+  echo "tag $TAG missing; run: git fetch --tags --force" >&2
+  exit 1
+}
+if [ "$(git rev-parse HEAD)" != "$TAG_COMMIT" ]; then
+  echo "wrong popoe checkout; need $TAG @ $TAG_COMMIT (got HEAD=$(git rev-parse HEAD))" >&2
+  exit 1
+fi
+if [ -n "${POPOE_PIN:-}" ] && [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
+  echo "POPOE_PIN=$POPOE_PIN does not match HEAD=$(git rev-parse HEAD)" >&2
+  exit 1
+fi
+if [ ! -f scripts/check_rerank_symmetry.py ]; then
+  echo "missing scripts/check_rerank_symmetry.py — stale tag tip; fetch --tags --force" >&2
+  exit 1
+fi
+if [ -n "$(git status --porcelain)" ]; then
+  echo "refusing dirty popoe worktree" >&2
   exit 1
 fi
 
