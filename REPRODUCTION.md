@@ -120,7 +120,7 @@ out_dir/
 | Field | Frozen value |
 |---|---|
 | Report point | A / single-source |
-| Code | `twoline-rerank-fix-20260731` (src pin `2b8c0eb`; docs tip = `git rev-parse twoline-rerank-fix-20260731^{commit}`) |
+| Code | `twoline-rerank-fix-20260731` (`git rev-parse twoline-rerank-fix-20260731^{commit}` = `509072e`; includes one-sided S1 smoke checker) |
 | Datasets | LM-O + YCB-V; one full BOP test run each |
 | Detection inputs | CNOS only: `data/detections/cnos/cnos-fastsam_lmo-test.json`, `data/detections/cnos/cnos-fastsam_ycbv-test.json` |
 | Scoring | Paper Eq.7 three-term form with `--use-s-coarse`; Eq.7 exponents are **pinned-by-us** to unit exponents |
@@ -141,7 +141,7 @@ SEED=42
 
 cd "$POPOE"
 # Pin by dereferenced tag commit, not tag *name* via describe. This annotated
-# tag was moved (22653d2 → 2b8c0eb → docs tip); plain `git fetch --tags` does
+# tag was moved (22653d2 → 2b8c0eb → 509072e); plain `git fetch --tags` does
 # not clobber a local tag, so a stale tip can still `describe` clean while
 # missing scripts/check_rerank_symmetry.py. On pods: fresh clone +
 # `git fetch --tags --force` before checkout. Optional POPOE_PIN=fullsha
@@ -227,7 +227,7 @@ done
 | Field | Frozen value |
 |---|---|
 | Report point | A / three-way |
-| Code | `twoline-rerank-fix-20260731` (src pin `2b8c0eb`; docs tip = `git rev-parse twoline-rerank-fix-20260731^{commit}`) |
+| Code | `twoline-rerank-fix-20260731` (`git rev-parse twoline-rerank-fix-20260731^{commit}` = `509072e`; includes one-sided S1 smoke checker) |
 | Datasets | LM-O + YCB-V; one full BOP test run each |
 | Detection inputs | CNOS + SAM6D + NIDS official JSONs under `data/detections/`; `--merge none` keeps the paper-style union unfiltered |
 | Scoring | Paper Eq.7 three-term form with `--use-s-coarse`; Eq.7 exponents are **pinned-by-us** to unit exponents |
@@ -248,7 +248,7 @@ SEED=42
 
 cd "$POPOE"
 # Pin by dereferenced tag commit, not tag *name* via describe. This annotated
-# tag was moved (22653d2 → 2b8c0eb → docs tip); plain `git fetch --tags` does
+# tag was moved (22653d2 → 2b8c0eb → 509072e); plain `git fetch --tags` does
 # not clobber a local tag, so a stale tip can still `describe` clean while
 # missing scripts/check_rerank_symmetry.py. On pods: fresh clone +
 # `git fetch --tags --force` before checkout. Optional POPOE_PIN=fullsha
@@ -334,7 +334,7 @@ done
 | Field | Frozen value |
 |---|---|
 | Report point | B / single-source |
-| Code | `twoline-rerank-fix-20260731` (src pin `2b8c0eb`; docs tip = `git rev-parse twoline-rerank-fix-20260731^{commit}`) |
+| Code | `twoline-rerank-fix-20260731` (`git rev-parse twoline-rerank-fix-20260731^{commit}` = `509072e`; includes one-sided S1 smoke checker) |
 | Datasets | LM-O + YCB-V; one full BOP test run each |
 | Detection inputs | CNOS only: `data/detections/cnos/cnos-fastsam_lmo-test.json`, `data/detections/cnos/cnos-fastsam_ycbv-test.json` |
 | Scoring | Campaign2 tuned ChampionScorer: grid32, weights `1.0,0.7,0.5,0.3,0.2`; YCB-V uses `--merge ycbv --use-s-coarse`, LM-O uses `--merge none` and no `--use-s-coarse` |
@@ -355,7 +355,7 @@ SEED=42
 
 cd "$POPOE"
 # Pin by dereferenced tag commit, not tag *name* via describe. This annotated
-# tag was moved (22653d2 → 2b8c0eb → docs tip); plain `git fetch --tags` does
+# tag was moved (22653d2 → 2b8c0eb → 509072e); plain `git fetch --tags` does
 # not clobber a local tag, so a stale tip can still `describe` clean while
 # missing scripts/check_rerank_symmetry.py. On pods: fresh clone +
 # `git fetch --tags --force` before checkout. Optional POPOE_PIN=fullsha
@@ -429,7 +429,7 @@ done
 | Field | Frozen value |
 |---|---|
 | Report point | B / four-way |
-| Code | `twoline-rerank-fix-20260731` (src pin `2b8c0eb`; docs tip = `git rev-parse twoline-rerank-fix-20260731^{commit}`) |
+| Code | `twoline-rerank-fix-20260731` (`git rev-parse twoline-rerank-fix-20260731^{commit}` = `509072e`; includes one-sided S1 smoke checker) |
 | Datasets | LM-O + YCB-V; one full BOP test run each |
 | Detection inputs | CNOS + SAM6D + NIDS + official MUSE JSONs under `data/detections/`; `muse` means downloaded official artefacts, not `muse-repro` |
 | Scoring | Campaign2 tuned ChampionScorer: grid32, weights `1.0,0.7,0.5,0.3,0.2`; YCB-V uses `--merge ycbv --use-s-coarse`, LM-O uses `--merge none` and no `--use-s-coarse` |
@@ -450,7 +450,7 @@ SEED=42
 
 cd "$POPOE"
 # Pin by dereferenced tag commit, not tag *name* via describe. This annotated
-# tag was moved (22653d2 → 2b8c0eb → docs tip); plain `git fetch --tags` does
+# tag was moved (22653d2 → 2b8c0eb → 509072e); plain `git fetch --tags` does
 # not clobber a local tag, so a stale tip can still `describe` clean while
 # missing scripts/check_rerank_symmetry.py. On pods: fresh clone +
 # `git fetch --tags --force` before checkout. Optional POPOE_PIN=fullsha
@@ -630,7 +630,7 @@ then the spread is recorded as unexplained rather than narrated.
 | Experiment | Archive result | popoe entrypoint | Class | Status |
 |---|---|---|---|---|
 | Adaptive visual weight | beats best-fixed on all 4 datasets | Built into `bop_eval.py --weights 1.0,0.7,0.5,0.3,0.2` (ChampionScorer per-target argmax over w). Cross-dataset 4-set claim still needs TUD-L / IC-BIN BOP data + GPU runs (not in this repo). Offline post-hoc: gedi `scripts/freezev2_adaptive_select.py` over per-w CSVs. | **GPU-POD** (YCB-V/LM-O covered by #1/#2); **GAP** for TUD-L/IC-BIN data | ☐ |
-| Canonical-space scoring | 26-rule ablation; champion rule constant across datasets | Live rule = `ChampionScorer` (`s_icp * max(s_feat_1,0) * metric_fit?`). Offline re-sweep: `examples/rule_replay.py <cand.csv> --rule "s_icp*s_feat_1" --rule "s_icp*s_feat_1*metric_fit" --out-dir …` on a `--cand-csv` dump from #1/#2 (or existing popoe cands under `../gedi/ycbv_local_data/union_scoring_20260716/`). | **LOCAL-CPU** (once cand-csv exists) | ☐ |
+| Canonical-space scoring | 26-rule ablation; champion rule constant across datasets | Live rule = `ChampionScorer` (`s_icp * max(s_feat_1,0) * metric_fit?`). Offline re-sweep: `examples/rule_replay.py <cand.csv> --target-csv <poses.csv> --rule "s_icp*s_feat_1" --rule "s_icp*s_feat_1*metric_fit" --out-dir …` on a `--cand-csv` dump from #1/#2. `--target-csv` defines the full target universe and zero-pads detector misses; without it, output AR is a candidate-bearing ceiling. Existing historical cands under `../gedi/ycbv_local_data/union_scoring_20260716/` may be used only when paired with a matching full target CSV. | **LOCAL-CPU** (once cand-csv exists) | ☐ |
 | Gripper label pooling + metric_fit | obj20 +33.6 pt; 2×2 ablation | `bop_eval.py --merge ycbv` (pools 19:20, size_aware metric_fit) vs `--merge none` on YCB-V objs 19,20 (`--objs 19,20`). Live scorer: `ChampionScorer(size_aware=True)` for pooled pairs. | **GPU-POD** (subset ablation) | ☐ |
 | Multi-mask / detection union (LM-O) | CNOS∪SAM6D +2.8 pt | Smoke (no GPU): `examples/union_smoke.py --dataset lmo --source sam6d=data/detections/sam6d/sam6d_ism_lmo.json`. Full AR: same as headline #2 (`--sources cnos=…,sam6d=…`). CNOS-only control: `--detections …/cnos-fastsam_lmo-test.json`. | **LOCAL-CPU** smoke + **GPU-POD** full | ☑ full-AR via #2 (2026-07-26); no separate CNOS-only control re-run |
 

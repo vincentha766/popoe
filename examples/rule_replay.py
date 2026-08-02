@@ -22,8 +22,9 @@ rejected), joined by `*`, over the numeric columns present, e.g.:
 
 Scope: the dump has rows only for candidate-bearing targets, so the replay
 covers those; targets a detector missed entirely are absent. Rule-vs-rule flip
-counts are exact (same candidate set); AR over the output CSV is a CEILING until
-missing targets are zero-padded.
+counts are exact (same candidate set). Pass the corresponding full-run
+``poses.csv`` as ``--target-csv`` to define the complete target universe and
+zero-pad missed targets. Without it, AR over the output CSV is a CEILING.
 
 Precision: the dump serialises the term columns to 4 decimals, so replay
 recomputes products from ROUNDED values — an approximation of the live scorer's
@@ -33,6 +34,7 @@ existing champion columns too, not just s_coarse).
 
 Usage:
     python examples/rule_replay.py cands.csv \
+        --target-csv poses.csv \
         --rule "s_icp*s_feat_1" --rule "s_icp*s_feat_1*s_coarse" --out-dir replays/
 """
 
@@ -45,6 +47,9 @@ import re
 import pandas as pd
 
 KEY = ["scene_id", "im_id", "obj_id"]           # one champion per BOP target
+RESULT = KEY + ["score", "R", "t"]
+ZERO_R = "1 0 0 0 1 0 0 0 1"
+ZERO_T = "0 0 0"
 # Row identity within a target: which (mask, weight) hypothesis was chosen.
 CAND = ["cand", "w"]
 # Columns that are NOT numeric rule terms (ids / pose / provenance / solver id).
@@ -118,6 +123,46 @@ def champions(df: pd.DataFrame, score: pd.Series) -> pd.DataFrame:
     return df.loc[champion_index(df, score).values]
 
 
+def load_target_universe(path: str) -> pd.DataFrame:
+    """Load one canonical row per target, preserving the reference order."""
+    targets = pd.read_csv(path)
+    missing = [c for c in KEY if c not in targets.columns]
+    if missing:
+        raise SystemExit(f"{path} missing target key columns {missing}")
+    targets = targets[KEY].copy()
+    duplicated = targets.duplicated(KEY, keep=False)
+    if duplicated.any():
+        sample = targets.loc[duplicated, KEY].head(3).to_dict("records")
+        raise SystemExit(f"{path} has duplicate target keys, e.g. {sample}")
+    return targets
+
+
+def complete_results(champs: pd.DataFrame,
+                     targets: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """Align champions to the full target universe and zero-pad misses."""
+    chosen = champs[RESULT].copy()
+    duplicated = chosen.duplicated(KEY, keep=False)
+    if duplicated.any():
+        sample = chosen.loc[duplicated, KEY].head(3).to_dict("records")
+        raise SystemExit(f"replay has duplicate target keys, e.g. {sample}")
+
+    known = pd.MultiIndex.from_frame(targets[KEY])
+    observed = pd.MultiIndex.from_frame(chosen[KEY])
+    extra = observed.difference(known)
+    if len(extra):
+        raise SystemExit(
+            f"cand dump contains {len(extra)} targets outside --target-csv, "
+            f"e.g. {list(extra[:3])}")
+
+    out = targets.merge(chosen, on=KEY, how="left", validate="one_to_one",
+                        sort=False)
+    missed = out["R"].isna() | out["t"].isna() | out["score"].isna()
+    out.loc[missed, "score"] = 0.0
+    out.loc[missed, "R"] = ZERO_R
+    out.loc[missed, "t"] = ZERO_T
+    return out[RESULT], int(missed.sum())
+
+
 def _slug(rule: str) -> str:
     return re.sub(r"[^0-9A-Za-z]+", "_", rule).strip("_")
 
@@ -129,6 +174,11 @@ def main():
                     help="product rule over dump columns; repeatable")
     ap.add_argument("--out-dir", default="",
                     help="write replay_<rule>.csv results here (optional)")
+    ap.add_argument(
+        "--target-csv",
+        default="",
+        help="full-run poses.csv defining the complete target universe; targets "
+             "absent from cand_csv are written as zero-score identity failures")
     ap.add_argument("--baseline-col", default="score",
                     help="column whose champion is the flip baseline (the dump's "
                          "own arbitration score by default)")
@@ -140,6 +190,7 @@ def main():
     for c in KEY + CAND:
         if c not in df.columns:
             raise SystemExit(f"{args.cand_csv} missing required column {c!r}")
+    targets = load_target_universe(args.target_csv) if args.target_csv else None
     if args.out_dir:
         os.makedirs(args.out_dir, exist_ok=True)
 
@@ -156,10 +207,13 @@ def main():
     n_targets = len(base_idx)
     print(f"{args.cand_csv}: {len(df)} hypotheses, {n_targets} targets "
           f"(baseline = {args.baseline_col!r})")
-    print("NOTE: only candidate-bearing targets are here — targets a detector "
-          "missed entirely have no cand rows and are ABSENT. AR over the output "
-          "CSV is a ceiling; zero-pad the missing targets to compare against a "
-          "full eval run. The flip counts below are exact (same candidate set).")
+    if targets is None:
+        print("NOTE: only candidate-bearing targets are here — targets a detector "
+              "missed entirely have no cand rows and are ABSENT. AR over the "
+              "output CSV is a ceiling; pass --target-csv to zero-pad them. The "
+              "flip counts below are exact (same candidate set).")
+    else:
+        print(f"target universe: {len(targets)} targets from {args.target_csv}")
 
     for rule in args.rule:
         terms = parse_rule(rule, df.columns)
@@ -172,8 +226,12 @@ def main():
             out = os.path.join(args.out_dir, f"replay_{_slug(rule)}.csv")
             champs = df.loc[r_idx.values].copy()
             champs["score"] = rule_score(champs, terms).values
-            champs[["scene_id", "im_id", "obj_id", "score", "R", "t"]].to_csv(
-                out, index=False)
+            result = champs[RESULT]
+            if targets is not None:
+                result, n_missed = complete_results(result, targets)
+                print(f"    complete denominator: {len(result)} targets "
+                      f"({n_missed} zero-padded)")
+            result.to_csv(out, index=False)
             print(f"    -> {out}")
 
 

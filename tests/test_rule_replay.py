@@ -104,6 +104,42 @@ def test_champions_pick_per_target_argmax(rr):
     assert len(champs) == len(champs2) == 2
 
 
+def test_complete_results_zero_pads_and_preserves_target_order(rr):
+    champs = rr.champions(_df(), _df()["score"])
+    targets = pd.DataFrame([
+        {"scene_id": 1, "im_id": 2, "obj_id": 5},
+        {"scene_id": 1, "im_id": 3, "obj_id": 5},
+        {"scene_id": 1, "im_id": 1, "obj_id": 5},
+    ])
+    out, n_missed = rr.complete_results(champs, targets)
+    assert n_missed == 1
+    assert list(out["im_id"]) == [2, 3, 1]
+    missed = out[out["im_id"] == 3].iloc[0]
+    assert missed["score"] == 0.0
+    assert missed["R"] == rr.ZERO_R
+    assert missed["t"] == rr.ZERO_T
+
+
+def test_complete_results_rejects_target_outside_universe(rr):
+    targets = pd.DataFrame([
+        {"scene_id": 1, "im_id": 1, "obj_id": 5},
+    ])
+    champs = rr.champions(_df(), _df()["score"])
+    with pytest.raises(SystemExit, match="outside --target-csv"):
+        rr.complete_results(champs, targets)
+
+
+def test_load_target_universe_rejects_duplicate_keys(rr, tmp_path):
+    targets = pd.DataFrame([
+        {"scene_id": 1, "im_id": 1, "obj_id": 5},
+        {"scene_id": 1, "im_id": 1, "obj_id": 5},
+    ])
+    path = tmp_path / "duplicate_targets.csv"
+    targets.to_csv(path, index=False)
+    with pytest.raises(SystemExit, match="duplicate target keys"):
+        rr.load_target_universe(path)
+
+
 def test_warns_on_mixed_solver_dump(rr, tmp_path, capsys):
     df = _df()
     df["solver"] = ["o3d", "gpu", "o3d"]           # two solvers in one dump
@@ -139,3 +175,32 @@ def test_end_to_end_writes_results_and_reports_flips(rr, tmp_path, capsys):
     res = pd.read_csv(tmp_path / "out" / "replay_s_icp.csv")
     assert list(res.columns) == ["scene_id", "im_id", "obj_id", "score", "R", "t"]
     assert len(res) == 2                          # one row per target
+
+
+def test_end_to_end_target_csv_zero_pads_missing_targets(rr, tmp_path, capsys):
+    csv = tmp_path / "cands.csv"
+    _df().to_csv(csv, index=False)
+    targets = tmp_path / "poses.csv"
+    pd.DataFrame([
+        {"scene_id": 1, "im_id": 1, "obj_id": 5},
+        {"scene_id": 1, "im_id": 2, "obj_id": 5},
+        {"scene_id": 1, "im_id": 3, "obj_id": 5},
+    ]).to_csv(targets, index=False)
+    import sys
+    old = sys.argv
+    try:
+        sys.argv = [
+            "rule_replay.py", str(csv), "--rule", "s_icp",
+            "--target-csv", str(targets), "--out-dir", str(tmp_path / "out"),
+        ]
+        rr.main()
+    finally:
+        sys.argv = old
+    out = capsys.readouterr().out
+    assert "3 targets (1 zero-padded)" in out
+    res = pd.read_csv(tmp_path / "out" / "replay_s_icp.csv")
+    assert len(res) == 3
+    missed = res[res["im_id"] == 3].iloc[0]
+    assert missed["score"] == 0.0
+    assert missed["R"] == rr.ZERO_R
+    assert missed["t"] == rr.ZERO_T
