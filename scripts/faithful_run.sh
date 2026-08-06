@@ -17,7 +17,8 @@
 #   POPOE_QUERY_POINTS=5000        #16  |P_Q| = 5k
 #   POPOE_QUERY_CANON=476          #17  render canvas (34*14; the paper's 480
 #   POPOE_QUERY_FILL=0.5                is not a multiple of the 14px patch)
-#   --corr-topk 10                 #18  top-k correspondences, k=10
+#   --solver gpu-feat              #18  Eq.5 selection; native k=10 (o3d-only
+#                                       --corr-topk must NOT be passed here)
 #   --tau-diameter                 # 8  tau = 3% of the diameter (PR #20)
 #   --icp-dense --icp-dense-max 3000  # 7  ICP against P_T^dense, 3k points
 #
@@ -67,10 +68,9 @@ env | grep '^POPOE_' | sort
 
 "$PY" examples/bop_eval.py \
   --bop "$BOP/$BOP_DS" --dataset "$BOP_DS" "${SRC[@]}" \
-  --merge none --topk 2 --grid 16 --solver o3d --seed "$SEED" \
+  --merge none --topk 2 --grid 16 --solver gpu-feat --seed "$SEED" \
   --weights 1.0 \
   --use-s-coarse \
-  --corr-topk 10 \
   --tau-diameter \
   --icp-dense --icp-dense-max 3000 \
   --render-backend nvdiffrast \

@@ -657,18 +657,20 @@ def main():
                          "query cloud's largest bounding-box side (which is "
                          "2-35%% smaller on LM-O). Pose-side only; caches hit. "
                          "Score-affecting — use a FRESH --out.")
-    ap.add_argument("--trans-nms", type=float, default=0.1, metavar="FRAC",
+    ap.add_argument("--trans-nms", type=float, default=0.05, metavar="FRAC",
                     help="Translation NMS radius as a FRACTION of the BOP "
                          "models_info diameter (FreeZeV2 Sec. III-F: NMS on "
                          "refined poses' translation distance; the paper "
                          "gives no radius, so the value is pinned-by-us). "
-                         "Default 0.1: same-instance duplicates from a "
-                         "multi-source union land well inside 3%% of the "
-                         "diameter (the tau_inlier/tau_ICP scale), while "
-                         "distinct touching instances sit at least a "
-                         "smallest-extent apart (>=~20-30%%). 0 disables "
-                         "(pre-NMS behaviour: duplicates may occupy "
-                         "inst_count slots). Needs models_info.json.")
+                         "Default 0.05: same-instance duplicates from a "
+                         "multi-source union converge post-ICP to within "
+                         "~1-2%% of the diameter (2.5-5x margin), while for "
+                         "thin or NESTED objects (ic-bin cups) genuinely "
+                         "distinct instances can sit closer than 0.1 "
+                         "diameters — the radius errs toward keeping real "
+                         "instances. 0 disables (pre-NMS behaviour: "
+                         "duplicates may occupy inst_count slots). Needs "
+                         "models_info.json.")
     ap.add_argument("--render-backend", default="nvdiffrast",
                     choices=["nvdiffrast", "trimesh", "auto"],
                     help="CAD renderer for query features. Default demands the "

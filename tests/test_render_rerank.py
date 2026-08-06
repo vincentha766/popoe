@@ -228,3 +228,8 @@ def test_re_icp_failure_reverts_the_flip(monkeypatch):
     assert np.allclose(out.R, np.eye(3))                   # champion pose kept
     assert out.breakdown["s_icp"] == pytest.approx(0.11)   # consistent pair
     assert np.allclose(out.breakdown["R_coarse"], R_coarse0)
+    # The score must be the CHAMPION's own appearance score, not the discarded
+    # flip's (necessarily higher) one — a scorer-less Pipeline would otherwise
+    # rank a reverted pose on a mismatched score.
+    assert out.score == pytest.approx(0.0)
+    assert out.breakdown["sar_ti"] == pytest.approx(0.0)

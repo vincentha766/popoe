@@ -21,6 +21,7 @@ data/detections/**
 # clone or pod cannot tell official artefacts apart from reimplementations,
 # nor one same-day submission batch from another.
 !data/detections/**/PROVENANCE.md
+!data/detections/MANIFEST.sha256
 *.ply
 *.pth
 *.tar

@@ -211,7 +211,22 @@ def main():
         q = PointFeatures(pts=arrays["pts"], feats=arrays["feats"],
                           meta={"pca_vis": pca, "qkey": qkey,
                                 "feats_w1": arrays["feats"]})
-        q.meta["canon_frame"] = CanonFrame.from_points(q.pts)
+        # B1-F1: serve the BUILD-TIME scale. from_points() is only the
+        # historical convention for extent-basis, ungated caches; a faithful
+        # campaign cache (diameter + MIN_VIEWS=18) stores a filtered cloud
+        # whose extent is NOT the recorded basis.
+        if "canon_scale" in arrays:
+            q.meta["canon_frame"] = CanonFrame(center=np.zeros(3, np.float32),
+                                               scale=float(arrays["canon_scale"]))
+        elif (os.environ.get("POPOE_CANON_BASIS", "extent") == "extent"
+              and os.environ.get("POPOE_QUERY_MIN_VIEWS", "0") == "0"):
+            q.meta["canon_frame"] = CanonFrame.from_points(q.pts)
+        else:
+            raise SystemExit(
+                f"query cache entry for obj {obj_id} predates the canon_scale "
+                f"record and the configured basis/visibility gate cannot be "
+                f"reconstructed from the stored points (B1-F1). Re-encode the "
+                f"campaign cache with current code before rescoring.")
         obj = ObjectModel(obj_id=obj_id, mesh_path=mesh, diameter=0.0)
         extent = float(np.ptp(q.pts, axis=0).max())
         stages = stages_for_object(extent, size_aware=obj_id in merge,

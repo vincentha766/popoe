@@ -360,12 +360,17 @@ class RenderAppearanceReranker:
                         # A flipped R carrying the champion's pre-flip s_icp is
                         # not a scoreable candidate (the 07-31 asymmetry trap
                         # in reverse). Without a consistent re-measurement,
-                        # keep the champion pose.
+                        # keep the champion pose — and the champion's OWN
+                        # appearance score: leaving the discarded flip's
+                        # (necessarily higher) sar_ti on a reverted pose gives
+                        # a scorer-less Pipeline a pose/score mismatch.
                         bd["render_rerank"] = f"reverted:{name}"
                         name = "champion"
                         flip_delta = None
                         R_best = np.asarray(pose.R, float).copy()
                         t_best = np.asarray(pose.t, float).copy()
+                        s_best = float(scores.get("champion", float("-inf")))
+                        bd["sar_ti"] = s_best
 
         if flip_delta is not None and "R_coarse" in bd:
             bd["R_coarse"] = np.asarray(bd["R_coarse"], float) @ flip_delta

@@ -171,14 +171,14 @@ Required follow-up before claiming exact setup parity:
   sparse-target sampling approximations.
 - [ ] Add a configuration/contract test covering the complete paper setup.
 
-## Two-line formal recipes (frozen 2026-07-30)
+## Two-line formal recipes
 
 > Formal score = BOP evaluation server only. Local full AR in
 > `AR_SUMMARY.md` is a development self-check, not the dissertation score.
-> All four recipes are pinned to code tag **`twoline-rerank-fix-20260731`**
-> (commit pin recorded in each recipe table; verify with
-> `git rev-parse HEAD` == `git rev-parse twoline-rerank-fix-20260731^{commit}`,
-> **not** tag-name-only `describe` — this annotated tag was moved once already).
+> Code identity is **PENDING** (see the 18-run freeze section): each script
+> refuses to run unless the operator supplies `POPOE_PIN=<frozen full sha>`.
+> The retired tag `twoline-rerank-fix-20260731` @ `509072e` predates the
+> 2026-08-06 fix wave and identifies the voided runs only.
 > Run root default: `/workspace/results/twoline_20260731_rerankfix`
 > (void batch lived at `…/twoline_20260730` — do not write new poses there).
 > Orchestration / go-no-go: `../gedi/EXPERIMENT_PLAN.md`.
@@ -269,7 +269,7 @@ out_dir/
 | Field | Frozen value |
 |---|---|
 | Report point | A / single-source |
-| Code | `twoline-rerank-fix-20260731` (`git rev-parse twoline-rerank-fix-20260731^{commit}` = `509072e`; includes one-sided S1 smoke checker) |
+| Code | **PENDING** — operator-supplied `POPOE_PIN=<frozen full sha>` (script refuses to run without it); the retired pin `twoline-rerank-fix-20260731` @ `509072e` predates the 2026-08-06 fix wave and identifies the voided runs only |
 | Datasets | LM-O + YCB-V; one full BOP test run each |
 | Detection inputs | CNOS only: `data/detections/cnos/cnos-fastsam_lmo-test.json`, `data/detections/cnos/cnos-fastsam_ycbv-test.json` |
 | Scoring | Paper Eq.7 three-term form with `--use-s-coarse`; Eq.7 exponents are **pinned-by-us** to unit exponents |
@@ -289,23 +289,13 @@ PY="${PY:-python}"
 SEED=42
 
 cd "$POPOE"
-# Pin by dereferenced tag commit, not tag *name* via describe. This annotated
-# tag was moved (22653d2 → 2b8c0eb → 509072e); plain `git fetch --tags` does
-# not clobber a local tag, so a stale tip can still `describe` clean while
-# missing scripts/check_rerank_symmetry.py. On pods: fresh clone +
-# `git fetch --tags --force` before checkout. Optional POPOE_PIN=fullsha
-# forces an exact match (set it from the recipe Code row after retag).
-TAG=twoline-rerank-fix-20260731
-TAG_COMMIT=$(git rev-parse "${TAG}^{commit}" 2>/dev/null) || {
-  echo "tag $TAG missing; run: git fetch --tags --force" >&2
-  exit 1
-}
-if [ "$(git rev-parse HEAD)" != "$TAG_COMMIT" ]; then
-  echo "wrong popoe checkout; need $TAG @ $TAG_COMMIT (got HEAD=$(git rev-parse HEAD))" >&2
-  exit 1
-fi
-if [ -n "${POPOE_PIN:-}" ] && [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
-  echo "POPOE_PIN=$POPOE_PIN does not match HEAD=$(git rev-parse HEAD)" >&2
+# Code identity is PENDING (post-fix-wave tag not cut): the operator supplies
+# the frozen full sha explicitly. The old hard pin here
+# (twoline-rerank-fix-20260731 @ 509072e) predates the 2026-08-06 fix wave —
+# executing it would force the PRE-fix code these tables no longer describe.
+: "${POPOE_PIN:?Code identity PENDING — set POPOE_PIN=<frozen full sha> once the 18-run tables are re-marked FROZEN}"
+if [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
+  echo "wrong popoe checkout; need POPOE_PIN=$POPOE_PIN (got HEAD=$(git rev-parse HEAD))" >&2
   exit 1
 fi
 for req in scripts/check_rerank_symmetry.py scripts/sar_render_compare.py; do
@@ -376,7 +366,7 @@ done
 | Field | Frozen value |
 |---|---|
 | Report point | A / four-way |
-| Code | `twoline-rerank-fix-20260731` (`git rev-parse twoline-rerank-fix-20260731^{commit}` = `509072e`; includes one-sided S1 smoke checker) |
+| Code | **PENDING** — operator-supplied `POPOE_PIN=<frozen full sha>` (script refuses to run without it); the retired pin `twoline-rerank-fix-20260731` @ `509072e` predates the 2026-08-06 fix wave and identifies the voided runs only |
 | Datasets | LM-O + YCB-V; one full BOP test run each |
 | Detection inputs | CNOS + SAM6D (official 441) + NIDS + MUSE official JSONs under `data/detections/` — the four-source composition of the paper's rows-18/19 merged segmentation cell; `--merge none` keeps the paper-style union unfiltered |
 | Scoring | Paper Eq.7 three-term form with `--use-s-coarse`; Eq.7 exponents are **pinned-by-us** to unit exponents |
@@ -396,23 +386,13 @@ PY="${PY:-python}"
 SEED=42
 
 cd "$POPOE"
-# Pin by dereferenced tag commit, not tag *name* via describe. This annotated
-# tag was moved (22653d2 → 2b8c0eb → 509072e); plain `git fetch --tags` does
-# not clobber a local tag, so a stale tip can still `describe` clean while
-# missing scripts/check_rerank_symmetry.py. On pods: fresh clone +
-# `git fetch --tags --force` before checkout. Optional POPOE_PIN=fullsha
-# forces an exact match (set it from the recipe Code row after retag).
-TAG=twoline-rerank-fix-20260731
-TAG_COMMIT=$(git rev-parse "${TAG}^{commit}" 2>/dev/null) || {
-  echo "tag $TAG missing; run: git fetch --tags --force" >&2
-  exit 1
-}
-if [ "$(git rev-parse HEAD)" != "$TAG_COMMIT" ]; then
-  echo "wrong popoe checkout; need $TAG @ $TAG_COMMIT (got HEAD=$(git rev-parse HEAD))" >&2
-  exit 1
-fi
-if [ -n "${POPOE_PIN:-}" ] && [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
-  echo "POPOE_PIN=$POPOE_PIN does not match HEAD=$(git rev-parse HEAD)" >&2
+# Code identity is PENDING (post-fix-wave tag not cut): the operator supplies
+# the frozen full sha explicitly. The old hard pin here
+# (twoline-rerank-fix-20260731 @ 509072e) predates the 2026-08-06 fix wave —
+# executing it would force the PRE-fix code these tables no longer describe.
+: "${POPOE_PIN:?Code identity PENDING — set POPOE_PIN=<frozen full sha> once the 18-run tables are re-marked FROZEN}"
+if [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
+  echo "wrong popoe checkout; need POPOE_PIN=$POPOE_PIN (got HEAD=$(git rev-parse HEAD))" >&2
   exit 1
 fi
 for req in scripts/check_rerank_symmetry.py scripts/sar_render_compare.py; do
@@ -483,7 +463,7 @@ done
 | Field | Frozen value |
 |---|---|
 | Report point | B / single-source |
-| Code | `twoline-rerank-fix-20260731` (`git rev-parse twoline-rerank-fix-20260731^{commit}` = `509072e`; includes one-sided S1 smoke checker) |
+| Code | **PENDING** — operator-supplied `POPOE_PIN=<frozen full sha>` (script refuses to run without it); the retired pin `twoline-rerank-fix-20260731` @ `509072e` predates the 2026-08-06 fix wave and identifies the voided runs only |
 | Datasets | LM-O + YCB-V; one full BOP test run each |
 | Detection inputs | CNOS only: `data/detections/cnos/cnos-fastsam_lmo-test.json`, `data/detections/cnos/cnos-fastsam_ycbv-test.json` |
 | Scoring | Campaign2 tuned ChampionScorer: grid32, weights `1.0,0.7,0.5,0.3,0.2`; YCB-V uses `--merge ycbv --use-s-coarse`, LM-O uses `--merge none` and no `--use-s-coarse` |
@@ -503,23 +483,13 @@ PY="${PY:-python}"
 SEED=42
 
 cd "$POPOE"
-# Pin by dereferenced tag commit, not tag *name* via describe. This annotated
-# tag was moved (22653d2 → 2b8c0eb → 509072e); plain `git fetch --tags` does
-# not clobber a local tag, so a stale tip can still `describe` clean while
-# missing scripts/check_rerank_symmetry.py. On pods: fresh clone +
-# `git fetch --tags --force` before checkout. Optional POPOE_PIN=fullsha
-# forces an exact match (set it from the recipe Code row after retag).
-TAG=twoline-rerank-fix-20260731
-TAG_COMMIT=$(git rev-parse "${TAG}^{commit}" 2>/dev/null) || {
-  echo "tag $TAG missing; run: git fetch --tags --force" >&2
-  exit 1
-}
-if [ "$(git rev-parse HEAD)" != "$TAG_COMMIT" ]; then
-  echo "wrong popoe checkout; need $TAG @ $TAG_COMMIT (got HEAD=$(git rev-parse HEAD))" >&2
-  exit 1
-fi
-if [ -n "${POPOE_PIN:-}" ] && [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
-  echo "POPOE_PIN=$POPOE_PIN does not match HEAD=$(git rev-parse HEAD)" >&2
+# Code identity is PENDING (post-fix-wave tag not cut): the operator supplies
+# the frozen full sha explicitly. The old hard pin here
+# (twoline-rerank-fix-20260731 @ 509072e) predates the 2026-08-06 fix wave —
+# executing it would force the PRE-fix code these tables no longer describe.
+: "${POPOE_PIN:?Code identity PENDING — set POPOE_PIN=<frozen full sha> once the 18-run tables are re-marked FROZEN}"
+if [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
+  echo "wrong popoe checkout; need POPOE_PIN=$POPOE_PIN (got HEAD=$(git rev-parse HEAD))" >&2
   exit 1
 fi
 for req in scripts/check_rerank_symmetry.py scripts/sar_render_compare.py; do
@@ -580,7 +550,7 @@ done
 | Field | Frozen value |
 |---|---|
 | Report point | B / four-way |
-| Code | `twoline-rerank-fix-20260731` (`git rev-parse twoline-rerank-fix-20260731^{commit}` = `509072e`; includes one-sided S1 smoke checker) |
+| Code | **PENDING** — operator-supplied `POPOE_PIN=<frozen full sha>` (script refuses to run without it); the retired pin `twoline-rerank-fix-20260731` @ `509072e` predates the 2026-08-06 fix wave and identifies the voided runs only |
 | Datasets | LM-O + YCB-V; one full BOP test run each |
 | Detection inputs | CNOS + SAM6D + NIDS + official MUSE JSONs under `data/detections/`; `muse` means downloaded official artefacts, not `muse-repro` |
 | Scoring | Campaign2 tuned ChampionScorer: grid32, weights `1.0,0.7,0.5,0.3,0.2`; YCB-V uses `--merge ycbv --use-s-coarse`, LM-O uses `--merge none` and no `--use-s-coarse` |
@@ -600,23 +570,13 @@ PY="${PY:-python}"
 SEED=42
 
 cd "$POPOE"
-# Pin by dereferenced tag commit, not tag *name* via describe. This annotated
-# tag was moved (22653d2 → 2b8c0eb → 509072e); plain `git fetch --tags` does
-# not clobber a local tag, so a stale tip can still `describe` clean while
-# missing scripts/check_rerank_symmetry.py. On pods: fresh clone +
-# `git fetch --tags --force` before checkout. Optional POPOE_PIN=fullsha
-# forces an exact match (set it from the recipe Code row after retag).
-TAG=twoline-rerank-fix-20260731
-TAG_COMMIT=$(git rev-parse "${TAG}^{commit}" 2>/dev/null) || {
-  echo "tag $TAG missing; run: git fetch --tags --force" >&2
-  exit 1
-}
-if [ "$(git rev-parse HEAD)" != "$TAG_COMMIT" ]; then
-  echo "wrong popoe checkout; need $TAG @ $TAG_COMMIT (got HEAD=$(git rev-parse HEAD))" >&2
-  exit 1
-fi
-if [ -n "${POPOE_PIN:-}" ] && [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
-  echo "POPOE_PIN=$POPOE_PIN does not match HEAD=$(git rev-parse HEAD)" >&2
+# Code identity is PENDING (post-fix-wave tag not cut): the operator supplies
+# the frozen full sha explicitly. The old hard pin here
+# (twoline-rerank-fix-20260731 @ 509072e) predates the 2026-08-06 fix wave —
+# executing it would force the PRE-fix code these tables no longer describe.
+: "${POPOE_PIN:?Code identity PENDING — set POPOE_PIN=<frozen full sha> once the 18-run tables are re-marked FROZEN}"
+if [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
+  echo "wrong popoe checkout; need POPOE_PIN=$POPOE_PIN (got HEAD=$(git rev-parse HEAD))" >&2
   exit 1
 fi
 for req in scripts/check_rerank_symmetry.py scripts/sar_render_compare.py; do
@@ -1242,16 +1202,19 @@ pins in the tables below and in `data/detections/*/PROVENANCE.md`.
 known-issues triage completes. **Nothing runs before the tag lands and this
 section is re-marked FROZEN.** The method flags below (faithful pins, tuned
 grid32/five-weights, YCB-V merge+s-coarse) carry over unchanged unless the
-triage says otherwise. Triage-driven addition to every arm: `--trans-nms 0.1`
+triage says otherwise. Triage-driven addition to every arm: `--trans-nms 0.05`
 — paper §III-F translation NMS on refined poses; the paper names the mechanism
-but no radius, so the value (0.1× the models_info diameter) is pinned-by-us
+but no radius, so the value (0.05× the models_info diameter; same-instance duplicates converge post-ICP within ~1-2% of the diameter, and nested/thin objects can hold distinct instances closer than 0.1) is pinned-by-us
 and parameterised. Default-on in `bop_eval.py`; spell it explicitly when the
 tables freeze. `--trans-nms 0` disables and must be recorded as a deviation.
 
-Detection inputs are real bytes (no symlinks) verified against the
-`data/detections/*/PROVENANCE.md` hash registries by
-`scripts/freeze_detections.py`; pods run it with `--check` before any eval
-(refuses symlinks and unregistered hashes). The previous Phase D scores (subs 40054/40057-40059,
+Detection inputs are real bytes (no symlinks, file or directory) bound to
+their paths by `data/detections/MANIFEST.sha256` (tracked; path+hash — a
+registered file at the wrong path fails) and registered in the per-source
+`PROVENANCE.md`; `scripts/freeze_detections.py` enforces both. Pods run it
+before any eval as `--check --need <the run's relative paths>` — `--need`
+is the per-run completeness gate (a lost rsync fails loudly instead of
+reading as an empty-but-clean tree). The previous Phase D scores (subs 40054/40057-40059,
 40146-40149) are void; the old two-table Phase E framing is superseded by
 this section.
 

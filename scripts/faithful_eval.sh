@@ -58,11 +58,10 @@ env | grep '^POPOE_' | sort
 "$PY" examples/bop_eval.py \
   --bop "$BOP/$BOP_DS" --dataset "$BOP_DS" \
   --detections "$DET_JSON" \
-  --merge none --topk 2 --grid 16 --solver o3d --seed "$SEED" \
+  --merge none --topk 2 --grid 16 --solver gpu-feat --seed "$SEED" \
   --weights 1.0 \
   `# Eq.7 coarse term (paper formula, unit exponents per yi-11) — NOT the tuned-line per-dataset S_coarse rule; gedi CONSOLIDATION §2.1` \
   --use-s-coarse \
-  --corr-topk 10 \
   --tau-diameter \
   --icp-dense --icp-dense-max 3000 \
   --render-rerank \

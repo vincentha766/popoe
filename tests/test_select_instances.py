@@ -108,3 +108,16 @@ def test_nms_is_greedy_against_kept_not_transitive():
               2: [_ht(0.7, "c", [0.03, 0, 0])]}
     got = select_top_instances(by_det, SEL, 3, nms_dist=0.02)
     assert [c.breakdown["tag"] for c in got] == ["a", "c"]
+
+
+def test_nms_drops_nonfinite_translations_instead_of_letting_them_suppress():
+    # NaN >= dist is False against every later champion, so one garbage row
+    # would otherwise suppress the whole target. The garbage row is dropped;
+    # with NMS off, legacy behaviour (garbage row kept) is unchanged.
+    by_det = {0: [_ht(0.9, "bad", [float("nan"), 0, 0])],
+              1: [_ht(0.8, "a", [1.0, 0, 0])],
+              2: [_ht(0.7, "b", [2.0, 0, 0])]}
+    got = select_top_instances(by_det, SEL, 3, nms_dist=0.02)
+    assert [c.breakdown["tag"] for c in got] == ["a", "b"]
+    got = select_top_instances(by_det, SEL, 3)
+    assert [c.breakdown["tag"] for c in got] == ["bad", "a", "b"]

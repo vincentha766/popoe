@@ -158,6 +158,11 @@ def select_top_instances(hyps_by_det: dict, selector, k: int,
     champs = [c for c in champs if c is not None]
     champs.sort(key=lambda c: -c.score)
     if nms_dist > 0.0:
+        # A champion with a non-finite translation cannot be distance-compared:
+        # NaN >= nms_dist is False against EVERY later champion, so one garbage
+        # row would suppress the whole target. Such a pose is unusable anyway —
+        # drop it before the greedy pass.
+        champs = [c for c in champs if np.isfinite(c.t).all()]
         kept = []
         for c in champs:
             if all(float(np.linalg.norm(c.t - p.t)) >= nms_dist for p in kept):
