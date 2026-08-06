@@ -22,6 +22,149 @@ script line** (the dissertation's reproduction headline) through popoe
 entrypoints, under the dual-disclosure discipline of `../gedi/EXPERIMENTS.md`
 §0: the reproduction headline is never rewritten by the popoe line.
 
+## FreeZeV2 §IV-A experimental-setup conformance audit (2026-08-06)
+
+Source: the Experimental Setup section (**§IV-A**, under "IV. Results") of
+`2506.09784.pdf` = `papers/2506.09784v1.pdf` in the gedi archive. That single
+tech report is the source for **both** FreeZeV2 (Table II Row 18) and
+FreeZeV2-Accurate (Row 19); Row 19 is the BOP Challenge 2024 winner and is
+identified by the paper itself as "entry **FreeZeV2.1** in the leaderboard"
+(= `method_info/905`). The v2.1-only deltas are audited in a separate table
+below, since §IV-A describes the shared setup, not Row 19's extras (those are
+stated in §IV-D, Quantitative results).
+Code inspected: the working tree based on `1d785b7` (dirty at audit time).
+This is a setup/protocol audit, not a result row or a reproducible run identity;
+re-check the findings against the eventual committed diff.
+
+Status meanings: **match** = the paper setting and executed path agree;
+**approximation** = an explicit local substitute; **partial** = the number is
+present but its scope or semantics differs; **missing** = the paper protocol is
+not implemented by the formal runner.
+
+| Paper setting | Current popoe formal path | Status / disclosure |
+|---|---|---|
+| CNOS, SAM-6D, NIDS and MUSE, evaluated individually or as an ensemble (§IV-A verbatim; the ensemble rows 18/19 use all four) | `scripts/faithful_eval.sh` is CNOS-only. The A ensemble recipe below is three-source; the B four-source recipe is tuned rather than paper-faithful. Four-source detection assets are currently complete only for LM-O and YCB-V, not all seven BOP-Classic-Core datasets. | **Partial.** Do not describe either A/three-way or B/four-way as an exact reproduction of the complete segmentation setup. **Why A is three-way**: a **project scoping decision, not an availability limit** — official MUSE masks for LM-O and YCB-V were already in `data/detections/muse/` when the recipe froze on 2026-07-30, and the other five core sets are downloadable too (see the resolved MUSE note below). Never justify three-way as a MUSE-availability limit. Do *not* justify three-way as "matching `method_info/756`'s three-source self-description" — three-way appears nowhere in the paper, and 756 is the only FreeZeV2 config with no corresponding paper row. |
+| 162 templates per object, using the CNOS camera viewpoints | Faithful pins set `POPOE_N_VIEWS=162` and `POPOE_QUERY_VIEWS=ico162`. | **Match.** |
+| Retain raw query points visible in at least `V=18` views | Faithful pins set `POPOE_QUERY_MIN_VIEWS=18`; filtering is implemented in `src/popoe/freeze/feature_extractor.py`. | **Match.** |
+| Render at 480×480 with the object occupying approximately 50% of width/height | Faithful pins use `POPOE_QUERY_CANON=476` and `POPOE_QUERY_FILL=0.5`; 476 is the local DINO patch-grid-compatible substitute. | **Approximation.** Always disclose 476/0.5, not “exact 480×480”. |
+| ViT-giant DINOv2 patch features from intermediate layers, following FoundPose | The backbone is `dinov2_vitg14_reg`. The implementation selects one inferred FoundPose-style layer (block 30 for ViT-g), because the public text does not pin an exact block/list. | **Partial / pinned-by-us.** Backbone matches; layer selection is a local inference. |
+| Query point set 5k | The adapter samples 5k surface points before the `V=18` visibility gate; the final retained query set can therefore contain fewer than 5k points. | **Partial.** The paper's stated 5k budget is not enforced after filtering. |
+| Dense target point set 3k | `--icp-dense --icp-dense-max 3000` caps the separately reconstructed ICP cloud. GeDi target encoding still builds neighborhoods from all valid mask-depth pixels. | **Missing as a shared budget.** The 3k cap applies to ICP only, not to the dense target set used throughout feature extraction. |
+| Sparse target point set at most 256 | Faithful recipes use `--grid 16`, giving at most 256 samples. The implementation uses a rectangular mask grid and target-side bilinear feature sampling rather than the paper-highlighted square/no-interpolation behavior. | **Partial.** The count matches; sampling semantics do not. |
+| Top-`k=10` feature correspondences | Faithful recipes pass `--corr-topk 10`. | **Match for the configured solver path.** |
+| Localization keeps `M=N+1` proposals | `examples/bop_eval.py` floors `M` using the dataset-wide maximum target multiplicity. This gives `M=2` on the single-instance LM-O/YCB-V cases, but does not compute `N+1` per target on general multi-instance datasets. | **Partial / missing generally.** |
+| Detection uses `M=100` and discards masks below `tau_mask=0.4` | The formal runner consumes BOP `test_targets_bop19.json` and exposes neither this detection-mode proposal count nor the paper confidence cutoff. | **Missing.** Current formal runs are localization-protocol runs. |
+| Two-scale GeDi: 32D per scale, neighborhoods at 30% and 40% of object diameter | `_TwoScaleGeDi` concatenates two 32D descriptors; faithful diameter normalization makes radii 0.3 and 0.4 object diameter. | **Match.** |
+| PCA/fusion output dimension 128 | Two-scale geometry is 64D; visual PCA defaults to 64D; normalized concatenation produces 128D. | **Match.** |
+| RANSAC inlier and ICP thresholds are 3% of object diameter | Faithful recipes pass `--tau-diameter`; the threshold is derived from the diameter-normalized canonical frame. | **Match.** |
+| Parallel GPU RANSAC, 10,000 iterations, selected with the feature-aware score | The iteration count is 10,000, but formal faithful recipes select `--solver o3d`. That path is CPU Open3D geometry RANSAC and does not execute the paper's Eq. 5 feature-aware hypothesis selection. `GPURansacSolver` contains the feature-aware score but is not wired into these recipes. | **Missing on the executed path; critical deviation.** |
+| Timing hardware: NVIDIA A40 and Xeon Silver 4316 @ 2.30 GHz | Recorded project runs use the lab 4×RTX 4090 host or other stated infrastructure; recipes do not assert the paper CPU/GPU model. | **Hardware mismatch.** Accuracy results may still be compared with full disclosure; runtime/FPS must not be presented as paper-hardware parity. |
+
+Additional algorithmic variable: every formal recipe below enables
+`--render-rerank`, which is not specified in §IV-A. It must be reported as a
+popoe extension rather than folded into the “faithful” label.
+
+### v2.1-only deltas (Table II Row 19 = FreeZeV2-Accurate = `method_info/905`)
+
+Row 19 is the strongest configuration **in Table II of this report**, and has
+full public per-set scores on the BOP leaderboard (LM-O 0.771 / YCB-V 0.915;
+§IV-D reports mean 82.1 AR, and gedi `BOP_OFFICIAL_BASELINES.md` note 1 records
+that 905 matches Row 19 digit-for-digit across all seven sets).
+
+**It is not the strongest published FreeZe config, and not the leaderboard
+top.** `method_info/1063` = **FreeZeV2.2** (2025-05-31) scores ARCore **0.833**
+vs v2.1's 0.821 — LM-O 0.777 / YCB-V 0.918 (gedi
+`BOP_OFFICIAL_BASELINES.md`). Its stated delta is feature-similarity in the
+RANSAC fitness, and its **segmentor composition is publicly undeclared**, which
+is why gedi `DISSERTATION_PLAN.md` treats v2.2 as a Ch2 frontier reference point
+only and never as a like-for-like target. Above v2.2 the board itself has
+FRTPose-WAPR.v2 at 0.837. So qualify the superlative every time: Row 19 is the
+best config *in this paper*, v2.1 is the best *documented and decomposable
+ceiling* for this audit, and neither is state of the art.
+
+Row 19 is nonetheless the right **ceiling** reference for this audit, because it
+is the strongest config whose recipe is documented well enough to enumerate
+deltas at all. Each delta has a different kind of unavailability, and
+they must not be collapsed into one "missing":
+
+| v2.1 delta | Status | Reason / what it would take |
+|---|---|---|
+| `M = 2N` masks per segmentation model | **Missing, but alignable.** No closed dependency. | **Two distinct sources, do not conflate.** (a) *Where `2N` is stated*: §IV-D prose on Row 19 only — "increases the number of processed masks up to `M = 2N`". No ablation, no per-set numbers, no timing for `2N` anywhere in the report. (b) *What Table V actually ablates*: `M ∈ {N, N+1, N+2}` for the **base FreeZeV2** localization protocol (73.7 / 75.4 / 75.6 mean AR at 1.2 / 1.5 / 1.7 s), establishing that `N+1` is the paper's default and that returns are already flattening by `N+2` (+0.2). Table V therefore **does not validate `2N`** — it neither measures it nor bounds it; the `N+2` trend is only weak evidence that `2N`'s gain is small and its cost is not. What makes `2N` alignable is that the *quantity* `M` is public and parameter-free, not that it was ablated. Prerequisite is the per-target `N+1` fix already listed above — `examples/bop_eval.py` currently floors `M` from the dataset-wide maximum multiplicity, giving `M=2` on single-instance LM-O/YCB-V, so there is no per-target `N` to double yet. Once `N` is per-target, `2N` is a coefficient change; report any `2N` run as our own measurement, since the paper gives no `2N` number to compare against. |
+| Symmetry-Aware Refinement (SAR) | **Approximation ceiling: implementable, not verifiable as equivalent.** | §IV-D only says v2.1 "integrates Symmetry-Aware Refinement (SAR) [9]" — ref [9] is FreeZe v1 (`2312.00947v3` §3.6, "based on rendering and visual features"). So the spec lives in a *different* paper and there is no public code. popoe's `--render-rerank` reorders PCA flip variants only (see every recipe's Cautions row). gedi `scripts/freezev2_sym_refine.py` is closer (PCA 3 axes × 36 angles, Chamfer < 1% diameter, ≤32 symmetries) but is our own symmetry enumeration, not a port of v1 SAR. Any implementation must be disclosed as an approximation of SAR, never as SAR. |
+| Improved scoring by comparing visual features of input image vs rendered pose | **Missing.** | §IV-D gives one prose sentence, no equation and no parameters. Not reconstructible to a verifiable spec from the public text. |
+
+**Four-source masks including MUSE are NOT a v2.1-only delta** — Rows 18 and 19
+use the same four sources, so MUSE belongs to the shared §IV-A setup row above,
+not here. Row 19's deltas over Row 18 are exactly the three in this table.
+
+MUSE mask availability — **RESOLVED 2026-08-06 against `method_info/873`.**
+
+MUSE has no public code, but **official masks are downloadable for all seven
+BOP-Classic-Core sets.** The two files already in `data/detections/muse/`
+(downloaded 2026-07-26, SHA256s in
+`outputs/seg_ap_20260725T223014Z/OFFICIAL_JSON_ACQUISITION.md`) are members of
+the same authored batch as the other five:
+
+| Dataset | `sub_info` | Batch (2025-08-26) | Records | SHA256 |
+|---|---|---|---:|---|
+| LM-O | **29108** | 05:14 | 7146 | `55061983089d6236c19cb9b6a8a6c754388d146287be45ec40ceb9c32dbe3003` |
+| YCB-V | **29113** | 05:16 | 16902 | `b4703a218d13f707d47556b2733eeddc38fea7d89bf927d113da25349c74f497` |
+| IC-BIN | 29109 | 05:14 | 4731 | `34a2a40b3c716bb3c36b0739d49ebc885019cb6d97079d4e5e1ba9c743ed1427` |
+| TUD-L | 29110 | 05:15 | 15736 | `38dc40cfa75f22a74f1f85cb10fb2283adb99db65ea496dff68bf216beeccb8b` |
+| T-LESS | 29111 | 05:15 | 26511 | `78bcdab72d0eac44ab5b8477eec9e229fdaa2e61fdc69bcec48be46a3f230482` |
+| ITODD | 29112 | 05:15 | 6320 | `2d34ebce3a464f129f6cdc8770686df56869eafa8bd8fff135fbfecb3c65813a` |
+| HB | **29063** | 05:15 | 6440 | `c0e0802a3db1e2394507099098ed5000208d93e1701f8b19850d6cd6d7d59d1d` |
+
+All seven are now downloaded (2026-08-06). MUSE was therefore not an
+availability limit when the formal recipe froze on 2026-07-30, and
+`muse-repro` is *not* required to cover them. Two claims are withdrawn:
+"no downloadable masks" (gedi `notes.md`) and "authors only published these
+two sets / 不可能" (gedi `TODO.md`) — both were wrong.
+
+Two traps if these files are re-fetched:
+
+1. **HB is `29063`**, outside the otherwise contiguous 29104–29124 block. Do not
+   infer IDs by counting.
+2. **The 05:47–05:48 submissions (`29115`–`29121`) are a different TASK, not a
+   re-run** — "Model-based 2D detection of unseen objects", bbox only, with **no
+   `segmentation` field at all** (verified 2026-08-06). Unusable as mask input;
+   their AP is box AP and is not comparable to the seg AP above. Take masks only
+   from the 05:14–05:16 segmentation batch. Full seg-vs-det AP table and the
+   evaluator-spread caveat on LM-O (public 0.477 vs local PyPI 0.471 vs BOP-fork
+   0.483) are in `data/detections/muse/PROVENANCE.md` — that file is a tracked
+   `.gitignore` exception precisely so this provenance survives a fresh clone.
+
+`muse-repro` (`src/popoe/segmentor_muse.py`, 1149-line from-paper
+reimplementation; seg-AP YCB-V 0.684 vs official 0.690, LM-O 0.388 vs 0.471)
+therefore keeps its original role — evidence for the T1 from-paper reproduction
+claim in gedi `EXPERIMENTS.md`, not a replacement for official masks in pose
+runs.
+
+Consequence for the dissertation: the MUSE artefacts and the `M=2N` rule are
+obtainable, but exact Row 19 recipe parity remains unverifiable because SAR and
+render scoring are underspecified. The distance to 905 is confounded by SAR +
+`M=2N` + render scoring — report it as a not-yet-matched ceiling, never as a
+reproduction residual. The
+detection-matched residual stays at A/three-way vs `method_info/756`, and even
+that is matched only in **detection source count**: the critical-deviation row
+above (`--solver o3d` bypassing the Eq. 5 feature-aware selector) plus
+`--render-rerank` mean the *pose stage* is not recipe-matched in either
+direction. Prose must say "detection-matched", never "recipe-matched".
+
+Required follow-up before claiming exact setup parity:
+
+- [ ] Route the paper-faithful recipe through 10,000-iteration GPU
+  feature-aware RANSAC and verify that Eq. 5 is the executed selector.
+- [ ] Define one 3k dense target cloud and reuse it consistently for GeDi and
+  ICP, or document and ablate the split budgets.
+- [ ] Implement per-target `M=N+1` and a separate detection protocol with
+  `M=100`, `tau_mask=0.4`. This is a prerequisite for the v2.1 `M=2N` row
+  above, and also touches the multi-instance sets (ITODD / IC-BIN / T-LESS)
+  whose per-dataset spread is still recorded as unexplained below.
+- [ ] Resolve or explicitly preserve the 480→476, post-visibility 5k, and
+  sparse-target sampling approximations.
+- [ ] Add a configuration/contract test covering the complete paper setup.
+
 ## Two-line formal recipes (frozen 2026-07-30)
 
 > Formal score = BOP evaluation server only. Local full AR in
@@ -32,7 +175,7 @@ entrypoints, under the dual-disclosure discipline of `../gedi/EXPERIMENTS.md`
 > **not** tag-name-only `describe` — this annotated tag was moved once already).
 > Run root default: `/workspace/results/twoline_20260731_rerankfix`
 > (void batch lived at `…/twoline_20260730` — do not write new poses there).
-> Orchestration / go-no-go: `../gedi/EXPERIMENT_PLAN_TWOLINE_RERUN.md`.
+> Orchestration / go-no-go: `../gedi/EXPERIMENT_PLAN.md`.
 >
 > > ⚠️ **The 2026-07-30 batch of eight runs is void.** It ran at
 > > `twoline-prep-20260730a`, where `--render-rerank` re-ICP'd only the flipped
@@ -651,12 +794,19 @@ then the spread is recorded as unexplained rather than narrated.
 
 Full gap report: `../gedi/EXPERIMENTS.md` Appendix B. Known candidates:
 
-- Grasp-axis evaluation (ADD(-S)@0.1d) — currently only in gedi
-  `scripts/freezev2_grasp_eval.py` (usable as external CLI on popoe pose CSVs;
-  no `examples/` port yet).
-- VSD computation / cross-check tooling (`freezev2_vsd_*.py`) — full BOP AR
-  for #1/#2 still depends on gedi `scripts/freezev2_vsd_compute.py` after the
-  pose CSV exists (AR(2/3) is local via `freezev2_compute_ar_mssd_mspd.py`).
+- ~~Grasp-axis evaluation (ADD(-S)@0.1d)~~ — **CLOSED 2026-08-06**:
+  ported to `src/popoe/metrics/grasp.py` (`python -m popoe.metrics.grasp
+  preds.csv`, env `BOP_PATH` + `POPOE_BOP_TOOLKIT`). Parity verified
+  **bit-identical** against the archived originals
+  (`outputs/pipeline_verify_20260726/parity_{ycbv,lmo}_grasp.txt`: YCB-V
+  0.8240/0.7716, LM-O 0.7706/0.5146). Keeps the archived per-object calibre
+  by design — see the module docstring before "fixing" it to flat.
+- ~~VSD computation / AR(2/3)~~ — **CLOSED (stale entry, corrected
+  2026-08-06)**: `src/popoe/metrics/vsd.py` (nvdiffrast, no OpenGL/EGL) and
+  `src/popoe/metrics/ar.py` are the ports of gedi
+  `freezev2_vsd_compute.py` / `freezev2_compute_ar_mssd_mspd.py`, both
+  reporting BOP flat calibre with legacy per-object as secondary
+  (`metrics/aggregate.py`). This entry predated the metrics package.
 - Adaptive visual-weight sweep harness (`freezev2_sweep_vis_weight.py`) —
   partially absorbed by `bop_eval --weights` + ChampionScorer; multi-dataset
   adaptive claim still needs TUD-L / IC-BIN.
@@ -1065,3 +1215,74 @@ recalls, `recall@0.1d = 0.000` for all three, and the 72/33/35 head-to-head
 reproduce exactly from `mssd140_run.log`. `solver_swap_demo` now prints the
 `@0.5d` column itself (`698ffd5`); before that it emitted only
 @0.05/0.1/0.2d and this row's `@0.5d` had to be re-derived.
+
+## Phase E seven-set freeze tables (frozen 2026-08-06, run NOTHING before both are pinned)
+
+Two independent breadth lines (gedi `EXPERIMENT_PLAN.md` §5, Vincent
+2026-08-06). Both frozen BEFORE any new server score is read; no post-hoc
+selection between lines. Method identity for both = the Phase D frozen recipe
+flags at tag `twoline-rerank-fix-20260731` (`509072e`); if a new tag is cut,
+RE-FREEZE these tables against it before running.
+
+Common pins (both lines): `--topk 2 --grid 32 --solver o3d --seed 42
+--weights 1.0,0.7,0.5,0.3,0.2 --render-rerank --render-backend nvdiffrast`;
+YCB-V uses `--merge ycbv --use-s-coarse`; all other datasets `--merge none`,
+no `--use-s-coarse`. OMP/host/sharding are runtime provenance only.
+
+### E-cnos (`tuned-cnos` x 7)
+
+Comparator: FreeZe(CNOS) per-set (same detection input). LM-O + YCB-V reuse
+the accepted Phase D B-single results (identical inputs); five new runs.
+
+| Dataset | Detection input | SHA256 |
+|---|---|---|
+| lmo | `data/detections/cnos/cnos-fastsam_lmo-test.json` | `1a03d3c7a1d57a9c7e6e1bc162f99281b5044ca50428c619477ec4ab11fa375a` |
+| tudl | `data/detections/cnos/cnos-fastsam_tudl-test.json` | `400978b21a94aaa109d6e5039df7aefa7cdbdc6af037cbd1b05ab586ae6d540d` |
+| tless | `data/detections/cnos/cnos-fastsam_tless-test.json` | `db010fbce92149a54ae7a252176d6dee80823353a7e5d704c0f33657c5b1ecec` |
+| icbin | `data/detections/cnos/cnos-fastsam_icbin-test.json` | `922b9878b1e8e8cac7d9245daa672de7568408ca0d4a8f9a7884bb532f93bcc3` |
+| itodd | `data/detections/cnos/cnos-fastsam_itodd-test.json` | `cce4bcc9d33618e215f1099f9ac7f04598c0f39188585e739dd992496c3bbbd6` |
+| hb | `data/detections/cnos/cnos-fastsam_hb-test.json` | `7eb39ad0d82783dc59a49cd2f6654c99b63d3b3ef3f051f3368056755e94e6b0` |
+| ycbv | `data/detections/cnos/cnos-fastsam_ycbv-test.json` | `fdec15729676e15876302fc620f752cc5290ee28da5fc3c7e17da1072fd4f422` |
+
+### E-4way (`tuned-4way`-official x 7)
+
+Comparator: FreeZeV2.1(905) per-set — confounded by SAR + M=2N +
+render-scoring, label every reading; secondary 756. **SAM6D = official BOP
+submissions for ALL SEVEN sets** (Vincent 2026-08-06) — a DIFFERENT detection
+identity from Phase D `tuned-4way` (local ISM); all seven sets run fresh, and
+Phase D vs Phase E numbers must never be presented as same-input.
+
+| Dataset | Source | Detection input | SHA256 |
+|---|---|---|---|
+| lmo | cnos | `data/detections/cnos/cnos-fastsam_lmo-test.json` | `1a03d3c7a1d57a9c7e6e1bc162f99281b5044ca50428c619477ec4ab11fa375a` |
+| lmo | sam6d | `data/detections/sam6d/sam6d_official_lmo.json` | `31fe66fe4ae9772b37d30fcbeb322186ddafb9402d2981882504c7b79cd7f73b` |
+| lmo | nids | `data/detections/nids/nids_wa_sappe_lmo.json` | `8cf9c392a82153b3bbf1c6baa5a7a4fac056e6fc4f35ec645a1f3f76d6f75aea` |
+| lmo | muse | `data/detections/muse/muse-full_lmo-test.json` | `55061983089d6236c19cb9b6a8a6c754388d146287be45ec40ceb9c32dbe3003` |
+| tudl | cnos | `data/detections/cnos/cnos-fastsam_tudl-test.json` | `400978b21a94aaa109d6e5039df7aefa7cdbdc6af037cbd1b05ab586ae6d540d` |
+| tudl | sam6d | `data/detections/sam6d/sam6d_official_tudl.json` | `42b94fd25a1f8ccfb1be855e04f161679b8932f99779e29d67ffc5f41ca1ebfe` |
+| tudl | nids | `data/detections/nids/nids_wa_sappe_tudl.json` | `90137dcec2f140d2b8130e72524d751d1b94fd751efd90a05c8a089861357c4e` |
+| tudl | muse | `data/detections/muse/muse-full_tudl-test.json` | `38dc40cfa75f22a74f1f85cb10fb2283adb99db65ea496dff68bf216beeccb8b` |
+| tless | cnos | `data/detections/cnos/cnos-fastsam_tless-test.json` | `db010fbce92149a54ae7a252176d6dee80823353a7e5d704c0f33657c5b1ecec` |
+| tless | sam6d | `data/detections/sam6d/sam6d_official_tless.json` | `ca66acdce2ccc13eb1d2b92f09e92bdf0a627f28f8daa2698bbe61628d161918` |
+| tless | nids | `data/detections/nids/nids_wa_sappe_tless.json` | `16da4f7965e3adcaaa432163ba9f2953d42a3987aca1f38e7dcc42295901b11b` |
+| tless | muse | `data/detections/muse/muse-full_tless-test.json` | `78bcdab72d0eac44ab5b8477eec9e229fdaa2e61fdc69bcec48be46a3f230482` |
+| icbin | cnos | `data/detections/cnos/cnos-fastsam_icbin-test.json` | `922b9878b1e8e8cac7d9245daa672de7568408ca0d4a8f9a7884bb532f93bcc3` |
+| icbin | sam6d | `data/detections/sam6d/sam6d_official_icbin.json` | `ffa2c2fd0ea91b78f0e88453d7e74d9aa600d177a16481a0d50e72517948b093` |
+| icbin | nids | `data/detections/nids/nids_wa_sappe_icbin.json` | `2a39dad6d5273c45ef6c88415a78f30e7e6819bb654210a0917b8dcc1ca580cd` |
+| icbin | muse | `data/detections/muse/muse-full_icbin-test.json` | `34a2a40b3c716bb3c36b0739d49ebc885019cb6d97079d4e5e1ba9c743ed1427` |
+| itodd | cnos | `data/detections/cnos/cnos-fastsam_itodd-test.json` | `cce4bcc9d33618e215f1099f9ac7f04598c0f39188585e739dd992496c3bbbd6` |
+| itodd | sam6d | `data/detections/sam6d/sam6d_official_itodd.json` | `c058878ac377799f7483797ea2dfe1e1dd90bebc69eba27f55ae82ad926716a7` |
+| itodd | nids | `data/detections/nids/nids_wa_sappe_itodd.json` | `cd3300ce053ee425be4b8bd9c003bfd4d08f2b6dc2153496d1ce74d5c57900dd` |
+| itodd | muse | `data/detections/muse/muse-full_itodd-test.json` | `2d34ebce3a464f129f6cdc8770686df56869eafa8bd8fff135fbfecb3c65813a` |
+| hb | cnos | `data/detections/cnos/cnos-fastsam_hb-test.json` | `7eb39ad0d82783dc59a49cd2f6654c99b63d3b3ef3f051f3368056755e94e6b0` |
+| hb | sam6d | `data/detections/sam6d/sam6d_official_hb.json` | `0b7fa39669bb9c7909930f8bd37a0bbef648b47d1bb43156d5452c79bb3feafc` |
+| hb | nids | `data/detections/nids/nids_wa_sappe_hb.json` | `1bac5e38fc97a6810c43adb6b733daa7ba533358a7e1c49773d543aff7f7a0d9` |
+| hb | muse | `data/detections/muse/muse-full_hb-test.json` | `c0e0802a3db1e2394507099098ed5000208d93e1701f8b19850d6cd6d7d59d1d` |
+| ycbv | cnos | `data/detections/cnos/cnos-fastsam_ycbv-test.json` | `fdec15729676e15876302fc620f752cc5290ee28da5fc3c7e17da1072fd4f422` |
+| ycbv | sam6d | `data/detections/sam6d/sam6d_official_ycbv.json` | `64f50fbbe61454ef99881ba09c060df3f1baf00589a751c21327cdd202513a13` |
+| ycbv | nids | `data/detections/nids/nids_wa_sappe_ycbv.json` | `6eb751b20898e5cc8f499922590e9a07c2a645cfb7d5d14f7c59cb0d51c8544a` |
+| ycbv | muse | `data/detections/muse/muse-full_ycbv-test.json` | `b4703a218d13f707d47556b2733eeddc38fea7d89bf927d113da25349c74f497` |
+
+Preflight per dataset (EXPERIMENT_PLAN §5.3): layout/detection checksum match
+against this table -> numeric smoke -> full run -> acceptance -> time-normalized
+private submission. Stop rules in EXPERIMENT_PLAN §7 apply unchanged.
