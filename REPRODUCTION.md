@@ -1238,7 +1238,12 @@ triage says otherwise. Triage-driven addition to every arm: `--trans-nms 0.1`
 — paper §III-F translation NMS on refined poses; the paper names the mechanism
 but no radius, so the value (0.1× the models_info diameter) is pinned-by-us
 and parameterised. Default-on in `bop_eval.py`; spell it explicitly when the
-tables freeze. `--trans-nms 0` disables and must be recorded as a deviation. The previous Phase D scores (subs 40054/40057-40059,
+tables freeze. `--trans-nms 0` disables and must be recorded as a deviation.
+
+Detection inputs are real bytes (no symlinks) verified against the
+`data/detections/*/PROVENANCE.md` hash registries by
+`scripts/freeze_detections.py`; pods run it with `--check` before any eval
+(refuses symlinks and unregistered hashes). The previous Phase D scores (subs 40054/40057-40059,
 40146-40149) are void; the old two-table Phase E framing is superseded by
 this section.
 

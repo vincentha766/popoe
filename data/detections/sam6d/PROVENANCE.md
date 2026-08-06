@@ -41,6 +41,19 @@ to the leaderboard row (LM-O 0.460). Always check the Task field.
 | HB | [8008](https://bop.felk.cvut.cz/sub_info/8008/) | 13240 | `0b7fa39669bb9c7909930f8bd37a0bbef648b47d1bb43156d5452c79bb3feafc` |
 | YCB-V | [8009](https://bop.felk.cvut.cz/sub_info/8009/) | 30374 | `64f50fbbe61454ef99881ba09c060df3f1baf00589a751c21327cdd202513a13` |
 
+## Local ISM runs (frozen Phase D lineage, superseded — no arm uses these)
+
+| File | SHA256 |
+|---|---|
+| `sam6d_ism_lmo.json` | `19f44ba740e422d3b7ad09d08656bcca03092a4dc1e21707d5f35243e49f1107` |
+| `sam6d_ism_ycbv.json` | `dcadea8f62d37779747c52e153180c36d72b37fde3a3cd08ba36d02d75ef081c` |
+
+## Local test fixture (not a detection input)
+
+| File | SHA256 |
+|---|---|
+| `union_cnos_sam6d_lmo.reference.json` (union-ingestion parity reference, `tests/test_union_reference_xval.py`) | `5c11cf2d5d98db241798f55976c7cdcff9561350cd87cc46040747e599a7c40b` |
+
 Files live in `outputs/seg_ap_20260725T223014Z/official_submissions/`;
 symlinked here as `sam6d_official_<ds>.json`. Schema per record:
 `scene_id, image_id, category_id, bbox, score, time, segmentation` (verified
