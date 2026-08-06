@@ -11,7 +11,16 @@ venv/
 # data / weights / outputs (never commit these)
 # Downloaded BOP detection files (CNOS / SAM-6D / NIDS) — large; see README
 # "Detections" for download sources. Test fixtures live under tests/fixtures/.
-data/detections/
+# NOTE: exclude the CONTENTS, not the directory itself — git cannot re-include
+# a file whose parent directory is excluded, so `data/detections/` would make
+# the negation below a no-op.
+data/detections/**
+!data/detections/**/
+# ...but DO track provenance notes: they are the only record of which BOP
+# submission ID and SHA256 each ignored JSON came from. Without them a fresh
+# clone or pod cannot tell official artefacts apart from reimplementations,
+# nor one same-day submission batch from another.
+!data/detections/**/PROVENANCE.md
 *.ply
 *.pth
 *.tar
