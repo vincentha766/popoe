@@ -1234,7 +1234,11 @@ pins in the tables below and in `data/detections/*/PROVENANCE.md`.
 known-issues triage completes. **Nothing runs before the tag lands and this
 section is re-marked FROZEN.** The method flags below (faithful pins, tuned
 grid32/five-weights, YCB-V merge+s-coarse) carry over unchanged unless the
-triage says otherwise. The previous Phase D scores (subs 40054/40057-40059,
+triage says otherwise. Triage-driven addition to every arm: `--trans-nms 0.1`
+— paper §III-F translation NMS on refined poses; the paper names the mechanism
+but no radius, so the value (0.1× the models_info diameter) is pinned-by-us
+and parameterised. Default-on in `bop_eval.py`; spell it explicitly when the
+tables freeze. `--trans-nms 0` disables and must be recorded as a deviation. The previous Phase D scores (subs 40054/40057-40059,
 40146-40149) are void; the old two-table Phase E framing is superseded by
 this section.
 

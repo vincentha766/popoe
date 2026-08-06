@@ -651,6 +651,18 @@ def main():
                          "query cloud's largest bounding-box side (which is "
                          "2-35%% smaller on LM-O). Pose-side only; caches hit. "
                          "Score-affecting — use a FRESH --out.")
+    ap.add_argument("--trans-nms", type=float, default=0.1, metavar="FRAC",
+                    help="Translation NMS radius as a FRACTION of the BOP "
+                         "models_info diameter (FreeZeV2 Sec. III-F: NMS on "
+                         "refined poses' translation distance; the paper "
+                         "gives no radius, so the value is pinned-by-us). "
+                         "Default 0.1: same-instance duplicates from a "
+                         "multi-source union land well inside 3%% of the "
+                         "diameter (the tau_inlier/tau_ICP scale), while "
+                         "distinct touching instances sit at least a "
+                         "smallest-extent apart (>=~20-30%%). 0 disables "
+                         "(pre-NMS behaviour: duplicates may occupy "
+                         "inst_count slots). Needs models_info.json.")
     ap.add_argument("--render-backend", default="nvdiffrast",
                     choices=["nvdiffrast", "trimesh", "auto"],
                     help="CAD renderer for query features. Default demands the "
@@ -873,11 +885,13 @@ def main():
     # that was actually encoded. Read once, up front, so a missing/renamed
     # models_info.json fails before any GPU work.
     diameters_m: dict = {}
-    if args.tau_diameter or args.probe_corr:
+    if args.tau_diameter or args.probe_corr or args.trans_nms > 0:
         mi_path = bop / layout["models_dir"] / "models_info.json"
         if not mi_path.exists():
-            raise SystemExit(f"--tau-diameter/--probe-corr need {mi_path} "
-                             f"(BOP ships it next to the meshes); not found.")
+            raise SystemExit(f"--tau-diameter/--probe-corr/--trans-nms need "
+                             f"{mi_path} (BOP ships it next to the meshes); "
+                             f"not found. --trans-nms 0 disables the NMS "
+                             f"(protocol deviation — record it).")
         diameters_m = {int(k): float(v["diameter"]) / 1000.0
                        for k, v in json.load(open(mi_path)).items()}
 
@@ -1214,6 +1228,11 @@ def main():
                 # inst_count rows — champions first, zero rows (score 0,
                 # identity R) padding the rest. Resume can then classify by
                 # row COUNT alone. inst_count==1: one champion or one zero.
+                # §III-F translation NMS radius, diameter-scaled per object.
+                # Harmless at inst_count==1 (the best champion is always kept
+                # first) — passed unconditionally so the flag has ONE meaning.
+                nms_m = (args.trans_nms * diameters_m[obj_id]
+                         if args.trans_nms > 0 else 0.0)
                 if args.dual_assign and inst_count == 1:
                     pid = partner_id(obj_id, merge)
                     if pid is not None and pid in buffered:
@@ -1223,10 +1242,10 @@ def main():
                         champs = [best] if best is not None else []
                     else:
                         champs = select_top_instances(
-                            hyps_by_det, selector, inst_count)
+                            hyps_by_det, selector, inst_count, nms_dist=nms_m)
                 else:
                     champs = select_top_instances(
-                        hyps_by_det, selector, inst_count)
+                        hyps_by_det, selector, inst_count, nms_dist=nms_m)
                 for best in champs:
                     wr.writerow([scene_id, im_id, obj_id,
                                  f"{best.score:.6f}",

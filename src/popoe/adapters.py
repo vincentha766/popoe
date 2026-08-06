@@ -131,18 +131,38 @@ def resolve_resume(row_stats: dict, target_counts: dict) -> tuple:
     return done, partial
 
 
-def select_top_instances(hyps_by_det: dict, selector, k: int) -> list:
-    """BOP multi-instance selection: one champion per detection, then the top-k
-    champions across detections.
+def select_top_instances(hyps_by_det: dict, selector, k: int,
+                         nms_dist: float = 0.0) -> list:
+    """BOP multi-instance selection: one champion per detection, translation
+    NMS across champions, then the top-k.
 
     A detection is one candidate INSTANCE, so hypotheses within a detection are
     alternatives (pick one champion via `selector`), while champions of
     different detections are candidate distinct instances (keep up to k, best
     first — k comes from the BOP target's ``inst_count``). With k=1 this is
-    exactly the old global argmax: max over per-detection maxima."""
+    exactly the old global argmax: max over per-detection maxima.
+
+    ``nms_dist`` (metres, 0 = off) is FreeZeV2 §III-F's duplicate removal.
+    A multi-source union deliberately keeps every segmentor's mask, so one
+    physical instance can win 2-4 detections with near-identical poses and
+    occupy that many of the k slots — the paper's protocol resolves this at
+    the END, on refined poses, by NMS over translation distance, not by
+    filtering masks up front. Greedy best-first: keep a champion only if its
+    translation is at least ``nms_dist`` from every kept one. Runs BEFORE the
+    top-k cut so a suppressed duplicate's slot goes to the next distinct
+    instance; survivors short of k are NOT padded with suppressed duplicates
+    (the paper retains "only distinct object instance poses"). The paper
+    names the mechanism but no radius — callers derive one from the object
+    diameter (see examples/bop_eval.py --trans-nms)."""
     champs = [selector.select(hs) for hs in hyps_by_det.values()]
     champs = [c for c in champs if c is not None]
     champs.sort(key=lambda c: -c.score)
+    if nms_dist > 0.0:
+        kept = []
+        for c in champs:
+            if all(float(np.linalg.norm(c.t - p.t)) >= nms_dist for p in kept):
+                kept.append(c)
+        champs = kept
     return champs[:k]
 
 
