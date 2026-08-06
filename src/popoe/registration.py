@@ -91,6 +91,47 @@ def feature_aware_score(R, t, pts_query, pts_target, feats_query, feats_target, 
     return float(score), inliers
 
 
+def eq5_score(R, t, pts_query, pts_target, feats_query, feats_target,
+              tau_inlier, k=10):
+    """The paper's Eq. 5 feature-aware score — the same formulation
+    GPURansacSolver ranks hypotheses with, reusable at ANY pose. That reuse is
+    exactly what Eq. 7 requires: Sec. III-F recomputes "the feature-based
+    similarity score at the refined pose ... using the same formulation
+    provided in Eq. (5)".
+
+        C = target->query top-k feature correspondences (the Eq. 3 pool)
+        I = {(j, i) in C : ||R p_Q^i + t - p_T^j|| < tau_inlier}
+        score = (1 / |P_T^sparse|) * sum_{(j,i) in I} cos(f_T^j, f_Q^i)
+
+    Differences from feature_aware_score above are the point: the pool is
+    FEATURE top-k (not geometric NN of the transformed cloud), one target
+    point can contribute up to k inlier pairs, and the denominator is the
+    FIXED sparse-target count, never |I| — the score rewards inlier
+    QUANTITY x quality, so a handful of high-cosine spurious pairs cannot
+    outrank broad agreement (the -31 pt mean-cosine trap, in reverse).
+    Returns (score, n_inlier_pairs)."""
+    pts_query = np.asarray(pts_query, float)
+    pts_target = np.asarray(pts_target, float)
+    fq = np.asarray(feats_query, np.float32)
+    ft = np.asarray(feats_target, np.float32)
+    n_t = ft.shape[0]
+    if n_t == 0 or fq.shape[0] == 0:
+        return 0.0, 0
+    fq = fq / (np.linalg.norm(fq, axis=1, keepdims=True) + 1e-8)
+    ft = ft / (np.linalg.norm(ft, axis=1, keepdims=True) + 1e-8)
+    sim = ft @ fq.T                                   # (N_t, N_q)
+    k_eff = min(k, sim.shape[1])
+    idx = np.argpartition(-sim, k_eff - 1, axis=1)[:, :k_eff]
+    rows = np.repeat(np.arange(n_t), k_eff)
+    cols = idx.reshape(-1)
+    cos = sim[rows, cols]
+    moved = pts_query[cols] @ np.asarray(R, float).T + \
+        np.asarray(t, float).reshape(3)
+    d = np.linalg.norm(moved - pts_target[rows], axis=1)
+    inl = d < tau_inlier
+    return float(cos[inl].sum() / n_t), int(inl.sum())
+
+
 def ransac_pose_estimation(pts_query, feats_query, pts_target, feats_target,
                            n_iters=10000, tau_inlier=0.03, k=10):
     """

@@ -80,7 +80,7 @@ class ChampionScorer:
     def __init__(self, tau_inlier_frac: float = 0.03, size_thr: float = 0.0075,
                  size_aware: bool = False, compute_s_coarse: bool = False,
                  use_s_coarse: bool = False, tau_abs: float | None = None,
-                 compute_s_feat_w: bool = False):
+                 compute_s_feat_w: bool = False, eq5_terms: bool = False):
         self.tau_inlier_frac = tau_inlier_frac      # fraction of query extent
         # Absolute tau_inlier in metres, overriding tau_inlier_frac * extent.
         # FreeZeV2 Sec. IV-A: "Thresholds tau_inlier and tau_ICP are set to 3% of
@@ -98,16 +98,24 @@ class ChampionScorer:
         # `score` — it exists so a canonical-vs-matched rule family can be
         # compared on one frozen candidate pool instead of being asserted.
         self.compute_s_feat_w = compute_s_feat_w
+        # Paper Eq.7 form (faithful arms): both feature terms use the Eq.5
+        # formulation — target->query top-k=10 feature pool, tau_inlier
+        # inliers, FIXED |P_T^sparse| denominator — instead of the historical
+        # mean-cosine-over-geometric-NN. Sec. III-F: the fine score is
+        # recomputed "using the same formulation provided in Eq. (5)". Off by
+        # default: the tuned scoring identity stays byte-identical.
+        self.eq5_terms = eq5_terms
 
     def score(self, pose: PoseHypothesis,
               query: PointFeatures, target: PointFeatures) -> PoseHypothesis:
-        from popoe.registration import feature_aware_score
+        from popoe.registration import feature_aware_score, eq5_score
+        score_fn = eq5_score if self.eq5_terms else feature_aware_score
 
         fq = query.meta.get("feats_w1", query.feats)
         ft = target.meta.get("feats_w1", target.feats)
         diam = float(np.ptp(query.pts, axis=0).max())
         tau = self.tau_abs if self.tau_abs is not None else self.tau_inlier_frac * diam
-        s1, _ = feature_aware_score(
+        s1, _ = score_fn(
             pose.R, pose.t, query.pts, target.pts, fq, ft, tau)
         s_icp = pose.breakdown.get("s_icp", pose.breakdown.get("fitness", 0.0))
 
@@ -122,7 +130,7 @@ class ChampionScorer:
             # the unscaled pair. When no weight sweep is active the two are the
             # same array and s_feat_w == s_feat_1 — a real equality, not a
             # missing measurement, so it is still recorded.
-            sw, _ = feature_aware_score(
+            sw, _ = score_fn(
                 pose.R, pose.t, query.pts, target.pts,
                 query.feats, target.feats, tau)
             extra["s_feat_w"] = float(sw)
@@ -135,7 +143,7 @@ class ChampionScorer:
                     "the breakdown; set ICPRefiner(keep_coarse=True)")
             # Same formula and canonical w=1 space as s_feat_1, at the PRE-ICP
             # pose -> the paper's S_coarse.
-            sc, _ = feature_aware_score(
+            sc, _ = score_fn(
                 pose.breakdown["R_coarse"], pose.breakdown["t_coarse"],
                 query.pts, target.pts, fq, ft, tau)
             extra["s_coarse"] = float(sc)

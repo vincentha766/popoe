@@ -461,7 +461,8 @@ def restore_canon_frame(arrays, enc_cfg, pts, obj_id):
 
 def resolve_segmentor(detections, sources, topk, merge_labels,
                       size_select=None, confusable_diameters=None,
-                      size_select_fallback=True):
+                      size_select_fallback=True,
+                      min_pixels=100, iou_dedupe=0.9):
     """Build the detections segmentor from the mutually-exclusive --detections /
     --sources knobs (exactly one required).
 
@@ -478,6 +479,8 @@ def resolve_segmentor(detections, sources, topk, merge_labels,
         size_select=size_select,
         confusable_diameters=confusable_diameters,
         size_select_fallback=size_select_fallback,
+        min_pixels=min_pixels,
+        iou_dedupe=iou_dedupe,
     )
     if sources:
         return best_segmentor(sources=_parse_sources_arg(sources), **kw)
@@ -657,6 +660,30 @@ def main():
                          "query cloud's largest bounding-box side (which is "
                          "2-35%% smaller on LM-O). Pose-side only; caches hit. "
                          "Score-affecting — use a FRESH --out.")
+    ap.add_argument("--min-mask-pixels", type=int, default=100,
+                    help="drop candidate masks smaller than this many pixels "
+                         "(unreliable geometry). Paper Sec. III-C keeps the "
+                         "union UNFILTERED — faithful arms pass 0 (triage "
+                         "D2). Default 100 = tuned identity.")
+    ap.add_argument("--mask-iou-dedupe", type=float, default=0.9,
+                    help="within one SOURCE, drop a mask whose IoU with an "
+                         "already-kept one exceeds this. Paper Sec. III-C "
+                         "does not filter overlapping masks — faithful arms "
+                         "pass a value > 1 to disable (triage D2). Default "
+                         "0.9 = tuned identity. Cross-source duplicates are "
+                         "never filtered here; they resolve at the end via "
+                         "--trans-nms.")
+    ap.add_argument("--eq5-terms", action="store_true",
+                    help="FIDELITY FIX (FreeZeV2 Sec. III-F): compute BOTH "
+                         "feature terms of Eq.7 (s_coarse and s_feat_1) in "
+                         "the Eq.5 formulation — target->query top-k=10 "
+                         "feature pool, tau_inlier inliers, FIXED "
+                         "|P_T^sparse| denominator — instead of the "
+                         "historical mean-cosine over geometric NN. The "
+                         "paper recomputes the fine score 'using the same "
+                         "formulation provided in Eq. (5)'. Off = tuned "
+                         "scoring identity, byte-identical. Score-affecting "
+                         "— use a FRESH --out.")
     ap.add_argument("--trans-nms", type=float, default=0.05, metavar="FRAC",
                     help="Translation NMS radius as a FRACTION of the BOP "
                          "models_info diameter (FreeZeV2 Sec. III-F: NMS on "
@@ -794,6 +821,8 @@ def main():
         size_select=size_select,
         confusable_diameters=confusable_diameters,
         size_select_fallback=not args.size_select_no_fallback,
+        min_pixels=args.min_mask_pixels,
+        iou_dedupe=args.mask_iou_dedupe,
     )
     if size_select:
         print(f"size_select={size_select} diameters={confusable_diameters}",
@@ -971,7 +1000,8 @@ def main():
                                    n_restarts=args.n_restarts,
                                    solver=args.solver, seed=args.seed,
                                    tau_basis_m=tau_basis,
-                                   render_rerank=args.render_rerank)
+                                   render_rerank=args.render_rerank,
+                                   eq5_terms=args.eq5_terms)
         query_cache[obj_id] = (obj, q, stages)
         tau_note = ("" if tau_basis is None else
                     f" diam={tau_basis*1000:.0f}mm "

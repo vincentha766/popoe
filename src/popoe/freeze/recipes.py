@@ -130,7 +130,8 @@ def best_segmentor(detections_json: str | None = None, topk: int = 2,
                    size_select: str | None = None,
                    confusable_diameters: dict | None = None,
                    size_select_fallback: bool = True,
-                   source: str | None = None):
+                   source: str | None = None,
+                   min_pixels: int = 100, iou_dedupe: float = 0.9):
     """Detections segmentor over one file (`detections_json`) or a union of
     NAMED backends (`sources` — dict {name: path}, DetectionSource/(name, path)
     list, or 'name=path' strings; see BOPDetectionsSegmentor). Exactly one of
@@ -149,6 +150,11 @@ def best_segmentor(detections_json: str | None = None, topk: int = 2,
         size_select=size_select,
         confusable_diameters=confusable_diameters,
         size_select_fallback=size_select_fallback,
+        # Paper Sec. III-C keeps the union UNFILTERED — faithful arms pass
+        # min_pixels=0 and iou_dedupe>1 to disable both (triage D2). The
+        # defaults keep the tuned identity byte-identical.
+        min_pixels=min_pixels,
+        iou_dedupe=iou_dedupe,
     )
     if sources is not None:
         return BOPDetectionsSegmentor(sources=sources, **kw)
@@ -289,7 +295,8 @@ def stages_for_object(extent_m: float, size_aware: bool = False,
                       corr_topk: int = 0,
                       n_restarts: int = 1,
                       render_rerank: bool = False,
-                      score_feat_w: bool = False):
+                      score_feat_w: bool = False,
+                      eq5_terms: bool = False):
     """Per-object solver/refiner/scorer with thresholds scaled to the object.
     ``extent_m``: max bounding-box side of the sampled query cloud (metres).
 
@@ -345,5 +352,8 @@ def stages_for_object(extent_m: float, size_aware: bool = False,
                             compute_s_feat_w=score_feat_w,
                             # None on the historical path: the scorer then
                             # recomputes TAU_FRAC * extent itself, identically.
-                            tau_abs=None if tau_basis_m is None else tau)
+                            tau_abs=None if tau_basis_m is None else tau,
+                            # Paper Eq.7 form (faithful arms): both feature
+                            # terms in the Eq.5 formulation. See ChampionScorer.
+                            eq5_terms=eq5_terms)
     return solver, refiner, scorer

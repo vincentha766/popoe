@@ -340,6 +340,8 @@ done
   --merge none --topk 2 --grid 16 --solver gpu-feat --seed "$SEED" \
   --weights 1.0 \
   --use-s-coarse \
+  --eq5-terms \
+  --min-mask-pixels 0 --mask-iou-dedupe 1.1 \
   --tau-diameter \
   --icp-dense --icp-dense-max 3000 \
   --render-rerank \
@@ -353,6 +355,8 @@ done
   --merge none --topk 2 --grid 16 --solver gpu-feat --seed "$SEED" \
   --weights 1.0 \
   --use-s-coarse \
+  --eq5-terms \
+  --min-mask-pixels 0 --mask-iou-dedupe 1.1 \
   --tau-diameter \
   --icp-dense --icp-dense-max 3000 \
   --render-rerank \
@@ -437,6 +441,8 @@ done
   --merge none --topk 2 --grid 16 --solver gpu-feat --seed "$SEED" \
   --weights 1.0 \
   --use-s-coarse \
+  --eq5-terms \
+  --min-mask-pixels 0 --mask-iou-dedupe 1.1 \
   --tau-diameter \
   --icp-dense --icp-dense-max 3000 \
   --render-rerank \
@@ -450,6 +456,8 @@ done
   --merge none --topk 2 --grid 16 --solver gpu-feat --seed "$SEED" \
   --weights 1.0 \
   --use-s-coarse \
+  --eq5-terms \
+  --min-mask-pixels 0 --mask-iou-dedupe 1.1 \
   --tau-diameter \
   --icp-dense --icp-dense-max 3000 \
   --render-rerank \
