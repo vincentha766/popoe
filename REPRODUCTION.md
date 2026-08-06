@@ -1216,13 +1216,23 @@ reproduce exactly from `mssd140_run.log`. `solver_swap_demo` now prints the
 `@0.5d` column itself (`698ffd5`); before that it emitted only
 @0.05/0.1/0.2d and this row's `@0.5d` had to be re-derived.
 
-## Phase E seven-set freeze tables (frozen 2026-08-06, run NOTHING before both are pinned)
+## Unified 18-run freeze plan (Phase D + E merged, Vincent 2026-08-06 — NOT YET RUNNABLE)
 
-Two independent breadth lines (gedi `EXPERIMENT_PLAN.md` §5, Vincent
-2026-08-06). Both frozen BEFORE any new server score is read; no post-hoc
-selection between lines. Method identity for both = the Phase D frozen recipe
-flags at tag `twoline-rerank-fix-20260731` (`509072e`); if a new tag is cut,
-RE-FREEZE these tables against it before running.
+One table family covers both the 2x2 depth matrix and the seven-set breadth
+lines (gedi `EXPERIMENT_PLAN.md` §5): `faithful-cnos` LM-O+YCB-V (2),
+`faithful-3way` LM-O+YCB-V (2, **SAM6D switched to official method 441**),
+`tuned-cnos` x7 (= E-cnos; its LM-O/YCB-V rows feed the 2x2), `tuned-4way` x7
+(= E-4way). All detection inputs are official BOP artefacts (CNOS 4003-4009,
+SAM6D 441 seg batch 6965-6971, NIDS 8980-8986, MUSE 873 first batch) — SHA256
+pins in the tables below and in `data/detections/*/PROVENANCE.md`.
+
+**Code identity: PENDING** — latest code, tag to be pinned only after the
+known-issues triage completes. **Nothing runs before the tag lands and this
+section is re-marked FROZEN.** The method flags below (faithful pins, tuned
+grid32/five-weights, YCB-V merge+s-coarse) carry over unchanged unless the
+triage says otherwise. The previous Phase D scores (subs 40054/40057-40059,
+40146-40149) are void; the old two-table Phase E framing is superseded by
+this section.
 
 Common pins (both lines): `--topk 2 --grid 32 --solver o3d --seed 42
 --weights 1.0,0.7,0.5,0.3,0.2 --render-rerank --render-backend nvdiffrast`;
