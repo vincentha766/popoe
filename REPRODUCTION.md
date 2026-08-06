@@ -1248,38 +1248,44 @@ the accepted Phase D B-single results (identical inputs); five new runs.
 
 Comparator: FreeZeV2.1(905) per-set — confounded by SAR + M=2N +
 render-scoring, label every reading; secondary 756. **SAM6D = official BOP
-submissions for ALL SEVEN sets** (Vincent 2026-08-06) — a DIFFERENT detection
-identity from Phase D `tuned-4way` (local ISM); all seven sets run fresh, and
-Phase D vs Phase E numbers must never be presented as same-input.
+submissions for ALL SEVEN sets, method 441 "SAM6D"** (Vincent 2026-08-06;
+amended same day from 546 FastSAM(RGB) BEFORE any server score — 441 is the
+strongest official SAM6D variant, mean seg AP 0.481 vs 546's 0.428, board
+family spread 5.3pt; seg batch 6965-6971, 2023-12-05; 441's method page mixes
+THREE tasks — seg, 2D detection, and 6D localization batches — the seg batch
+was identified by matching per-set AP against the leaderboard row). A
+DIFFERENT detection identity from Phase D `tuned-4way` (local ISM); all seven
+sets run fresh, and Phase D vs Phase E numbers must never be presented as
+same-input.
 
 | Dataset | Source | Detection input | SHA256 |
 |---|---|---|---|
 | lmo | cnos | `data/detections/cnos/cnos-fastsam_lmo-test.json` | `1a03d3c7a1d57a9c7e6e1bc162f99281b5044ca50428c619477ec4ab11fa375a` |
-| lmo | sam6d | `data/detections/sam6d/sam6d_official_lmo.json` | `31fe66fe4ae9772b37d30fcbeb322186ddafb9402d2981882504c7b79cd7f73b` |
+| lmo | sam6d | `data/detections/sam6d/sam6d_official_lmo.json` | `638a933c0f3f404086f975050524ead00b23f6c081d77a1dce99443fab781108` |
 | lmo | nids | `data/detections/nids/nids_wa_sappe_lmo.json` | `8cf9c392a82153b3bbf1c6baa5a7a4fac056e6fc4f35ec645a1f3f76d6f75aea` |
 | lmo | muse | `data/detections/muse/muse-full_lmo-test.json` | `55061983089d6236c19cb9b6a8a6c754388d146287be45ec40ceb9c32dbe3003` |
 | tudl | cnos | `data/detections/cnos/cnos-fastsam_tudl-test.json` | `400978b21a94aaa109d6e5039df7aefa7cdbdc6af037cbd1b05ab586ae6d540d` |
-| tudl | sam6d | `data/detections/sam6d/sam6d_official_tudl.json` | `42b94fd25a1f8ccfb1be855e04f161679b8932f99779e29d67ffc5f41ca1ebfe` |
+| tudl | sam6d | `data/detections/sam6d/sam6d_official_tudl.json` | `267784437d15d97061dc30248bacdb08631780385fc7b86507818fd7ef63a6ab` |
 | tudl | nids | `data/detections/nids/nids_wa_sappe_tudl.json` | `90137dcec2f140d2b8130e72524d751d1b94fd751efd90a05c8a089861357c4e` |
 | tudl | muse | `data/detections/muse/muse-full_tudl-test.json` | `38dc40cfa75f22a74f1f85cb10fb2283adb99db65ea496dff68bf216beeccb8b` |
 | tless | cnos | `data/detections/cnos/cnos-fastsam_tless-test.json` | `db010fbce92149a54ae7a252176d6dee80823353a7e5d704c0f33657c5b1ecec` |
-| tless | sam6d | `data/detections/sam6d/sam6d_official_tless.json` | `ca66acdce2ccc13eb1d2b92f09e92bdf0a627f28f8daa2698bbe61628d161918` |
+| tless | sam6d | `data/detections/sam6d/sam6d_official_tless.json` | `e63e91376d3c116ea39aec2b5c173b0358f099fbb260275ab69fe48200e6fdf6` |
 | tless | nids | `data/detections/nids/nids_wa_sappe_tless.json` | `16da4f7965e3adcaaa432163ba9f2953d42a3987aca1f38e7dcc42295901b11b` |
 | tless | muse | `data/detections/muse/muse-full_tless-test.json` | `78bcdab72d0eac44ab5b8477eec9e229fdaa2e61fdc69bcec48be46a3f230482` |
 | icbin | cnos | `data/detections/cnos/cnos-fastsam_icbin-test.json` | `922b9878b1e8e8cac7d9245daa672de7568408ca0d4a8f9a7884bb532f93bcc3` |
-| icbin | sam6d | `data/detections/sam6d/sam6d_official_icbin.json` | `ffa2c2fd0ea91b78f0e88453d7e74d9aa600d177a16481a0d50e72517948b093` |
+| icbin | sam6d | `data/detections/sam6d/sam6d_official_icbin.json` | `3e4797bfda1dc2ca7514018ed082b6c8678351bf6905f2803725825bc167cef8` |
 | icbin | nids | `data/detections/nids/nids_wa_sappe_icbin.json` | `2a39dad6d5273c45ef6c88415a78f30e7e6819bb654210a0917b8dcc1ca580cd` |
 | icbin | muse | `data/detections/muse/muse-full_icbin-test.json` | `34a2a40b3c716bb3c36b0739d49ebc885019cb6d97079d4e5e1ba9c743ed1427` |
 | itodd | cnos | `data/detections/cnos/cnos-fastsam_itodd-test.json` | `cce4bcc9d33618e215f1099f9ac7f04598c0f39188585e739dd992496c3bbbd6` |
-| itodd | sam6d | `data/detections/sam6d/sam6d_official_itodd.json` | `c058878ac377799f7483797ea2dfe1e1dd90bebc69eba27f55ae82ad926716a7` |
+| itodd | sam6d | `data/detections/sam6d/sam6d_official_itodd.json` | `d0511f138d0e509ee3fb028e5d3c438fa1f2cb6ae27e1ef4fc6d22b3968595e2` |
 | itodd | nids | `data/detections/nids/nids_wa_sappe_itodd.json` | `cd3300ce053ee425be4b8bd9c003bfd4d08f2b6dc2153496d1ce74d5c57900dd` |
 | itodd | muse | `data/detections/muse/muse-full_itodd-test.json` | `2d34ebce3a464f129f6cdc8770686df56869eafa8bd8fff135fbfecb3c65813a` |
 | hb | cnos | `data/detections/cnos/cnos-fastsam_hb-test.json` | `7eb39ad0d82783dc59a49cd2f6654c99b63d3b3ef3f051f3368056755e94e6b0` |
-| hb | sam6d | `data/detections/sam6d/sam6d_official_hb.json` | `0b7fa39669bb9c7909930f8bd37a0bbef648b47d1bb43156d5452c79bb3feafc` |
+| hb | sam6d | `data/detections/sam6d/sam6d_official_hb.json` | `f22f496109341f8bb0f03c0d33476bb0af69f468f604afbd7fc03c898dc2d39a` |
 | hb | nids | `data/detections/nids/nids_wa_sappe_hb.json` | `1bac5e38fc97a6810c43adb6b733daa7ba533358a7e1c49773d543aff7f7a0d9` |
 | hb | muse | `data/detections/muse/muse-full_hb-test.json` | `c0e0802a3db1e2394507099098ed5000208d93e1701f8b19850d6cd6d7d59d1d` |
 | ycbv | cnos | `data/detections/cnos/cnos-fastsam_ycbv-test.json` | `fdec15729676e15876302fc620f752cc5290ee28da5fc3c7e17da1072fd4f422` |
-| ycbv | sam6d | `data/detections/sam6d/sam6d_official_ycbv.json` | `64f50fbbe61454ef99881ba09c060df3f1baf00589a751c21327cdd202513a13` |
+| ycbv | sam6d | `data/detections/sam6d/sam6d_official_ycbv.json` | `2288e24bfcbed29aedb719b53bff40f1a558a47f02392d5da0b6dabb2539abf8` |
 | ycbv | nids | `data/detections/nids/nids_wa_sappe_ycbv.json` | `6eb751b20898e5cc8f499922590e9a07c2a645cfb7d5d14f7c59cb0d51c8544a` |
 | ycbv | muse | `data/detections/muse/muse-full_ycbv-test.json` | `b4703a218d13f707d47556b2733eeddc38fea7d89bf927d113da25349c74f497` |
 

@@ -1,17 +1,35 @@
-# Official SAM6D-FastSAM(RGB) detections (source tag: `sam6d` official line)
+# Official SAM6D detections (source tag: `sam6d` official line)
 
-BOP `method_info/546`, task "Model-based 2D segmentation of unseen objects".
-Downloaded 2026-08-06 (LM-O/YCB-V 2026-07-26 as public reference copies).
-All seven from the **08:23–08:26 segmentation batch** (2024-03-22).
-⚠️ The same-day **08:37–08:38 batch 8018–8024 is a DIFFERENT TASK** —
-2D detection, bbox only, no `segmentation` field. Never mix.
+**E-4way source = method 441 "SAM6D"** (Vincent 2026-08-06, amended same day
+from 546 before any server score): the strongest official SAM6D variant
+(mean seg AP 0.481; family spread 441/545/466/546 = 5.3pt). Seg batch
+**6965-6971** (2023-12-05 07:46-07:50). ⚠️ 441's method page mixes THREE
+tasks — 6951-6957 is 2D detection (boxes), 7088-7094 and 7238-7244 are 6D
+localization (poses). The seg batch was identified by matching per-set AP
+to the leaderboard row (LM-O 0.460). Always check the Task field.
 
-⚠️ **Two SAM6D provenances live in this directory — do not conflate:**
-- `sam6d_ism_{lmo,ycbv}.json` — **our local ISM runs** (official code, our
-  execution); used by the frozen Phase D `tuned-4way`/`faithful-3way` recipes.
-  NOT byte-identical to the official submissions.
-- `sam6d_official_<ds>.json` (symlinks below) — the **authors' official BOP
-  submissions**; per Vincent 2026-08-06, the Phase E seven-set lines use these.
+⚠️ **Three SAM6D provenances now exist — never conflate:**
+- `sam6d_ism_{lmo,ycbv}.json` — our local ISM runs (FastSAM proposals);
+  frozen Phase D recipes only. NOT byte-identical to any official file.
+- `sam6d_official_<ds>.json` (symlinks) — **now point to method 441 files**
+  (`sam6d-sam441_*-test_official.json`); the Phase E E-4way inputs.
+- 546 FastSAM(RGB) files (`sam6d-fastsamrgb_*-test_official.json`) — kept in
+  the archive dir as the public reference matching our ISM lineage; no longer
+  wired into `data/detections/`.
+
+## Method 441 seg batch (E-4way inputs)
+
+| Dataset | BOP submission | Records | SHA256 |
+|---|---|---|---|
+| LM-O | [6967](https://bop.felk.cvut.cz/sub_info/6967/) | 21264 | `638a933c0f3f404086f975050524ead00b23f6c081d77a1dce99443fab781108` |
+| TUD-L | [6965](https://bop.felk.cvut.cz/sub_info/6965/) | 29482 | `267784437d15d97061dc30248bacdb08631780385fc7b86507818fd7ef63a6ab` |
+| T-LESS | [6966](https://bop.felk.cvut.cz/sub_info/6966/) | 61082 | `e63e91376d3c116ea39aec2b5c173b0358f099fbb260275ab69fe48200e6fdf6` |
+| IC-BIN | [6968](https://bop.felk.cvut.cz/sub_info/6968/) | 7778 | `3e4797bfda1dc2ca7514018ed082b6c8678351bf6905f2803725825bc167cef8` |
+| ITODD | [6969](https://bop.felk.cvut.cz/sub_info/6969/) | 18915 | `d0511f138d0e509ee3fb028e5d3c438fa1f2cb6ae27e1ef4fc6d22b3968595e2` |
+| HB | [6971](https://bop.felk.cvut.cz/sub_info/6971/) | 20142 | `f22f496109341f8bb0f03c0d33476bb0af69f468f604afbd7fc03c898dc2d39a` |
+| YCB-V | [6970](https://bop.felk.cvut.cz/sub_info/6970/) | 46382 | `2288e24bfcbed29aedb719b53bff40f1a558a47f02392d5da0b6dabb2539abf8` |
+
+## Method 546 FastSAM(RGB) seg batch (reference only, 8003-8009)
 
 | Dataset | BOP submission | Records | SHA256 |
 |---|---|---|---|
