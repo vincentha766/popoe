@@ -119,10 +119,14 @@ def _overlay(rgb: np.ndarray, mask: np.ndarray, color, alpha: float = 0.45) -> n
     try:
         import cv2
 
+        # CHAIN_APPROX_NONE, width 1: SIMPLE discards collinear points, so
+        # concavities get straightened away from the real boundary, and a
+        # width-2 stroke straddles the edge with half of it outside the mask.
+        # Together they make a pixel-accurate mask look like it misses the object.
         cnts, _ = cv2.findContours(
-            m.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+            m.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE
         )
-        cv2.drawContours(out, cnts, -1, tuple(int(x) for x in color), 2)
+        cv2.drawContours(out, cnts, -1, tuple(int(x) for x in color), 1)
     except Exception:
         pass
     return out
@@ -293,7 +297,7 @@ def export_source(
                             cnts, _ = cv2.findContours(
                                 g.astype(np.uint8),
                                 cv2.RETR_EXTERNAL,
-                                cv2.CHAIN_APPROX_SIMPLE,
+                                cv2.CHAIN_APPROX_NONE,
                             )
                             cv2.drawContours(ov, cnts, -1, (255, 255, 255), 1)
                     except Exception:
