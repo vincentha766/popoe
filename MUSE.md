@@ -29,13 +29,11 @@ drawing. Do not relabel.
 - Paper: [arXiv:2510.17866](https://arxiv.org/abs/2510.17866) (Oct 2025), Cho,
   Park & Oh — an independent team, **not** the FreeZe/FBK group.
 - Code: none published.
-- Masks: **downloadable** as the authors' public BOP submissions — retrieved
-  2026-07-26 from `sub_info/29108` (LM-O) and `sub_info/29113` (YCB-V), SHA256s
-  in `outputs/seg_ap_20260725T223014Z/OFFICIAL_JSON_ACQUISITION.md`, now under
-  `data/detections/muse/` as `muse-full_{lmo,ycbv}-test.json`. (An earlier note
-  here said masks were undownloadable, citing BOP `method_info/873`; that was
-  either stale or a page-level inconsistency — the submission pages served the
-  files.)
+- Masks: **downloadable** as the authors' public BOP submissions — all seven
+  BOP-Classic-Core sets are held under `data/detections/muse/` as
+  `muse-full_<ds>-test.json` (method_info/873 segmentation batch; IDs and
+  SHA256s in `data/detections/muse/PROVENANCE.md`). Note the same-day
+  29115-29121 batch is the detection task — bbox only, no masks.
 - Training-free by construction: Grounding DINO (Swin-B, prompt "items") →
   SAM2 (Hiera-L) → DINOv2 template matching (GeM patch + joint score)
   similarity.
@@ -263,7 +261,9 @@ do not keep a second copy of this table anywhere. Each row's evidence lives in
 the result section named in the last column.
 
 Starting point (2026-07-26, same harness, LM-O / YCB-V segmentation AP):
-`muse-repro` **0.228 / 0.326** against official `muse` **0.471 / 0.690**.
+`muse-repro` **0.228 / 0.326** against official `muse` **0.471 / 0.690** (local
+PyPI-pycocotools recomputes of the official files; the public leaderboard rows
+are 0.477 / 0.690).
 
 | # | Probe | Verdict | Where |
 |---|---|---|---|
