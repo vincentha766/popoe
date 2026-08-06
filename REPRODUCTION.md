@@ -49,7 +49,7 @@ not implemented by the formal runner.
 | Render at 480×480 with the object occupying approximately 50% of width/height | Faithful pins use `POPOE_QUERY_CANON=476` and `POPOE_QUERY_FILL=0.5`; 476 is the local DINO patch-grid-compatible substitute. | **Approximation.** Always disclose 476/0.5, not “exact 480×480”. |
 | ViT-giant DINOv2 patch features from intermediate layers, following FoundPose | The backbone is `dinov2_vitg14_reg`. The implementation selects one inferred FoundPose-style layer (block 30 for ViT-g), because the public text does not pin an exact block/list. | **Partial / pinned-by-us.** Backbone matches; layer selection is a local inference. |
 | Query point set 5k | The adapter samples 5k surface points before the `V=18` visibility gate; the final retained query set can therefore contain fewer than 5k points. | **Partial.** The paper's stated 5k budget is not enforced after filtering. |
-| Dense target point set 3k | `--icp-dense --icp-dense-max 3000` caps the separately reconstructed ICP cloud. GeDi target encoding still builds neighborhoods from all valid mask-depth pixels. | **Missing as a shared budget.** The 3k cap applies to ICP only, not to the dense target set used throughout feature extraction. |
+| Dense target point set 3k | Faithful recipes pin `POPOE_TARGET_DENSE=3000` alongside `--icp-dense --icp-dense-max 3000`: the GeDi neighbourhood and the ICP cloud subsample through the same fixed-seed rule (`adapters.fixed_seed_subsample`) over the same index space, reaching the identical 3k cloud. | **Match** (one shared `P_T^dense`, as the paper describes). |
 | Sparse target point set at most 256 | Faithful recipes use `--grid 16`, giving at most 256 samples. The implementation uses a rectangular mask grid and target-side bilinear feature sampling rather than the paper-highlighted square/no-interpolation behavior. | **Partial.** The count matches; sampling semantics do not. |
 | Top-`k=10` feature correspondences | Faithful recipes run `--solver gpu-feat`, whose `GPURansacSolver` samples from top-`k=10` feature correspondences natively (`k=10` is the solver default, pinned in code). `--corr-topk` is an o3d-only knob and is NOT passed — `_build_solver` refuses it on non-o3d solvers. | **Match.** |
 | Localization keeps `M=N+1` proposals | `examples/bop_eval.py` floors the per-(source, label) mask budget PER TARGET at `inst_count + 1` (`floored_topk`, passed at each `segment()` call); the default `--topk 2` equals `N+1` on single-instance targets. | **Match.** |
@@ -275,7 +275,7 @@ out_dir/
 | Scoring | Paper Eq.7 three-term form with `--use-s-coarse`; Eq.7 exponents are **pinned-by-us** to unit exponents |
 | Leaderboard comparator | A / single-source -> FreeZe(CNOS) LM-O/YCB-V = 0.689 / 0.853 |
 | Artifacts | `$RUN/{lmo,ycbv}/` each contains `poses.csv`, `cand.csv`, `RECIPE.md`, `AR_SUMMARY.md`, `bop_server.md`, `grasp_summary.md` |
-| Cautions | Rerank scope differs from official SAR: popoe only reorders PCA flip variants. Dense resampling uses `rng(0)` where invoked and is independent of `--seed`. Encoding degradation is explicit in logs as `DEGRADE`. These runs are not bit/row comparable to historical anchors because seed, rerank and implementation fixes are new variables. |
+| Cautions | **No render rerank**: the faithful arms run the BASE protocol — paper Row 18 carries no SAR, and popoe's `--render-rerank` is an approximation that belongs to the tuned system only (Decision 9 revised, triage D5). Dense resampling uses `rng(0)` where invoked and is independent of `--seed`. Encoding degradation is explicit in logs as `DEGRADE`. These runs are not bit/row comparable to historical anchors because seed and implementation fixes are new variables. |
 
 ```bash
 set -euo pipefail
@@ -346,7 +346,6 @@ done
   --min-mask-pixels 0 --mask-iou-dedupe 1.1 \
   --tau-diameter \
   --icp-dense --icp-dense-max 3000 \
-  --render-rerank \
   --render-backend nvdiffrast \
   --out "$RUN/lmo/poses.csv" --cache "$RUN/lmo/cache" \
   --cand-csv "$RUN/lmo/cand.csv"
@@ -361,7 +360,6 @@ done
   --min-mask-pixels 0 --mask-iou-dedupe 1.1 \
   --tau-diameter \
   --icp-dense --icp-dense-max 3000 \
-  --render-rerank \
   --render-backend nvdiffrast \
   --out "$RUN/ycbv/poses.csv" --cache "$RUN/ycbv/cache" \
   --cand-csv "$RUN/ycbv/cand.csv"
@@ -378,7 +376,7 @@ done
 | Scoring | Paper Eq.7 three-term form with `--use-s-coarse`; Eq.7 exponents are **pinned-by-us** to unit exponents |
 | Leaderboard comparator | A / four-way -> FreeZeV2.1(905) LM-O/YCB-V = 0.771 / 0.915 — **detection-matched** (same four sources); label the SAR + `M=2N` + render-scoring confounds. Paper Row 18 (75.9 / 91.3, four-way no SAR, self-reported, no leaderboard row) is auxiliary reference only |
 | Artifacts | `$RUN/{lmo,ycbv}/` each contains `poses.csv`, `cand.csv`, `RECIPE.md`, `AR_SUMMARY.md`, `bop_server.md`, `grasp_summary.md` |
-| Cautions | Rerank scope differs from official SAR: popoe only reorders PCA flip variants. Dense resampling uses `rng(0)` where invoked and is independent of `--seed`. Encoding degradation is explicit in logs as `DEGRADE`. These runs are not bit/row comparable to historical anchors because seed, rerank and implementation fixes are new variables. |
+| Cautions | **No render rerank**: the faithful arms run the BASE protocol — paper Row 18 carries no SAR, and popoe's `--render-rerank` is an approximation that belongs to the tuned system only (Decision 9 revised, triage D5). Dense resampling uses `rng(0)` where invoked and is independent of `--seed`. Encoding degradation is explicit in logs as `DEGRADE`. These runs are not bit/row comparable to historical anchors because seed and implementation fixes are new variables. |
 
 ```bash
 set -euo pipefail
@@ -449,7 +447,6 @@ done
   --min-mask-pixels 0 --mask-iou-dedupe 1.1 \
   --tau-diameter \
   --icp-dense --icp-dense-max 3000 \
-  --render-rerank \
   --render-backend nvdiffrast \
   --out "$RUN/lmo/poses.csv" --cache "$RUN/lmo/cache" \
   --cand-csv "$RUN/lmo/cand.csv"
@@ -464,7 +461,6 @@ done
   --min-mask-pixels 0 --mask-iou-dedupe 1.1 \
   --tau-diameter \
   --icp-dense --icp-dense-max 3000 \
-  --render-rerank \
   --render-backend nvdiffrast \
   --out "$RUN/ycbv/poses.csv" --cache "$RUN/ycbv/cache" \
   --cand-csv "$RUN/ycbv/cand.csv"
@@ -1257,9 +1253,11 @@ reading as an empty-but-clean tree).
 7. **Merge spelling (F7)**: `--merge ycbv` exists ONLY on the tuned YCB-V
    leg; every other (set, arm) runs `--merge none`. Copy recipes line by
    line — the same flag means different things on different lines.
-8. **Rerank sanity (F3)**: the run log must show `[rerank] y_sign latched`
-   with a healthy IoU before bulk targets; an `UNRELIABLE` line repeating
-   across candidates means the renderer is miscalibrated — stop and look. The previous Phase D scores (subs 40054/40057-40059,
+8. **Rerank sanity (F3, tuned arms only — faithful runs carry no rerank
+   since Decision 9's revision)**: the run log must show `[rerank] y_sign
+   latched` with a healthy IoU before bulk targets; an `UNRELIABLE` line
+   repeating across candidates means the renderer is miscalibrated — stop
+   and look. The previous Phase D scores (subs 40054/40057-40059,
 40146-40149) are void; the old two-table Phase E framing is superseded by
 this section.
 

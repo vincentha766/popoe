@@ -68,7 +68,6 @@ env | grep '^POPOE_' | sort
   --min-mask-pixels 0 --mask-iou-dedupe 1.1 \
   --tau-diameter \
   --icp-dense --icp-dense-max 3000 \
-  --render-rerank \
   --render-backend nvdiffrast \
   --out "$BASE.csv" --cache "$OUT/cache_${TAG}" \
   --cand-csv "${BASE}_cands.csv"
