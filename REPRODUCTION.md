@@ -1214,7 +1214,40 @@ registered file at the wrong path fails) and registered in the per-source
 `PROVENANCE.md`; `scripts/freeze_detections.py` enforces both. Pods run it
 before any eval as `--check --need <the run's relative paths>` — `--need`
 is the per-run completeness gate (a lost rsync fails loudly instead of
-reading as an empty-but-clean tree). The previous Phase D scores (subs 40054/40057-40059,
+reading as an empty-but-clean tree).
+
+**Preflight checklist — per host/pod, per dataset, before any full run**
+(the disclose-class triage items as executable checks; principles in gedi
+`EXPERIMENT_PLAN.md` §5.3):
+
+1. **Code identity**: fresh clone; `POPOE_PIN` equality; clean worktree;
+   positive `python -c "import popoe; print(popoe.__file__)"` printing the
+   pinned clone's path (editable-install hijack check).
+2. **Inputs**: `scripts/freeze_detections.py --check --need <paths>`.
+3. **Stale outputs (A7)**: the run's `--out` / `--cand-csv` must not exist
+   (scripts refuse); never point `--out` at a voided batch's directory —
+   resume classifies by ROW COUNT and would silently "complete" on stale
+   rows. Old CSVs move to an `archive/` subdir first.
+4. **New-source ingestion (A6)**: after the per-set smoke, count candidates
+   per source in `cand.csv` (its `source` column) — every wired source must
+   contribute a nonzero count; a silently-empty source passes schema checks
+   and just loses recall.
+5. **New-set layout (A8/F6)**: before committing GPU time on tless / itodd /
+   hb / icbin / tudl, load ONE image end-to-end (`--objs <one id>` on a
+   single target): checks models dir naming (tless `models_cad`), depth
+   format, and the itodd grayscale 16-bit tif path (F5 — the visual branch
+   hard-fails on non-uint8 input by design; catch it in minutes, not at
+   hour 19).
+6. **No local score signal on itodd/hb (F4)**: their GT is withheld —
+   `ar_flat.py` has nothing to chew; the only score gate is the BOP server.
+   Do NOT wire `--probe-corr` there (needs GT). Plan acceptance on the
+   other five sets' local AR + server submission for these two.
+7. **Merge spelling (F7)**: `--merge ycbv` exists ONLY on the tuned YCB-V
+   leg; every other (set, arm) runs `--merge none`. Copy recipes line by
+   line — the same flag means different things on different lines.
+8. **Rerank sanity (F3)**: the run log must show `[rerank] y_sign latched`
+   with a healthy IoU before bulk targets; an `UNRELIABLE` line repeating
+   across candidates means the renderer is miscalibrated — stop and look. The previous Phase D scores (subs 40054/40057-40059,
 40146-40149) are void; the old two-table Phase E framing is superseded by
 this section.
 
