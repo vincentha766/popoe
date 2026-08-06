@@ -305,12 +305,7 @@ if [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
   echo "wrong popoe checkout; need POPOE_PIN=$POPOE_PIN (got HEAD=$(git rev-parse HEAD))" >&2
   exit 1
 fi
-for req in scripts/check_rerank_symmetry.py scripts/sar_render_compare.py; do
-if [ ! -f "$req" ]; then
-  echo "missing $req — stale tag tip (render_rerank loads sar_render_compare at RUNTIME); fetch --tags --force" >&2
-  exit 1
-fi
-done
+# Faithful arms carry no --render-rerank (Decision 9); do not require sar_render_compare.
 if [ -n "$(git status --porcelain)" ]; then
   echo "refusing dirty popoe worktree" >&2
   exit 1
@@ -341,7 +336,7 @@ for f in "$RUN/lmo/poses.csv" "$RUN/lmo/cand.csv" \
          "$RUN/ycbv/poses.csv" "$RUN/ycbv/cand.csv"; do
   # NOT `test ! -e a && test ! -e b`: under set -e a failing left-hand test
   # is errexit-exempt and the guard silently passes (second-review P0).
-  if [ -e "$f" ]; then echo "refusing: $f exists — rerank requires FRESH --out" >&2; exit 1; fi
+  if [ -e "$f" ]; then echo "refusing: $f exists — resume keeps old rows; use a FRESH --out" >&2; exit 1; fi
 done
 
 "$PY" examples/bop_eval.py \
@@ -353,6 +348,7 @@ done
   --eq5-terms \
   --min-mask-pixels 0 --mask-iou-dedupe 1.1 \
   --tau-diameter \
+  --trans-nms 0.05 \
   --icp-dense --icp-dense-max 3000 \
   --render-backend nvdiffrast \
   --out "$RUN/lmo/poses.csv" --cache "$RUN/lmo/cache" \
@@ -367,6 +363,7 @@ done
   --eq5-terms \
   --min-mask-pixels 0 --mask-iou-dedupe 1.1 \
   --tau-diameter \
+  --trans-nms 0.05 \
   --icp-dense --icp-dense-max 3000 \
   --render-backend nvdiffrast \
   --out "$RUN/ycbv/poses.csv" --cache "$RUN/ycbv/cache" \
@@ -407,12 +404,7 @@ if [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
   echo "wrong popoe checkout; need POPOE_PIN=$POPOE_PIN (got HEAD=$(git rev-parse HEAD))" >&2
   exit 1
 fi
-for req in scripts/check_rerank_symmetry.py scripts/sar_render_compare.py; do
-if [ ! -f "$req" ]; then
-  echo "missing $req — stale tag tip (render_rerank loads sar_render_compare at RUNTIME); fetch --tags --force" >&2
-  exit 1
-fi
-done
+# Faithful arms carry no --render-rerank (Decision 9); do not require sar_render_compare.
 if [ -n "$(git status --porcelain)" ]; then
   echo "refusing dirty popoe worktree" >&2
   exit 1
@@ -443,7 +435,7 @@ for f in "$RUN/lmo/poses.csv" "$RUN/lmo/cand.csv" \
          "$RUN/ycbv/poses.csv" "$RUN/ycbv/cand.csv"; do
   # NOT `test ! -e a && test ! -e b`: under set -e a failing left-hand test
   # is errexit-exempt and the guard silently passes (second-review P0).
-  if [ -e "$f" ]; then echo "refusing: $f exists — rerank requires FRESH --out" >&2; exit 1; fi
+  if [ -e "$f" ]; then echo "refusing: $f exists — resume keeps old rows; use a FRESH --out" >&2; exit 1; fi
 done
 
 "$PY" examples/bop_eval.py \
@@ -455,6 +447,7 @@ done
   --eq5-terms \
   --min-mask-pixels 0 --mask-iou-dedupe 1.1 \
   --tau-diameter \
+  --trans-nms 0.05 \
   --icp-dense --icp-dense-max 3000 \
   --render-backend nvdiffrast \
   --out "$RUN/lmo/poses.csv" --cache "$RUN/lmo/cache" \
@@ -469,6 +462,7 @@ done
   --eq5-terms \
   --min-mask-pixels 0 --mask-iou-dedupe 1.1 \
   --tau-diameter \
+  --trans-nms 0.05 \
   --icp-dense --icp-dense-max 3000 \
   --render-backend nvdiffrast \
   --out "$RUN/ycbv/poses.csv" --cache "$RUN/ycbv/cache" \
@@ -525,8 +519,10 @@ export OMP_NUM_THREADS=16
 export TORCH_HOME="${TORCH_HOME:-/workspace/torch_cache}"
 export POPOE_GEDI_PATH=/workspace/gedi
 export POPOE_BOP_TOOLKIT=/workspace/bop_toolkit
+# Clear faithful pins that would otherwise leak from a prior arm in the same shell.
 unset POPOE_CANON_BASIS POPOE_QUERY_POINTS POPOE_N_VIEWS POPOE_QUERY_CANON
-unset POPOE_QUERY_FILL POPOE_QUERY_MIN_VIEWS POPOE_QUERY_VIEWS
+unset POPOE_QUERY_FILL POPOE_QUERY_FILL_MODE POPOE_QUERY_MIN_VIEWS POPOE_QUERY_VIEWS
+unset POPOE_TARGET_DENSE POPOE_TARGET_PAPER_GRID
 unset POPOE_TARGET_GRID POPOE_TARGET_CANON POPOE_TARGET_FILL POPOE_TARGET_CROP
 unset POPOE_VIS_DIM POPOE_VIS_WEIGHT POPOE_SKIP_VIS POPOE_DINO_LAYER
 unset POPOE_TWO_SCALE_GEDI POPOE_DGEDI_MODE POPOE_GEOM_BACKBONE POPOE_MESH_SHADING
@@ -537,7 +533,7 @@ for f in "$RUN/lmo/poses.csv" "$RUN/lmo/cand.csv" \
          "$RUN/ycbv/poses.csv" "$RUN/ycbv/cand.csv"; do
   # NOT `test ! -e a && test ! -e b`: under set -e a failing left-hand test
   # is errexit-exempt and the guard silently passes (second-review P0).
-  if [ -e "$f" ]; then echo "refusing: $f exists — rerank requires FRESH --out" >&2; exit 1; fi
+  if [ -e "$f" ]; then echo "refusing: $f exists — resume keeps old rows; use a FRESH --out" >&2; exit 1; fi
 done
 
 "$PY" examples/bop_eval.py \
@@ -545,6 +541,7 @@ done
   --detections "$DET/cnos/cnos-fastsam_lmo-test.json" \
   --merge none --topk 2 --grid 32 --solver o3d --seed "$SEED" \
   --weights 1.0,0.7,0.5,0.3,0.2 \
+  --trans-nms 0.05 \
   --render-rerank \
   --render-backend nvdiffrast \
   --out "$RUN/lmo/poses.csv" --cache "$RUN/lmo/cache" \
@@ -556,6 +553,7 @@ done
   --merge ycbv --topk 2 --grid 32 --solver o3d --seed "$SEED" \
   --weights 1.0,0.7,0.5,0.3,0.2 \
   --use-s-coarse \
+  --trans-nms 0.05 \
   --render-rerank \
   --render-backend nvdiffrast \
   --out "$RUN/ycbv/poses.csv" --cache "$RUN/ycbv/cache" \
@@ -612,8 +610,10 @@ export OMP_NUM_THREADS=16
 export TORCH_HOME="${TORCH_HOME:-/workspace/torch_cache}"
 export POPOE_GEDI_PATH=/workspace/gedi
 export POPOE_BOP_TOOLKIT=/workspace/bop_toolkit
+# Clear faithful pins that would otherwise leak from a prior arm in the same shell.
 unset POPOE_CANON_BASIS POPOE_QUERY_POINTS POPOE_N_VIEWS POPOE_QUERY_CANON
-unset POPOE_QUERY_FILL POPOE_QUERY_MIN_VIEWS POPOE_QUERY_VIEWS
+unset POPOE_QUERY_FILL POPOE_QUERY_FILL_MODE POPOE_QUERY_MIN_VIEWS POPOE_QUERY_VIEWS
+unset POPOE_TARGET_DENSE POPOE_TARGET_PAPER_GRID
 unset POPOE_TARGET_GRID POPOE_TARGET_CANON POPOE_TARGET_FILL POPOE_TARGET_CROP
 unset POPOE_VIS_DIM POPOE_VIS_WEIGHT POPOE_SKIP_VIS POPOE_DINO_LAYER
 unset POPOE_TWO_SCALE_GEDI POPOE_DGEDI_MODE POPOE_GEOM_BACKBONE POPOE_MESH_SHADING
@@ -624,7 +624,7 @@ for f in "$RUN/lmo/poses.csv" "$RUN/lmo/cand.csv" \
          "$RUN/ycbv/poses.csv" "$RUN/ycbv/cand.csv"; do
   # NOT `test ! -e a && test ! -e b`: under set -e a failing left-hand test
   # is errexit-exempt and the guard silently passes (second-review P0).
-  if [ -e "$f" ]; then echo "refusing: $f exists — rerank requires FRESH --out" >&2; exit 1; fi
+  if [ -e "$f" ]; then echo "refusing: $f exists — resume keeps old rows; use a FRESH --out" >&2; exit 1; fi
 done
 
 "$PY" examples/bop_eval.py \
@@ -632,6 +632,7 @@ done
   --sources "cnos=$DET/cnos/cnos-fastsam_lmo-test.json,sam6d=$DET/sam6d/sam6d_official_lmo.json,nids=$DET/nids/nids_wa_sappe_lmo.json,muse=$DET/muse/muse-full_lmo-test.json" \
   --merge none --topk 2 --grid 32 --solver o3d --seed "$SEED" \
   --weights 1.0,0.7,0.5,0.3,0.2 \
+  --trans-nms 0.05 \
   --render-rerank \
   --render-backend nvdiffrast \
   --out "$RUN/lmo/poses.csv" --cache "$RUN/lmo/cache" \
@@ -643,6 +644,7 @@ done
   --merge ycbv --topk 2 --grid 32 --solver o3d --seed "$SEED" \
   --weights 1.0,0.7,0.5,0.3,0.2 \
   --use-s-coarse \
+  --trans-nms 0.05 \
   --render-rerank \
   --render-backend nvdiffrast \
   --out "$RUN/ycbv/poses.csv" --cache "$RUN/ycbv/cache" \
@@ -1222,8 +1224,10 @@ grid32/five-weights, YCB-V merge+s-coarse) carry over unchanged unless the
 triage says otherwise. Triage-driven addition to every arm: `--trans-nms 0.05`
 — paper §III-F translation NMS on refined poses; the paper names the mechanism
 but no radius, so the value (0.05× the models_info diameter; same-instance duplicates converge post-ICP within ~1-2% of the diameter, and nested/thin objects can hold distinct instances closer than 0.1) is pinned-by-us
-and parameterised. Default-on in `bop_eval.py`; spell it explicitly when the
-tables freeze. `--trans-nms 0` disables and must be recorded as a deviation.
+and parameterised. Default-on in `bop_eval.py`; the four runbooks and the
+`scripts/faithful_*.sh` CNOS wrappers spell it explicitly so a future default
+change cannot silently re-identity the freezes. `--trans-nms 0` disables and
+must be recorded as a deviation.
 
 Detection inputs are real bytes (no symlinks, file or directory) bound to
 their paths by `data/detections/MANIFEST.sha256` (tracked; path+hash — a

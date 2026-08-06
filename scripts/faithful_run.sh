@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # The FAITHFUL configuration: every knob at the FreeZeV2 paper value.
 #
+# SCOPE: faithful-cnos ONLY (CNOS-FastSAM single source, LM-O or YCB-V).
+# The 18-run ledger entries (faithful-4way / tuned-*) live as bash blocks in
+# REPRODUCTION.md — do not treat this wrapper as a substitute for those arms.
+#
 # This is experiment A of the fidelity programme: one number per dataset for
 # "popoe configured as the paper describes", to stand against the official
 # FreeZe(CNOS) rows. The tuned line (grid 32, weight sweep, champion rule) is
@@ -95,6 +99,7 @@ env | grep '^POPOE_' | sort
   --eq5-terms \
   --min-mask-pixels 0 --mask-iou-dedupe 1.1 \
   --tau-diameter \
+  --trans-nms 0.05 \
   --icp-dense --icp-dense-max 3000 \
   --render-backend nvdiffrast \
   --out "$BASE.csv" --cache "$OUT/cache_${DS}" \

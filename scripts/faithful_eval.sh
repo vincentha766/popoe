@@ -5,6 +5,9 @@
 # every fidelity knob that changes features or poses is visible either as an
 # exported POPOE_* env var or as a bop_eval flag in the command below.
 #
+# SCOPE: faithful-cnos ONLY (CNOS-FastSAM single source). Not faithful-4way
+# and not tuned-*; those arms are the bash blocks in REPRODUCTION.md.
+#
 # Usage (pod, fresh clone):
 #   bash scripts/faithful_eval.sh <lmo|lmo_cnos|ycbv> [<out-root>]
 set -euo pipefail
@@ -84,6 +87,7 @@ env | grep '^POPOE_' | sort
   --eq5-terms \
   --min-mask-pixels 0 --mask-iou-dedupe 1.1 \
   --tau-diameter \
+  --trans-nms 0.05 \
   --icp-dense --icp-dense-max 3000 \
   --render-backend nvdiffrast \
   --out "$BASE.csv" --cache "$OUT/cache_${TAG}" \
