@@ -61,8 +61,15 @@ def square_crop(img: np.ndarray, mask: np.ndarray,
     half = int(round(side * (0.5 + pad)))
     cy, cx = (y0 + y1) // 2, (x0 + x1) // 2
     h_img, w_img = img.shape[:2]
-    Y0, Y1 = max(0, cy - half), min(h_img, cy + half)
-    X0, X1 = max(0, cx - half), min(w_img, cx + half)
+    # Slide the window back inside the frame rather than truncating the far edge.
+    # Clamping each side independently returned a NON-square window for any
+    # object near an image border, and the .resize((size, size)) below then
+    # squashed the object's aspect ratio against a square-rendered template
+    # bank. Same defect as _masked_square_crop in segmentor_cnos.py.
+    win = min(2 * half, h_img, w_img)
+    Y0 = int(np.clip(cy - win // 2, 0, h_img - win))
+    X0 = int(np.clip(cx - win // 2, 0, w_img - win))
+    Y1, X1 = Y0 + win, X0 + win
     if Y1 <= Y0 or X1 <= X0:
         return None, None
     try:

@@ -147,8 +147,16 @@ def _masked_square_crop(rgb: np.ndarray, mask: np.ndarray) -> Optional[np.ndarra
     side = max(y1 - y0, x1 - x0)
     cy, cx = (y0 + y1) // 2, (x0 + x1) // 2
     h_img, w_img = rgb.shape[:2]
-    y0p = max(0, cy - side // 2); y1p = min(h_img, y0p + side)
-    x0p = max(0, cx - side // 2); x1p = min(w_img, x0p + side)
+    # Slide the window back inside the frame instead of truncating the far edge:
+    # clamping y0p at 0 and y1p at h_img independently yields a NON-square crop
+    # for any object touching the bottom/right edge, and the 224x224 resize
+    # downstream then squashes the object's aspect ratio while the template bank
+    # renders squares. Only when the object is larger than the frame does the
+    # square become unattainable, and we degrade to the full extent.
+    side = min(side, h_img, w_img)
+    y0p = int(np.clip(cy - side // 2, 0, h_img - side))
+    x0p = int(np.clip(cx - side // 2, 0, w_img - side))
+    y1p, x1p = y0p + side, x0p + side
     crop = rgb[y0p:y1p, x0p:x1p].copy()
     crop[~mask[y0p:y1p, x0p:x1p]] = 0
     return crop
