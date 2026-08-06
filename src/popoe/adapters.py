@@ -155,9 +155,16 @@ def paper_grid_centers(y0: int, y1: int, x0: int, x1: int, grid_size: int):
     centres outside the image / mask / valid depth. rows/cols index straight
     into the grid_size x grid_size DINOv2 patch feature map of the square
     crop resized to grid_size*14 (direct patch assignment, no bilinear)."""
+    # The square is SNAPPED to the integer pixel grid (floor): the DINO crop
+    # and this tiling must share EXACTLY the same box. Rounding the crop
+    # independently (review F1) shifted it by 0.5 px against the tiling
+    # whenever the padded axis had odd slack — up to a full patch of feature
+    # misassignment (worst case: every centre off by one tile). side is
+    # integer-valued for integer bboxes, so flooring the corner pins the
+    # whole box to integers and the crop below reproduces it exactly.
     side = float(max(y1 - y0, x1 - x0) + 1)
-    by0 = (y0 + y1 + 1) / 2.0 - side / 2.0
-    bx0 = (x0 + x1 + 1) / 2.0 - side / 2.0
+    by0 = float(np.floor((y0 + y1 + 1) / 2.0 - side / 2.0))
+    bx0 = float(np.floor((x0 + x1 + 1) / 2.0 - side / 2.0))
     rows, cols = np.meshgrid(np.arange(grid_size), np.arange(grid_size),
                              indexing="ij")
     rows = rows.reshape(-1)

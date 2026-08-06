@@ -38,7 +38,15 @@ OUT="${2:-${OUT:-/workspace/results/faithful_20260728}}"
 BOP="${BOP:-/workspace/bop_data}"
 DET="${DET:-$PWD/data/detections}"
 PY="${PY:-python}"
-SEED="${SEED:-1234}"
+SEED="${SEED:-42}"     # runbook pin; 1234 was pre-freeze wrapper drift (F6)
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-8}"
+
+# Hygiene: a shell with leftover tuned env would silently drift a "faithful"
+# run (enc_cfg records it but does not refuse it) — unset like the runbooks.
+unset POPOE_TARGET_GRID POPOE_TARGET_CANON POPOE_TARGET_FILL POPOE_TARGET_CROP
+unset POPOE_VIS_DIM POPOE_VIS_WEIGHT POPOE_SKIP_VIS POPOE_DINO_LAYER
+unset POPOE_TWO_SCALE_GEDI POPOE_DGEDI_MODE POPOE_GEOM_BACKBONE POPOE_MESH_SHADING
+unset POPOE_FPFH_RADII POPOE_FPFH_VOXEL_FRAC POPOE_FPFH_NORMAL_FRAC POPOE_FPFH_ORIENT
 
 export POPOE_QUERY_POINTS=5000
 export POPOE_N_VIEWS=162
@@ -80,7 +88,8 @@ env | grep '^POPOE_' | sort
   --tau-diameter \
   --icp-dense --icp-dense-max 3000 \
   --render-backend nvdiffrast \
-  --out "$BASE.csv" --cache "$OUT/cache_${DS}"
+  --out "$BASE.csv" --cache "$OUT/cache_${DS}" \
+  --cand-csv "$BASE.cand.csv"
 
 echo "=== VSD render ($DS) ==="
 "$PY" -m popoe.metrics.vsd "$BASE.csv" "$BOP/$BOP_DS" 2>&1 | tail -3

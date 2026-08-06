@@ -867,7 +867,9 @@ class TargetFeatureExtractor:
             return self._skip_target(
                 f"only {len(ys_all)} valid depth pixel(s) in mask")
 
-        paper_grid = os.environ.get("POPOE_TARGET_PAPER_GRID", "0") == "1"
+        # != "0", matching how the enc_cfg cache key records this knob — a
+        # value like "2" must not change the key while running legacy code.
+        paper_grid = os.environ.get("POPOE_TARGET_PAPER_GRID", "0") != "0"
         pg_rows = pg_cols = pg_box = None
         if paper_grid:
             # Paper Sec. III-D target protocol (triage D3): minimal SQUARE
@@ -884,9 +886,17 @@ class TargetFeatureExtractor:
             patch_u, patch_v = patch_u[keep], patch_v[keep]
             pg_rows, pg_cols = rows_g[keep], cols_g[keep]
             d = depth[patch_v, patch_u]
-            if len(d) < 4:
+            # UNIQUE pixels, not raw count: a tiny mask (1x1 px passes with
+            # --min-mask-pixels 0) puts all 256 centres on the SAME pixel —
+            # 256 copies of one 3D point would sail through a bare len()>=4
+            # gate straight into GeDi/RANSAC (review F2). No random-pixel
+            # fallback in paper mode: skip loudly.
+            n_unique = len(np.unique(np.stack([patch_u, patch_v], axis=1),
+                                     axis=0))
+            if len(d) < 4 or n_unique < 4:
                 return self._skip_target(
-                    f"only {len(d)} paper-grid centre(s) on valid object depth")
+                    f"only {n_unique} unique paper-grid centre(s) on valid "
+                    f"object depth")
         else:
             grid_y = np.linspace(y0, y1, grid_size).astype(int).clip(0, H-1)
             grid_x = np.linspace(x0, x1, grid_size).astype(int).clip(0, W-1)
@@ -986,8 +996,10 @@ class TargetFeatureExtractor:
         ])
         bx0, by0, side = box
         canon = grid_size * 14
-        crop = (int(round(bx0)), int(round(by0)),
-                int(round(bx0 + side)), int(round(by0 + side)))
+        # box arrives integer-valued (paper_grid_centers floors the corner):
+        # int() is exact, the crop IS the tiling's box. round() here shifted
+        # the crop 0.5 px against the tiling on odd slack (review F1).
+        crop = (int(bx0), int(by0), int(bx0 + side), int(by0 + side))
         img_pil = PIL.Image.fromarray(rgb).crop(crop).resize((canon, canon))
         img_t = transform(img_pil).unsqueeze(0).to(self.device)
         out = self.dino.get_intermediate_layers(

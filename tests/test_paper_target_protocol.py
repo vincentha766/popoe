@@ -52,3 +52,25 @@ def test_fixed_seed_subsample_contract():
     assert np.array_equal(idx, fixed_seed_subsample(10, 3))   # deterministic
     assert fixed_seed_subsample(3, 0) is None    # 0 = no cap
     assert fixed_seed_subsample(3, 5) is None    # under cap = keep all
+
+
+def test_box_is_integer_snapped_and_tiles_align_with_the_crop():
+    """Review F1: the DINO crop and the tiling must share EXACTLY the same
+    box. The corner is floored to integers, so int() on the crop edges is
+    exact — and every centre's pixel maps back to its own tile."""
+    rng = np.random.default_rng(7)
+    for _ in range(200):
+        y0 = int(rng.integers(0, 50)); x0 = int(rng.integers(0, 50))
+        y1 = y0 + int(rng.integers(16, 120)); x1 = x0 + int(rng.integers(16, 120))
+        g = 16
+        rows, cols, u, v, (bx0, by0, side) = paper_grid_centers(y0, y1, x0, x1, g)
+        assert bx0 == int(bx0) and by0 == int(by0)     # integer box
+        cx = bx0 + (cols + 0.5) * side / g
+        cy = by0 + (rows + 0.5) * side / g
+        # the stored pixel CONTAINS the continuous centre ...
+        assert np.array_equal(u, np.floor(cx).astype(int))
+        assert np.array_equal(v, np.floor(cy).astype(int))
+        # ... and the centre sits in ITS OWN tile of the SAME box — which is
+        # exactly the patch whose feature it receives (feat_map[rows, cols]).
+        assert np.array_equal(np.floor((cx - bx0) * g / side).astype(int), cols)
+        assert np.array_equal(np.floor((cy - by0) * g / side).astype(int), rows)

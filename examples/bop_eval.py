@@ -705,6 +705,18 @@ def main():
                          "errors without it; 'auto' accepts the ~100x slower CPU "
                          "ray-caster, which yields DIFFERENT features.")
     args = ap.parse_args()
+
+    # D4 contract guard: POPOE_TARGET_DENSE pins ONE shared P_T^dense for
+    # GeDi and ICP; a differing --icp-dense-max silently splits it back into
+    # two clouds (measured: 3000 vs 2000 overlap only ~45%). Env and CLI are
+    # two hands on one value — refuse the mismatch, don't paper over it.
+    _n_td = int(os.environ.get("POPOE_TARGET_DENSE", "0"))
+    if _n_td and (not args.icp_dense or args.icp_dense_max != _n_td):
+        raise SystemExit(
+            f"POPOE_TARGET_DENSE={_n_td} pins the ONE shared P_T^dense; run "
+            f"with --icp-dense --icp-dense-max {_n_td} (got icp_dense="
+            f"{args.icp_dense}, max={args.icp_dense_max}) or unset the env — "
+            f"a mismatch silently splits the paper's single dense cloud.")
     # --use-s-coarse implies recording it too (the s_coarse cand-csv column and
     # the coarse-pose wiring), so it depends on --score-coarse.
     if args.use_s_coarse:
