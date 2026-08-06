@@ -149,36 +149,39 @@ class _TwoScaleGeDi:
 
 
 def load_gedi(device='cuda'):
-    """Build the geometric branch (a popoe.interfaces.PointDescriptor).
+    """Build GeDi — and only GeDi. Callers wanting whichever backbone the run
+    selected want `load_geometric_descriptor`.
 
-    POPOE_GEOM_BACKBONE selects it: gedi (default) | fpfh | dgedi. The name is
-    historical — prefer the `load_geometric_descriptor` alias in new code.
+    Paper (v2.1 §IV.A) default: two-scale GeDi at 30%+40% of object diameter,
+    concatenated → 64D geometric. Set POPOE_TWO_SCALE_GEDI=0 to fall back to
+    single-scale 32D (r_lrf=0.5) for ablation.
     """
-    import os, sys
-    backend = os.environ.get('POPOE_GEOM_BACKBONE', 'gedi').lower()
-    if backend == 'fpfh':
-        # Hand-crafted control: no training, no GPU, radii in the same canonical
-        # units as r_lrf below, so it sees the same neighbourhoods GeDi does.
-        from popoe.descriptors import load_fpfh
-        return load_fpfh()
-    if backend == 'dgedi':
-        sys.path.insert(0, '/workspace/freezev2')
-        from dgedi_adapter import load_dgedi
-        mode = os.environ.get('POPOE_DGEDI_MODE', 'single_scale')
-        ckpt = f'/workspace/dGeDi/checkpoints/dGeDi_{mode}.pth'
-        return load_dgedi(ckpt, mode=mode, device=device, enable_flash=False)
-    # Paper (v2.1 §IV.A) default: two-scale GeDi at 30%+40% of object diameter,
-    # concatenated → 64D geometric. Set POPOE_TWO_SCALE_GEDI=0 to fall back to
-    # single-scale 32D (r_lrf=0.5) for ablation.
     if os.environ.get('POPOE_TWO_SCALE_GEDI', '1') == '0':
         return _make_gedi_single(0.5)
     return _TwoScaleGeDi(r_a=0.3, r_b=0.4)
 
 
-# Backend-neutral name. `load_gedi` predates dGeDi and FPFH and now returns
-# whichever descriptor POPOE_GEOM_BACKBONE names; both spellings are kept so
-# existing callers (recipes, monolith, eval scripts) stay valid.
-load_geometric_descriptor = load_gedi
+def load_geometric_descriptor(device='cuda'):
+    """Build the geometric branch (a popoe.interfaces.PointDescriptor).
+
+    POPOE_GEOM_BACKBONE selects it: gedi (default) | fpfh | dgedi. This is the
+    dispatcher every caller should use; `load_gedi` is one of its branches, not
+    a synonym for it.
+    """
+    backend = os.environ.get('POPOE_GEOM_BACKBONE', 'gedi').lower()
+    if backend == 'fpfh':
+        # Hand-crafted control: no training, no GPU, radii in the same canonical
+        # units as GeDi's r_lrf, so it sees the same neighbourhoods.
+        from popoe.descriptors import load_fpfh
+        return load_fpfh()
+    if backend == 'dgedi':
+        import sys
+        sys.path.insert(0, '/workspace/freezev2')
+        from dgedi_adapter import load_dgedi
+        mode = os.environ.get('POPOE_DGEDI_MODE', 'single_scale')
+        ckpt = f'/workspace/dGeDi/checkpoints/dGeDi_{mode}.pth'
+        return load_dgedi(ckpt, mode=mode, device=device, enable_flash=False)
+    return load_gedi(device)
 
 
 # --- how a query mesh gets its colour -------------------------------------
@@ -274,7 +277,7 @@ class QueryFeatureExtractor:
             raise ValueError(f"unknown render_backend: {render_backend!r}")
         self.device = device
         self.dino = dino if dino is not None else load_dinov2(device)
-        self.gedi = gedi if gedi is not None else load_gedi(device)
+        self.gedi = gedi if gedi is not None else load_geometric_descriptor(device)
         # Fusion is a swappable component (popoe/freeze/fusion.py). It owns the
         # per-object visual PCA; `_pca_vis` below proxies it so external callers
         # (e.g. pose_estimator sharing query PCA -> target) keep working.
@@ -812,7 +815,7 @@ class TargetFeatureExtractor:
     def __init__(self, device='cuda', dino=None, gedi=None):
         self.device = device
         self.dino = dino if dino is not None else load_dinov2(device)
-        self.gedi = gedi if gedi is not None else load_gedi(device)
+        self.gedi = gedi if gedi is not None else load_geometric_descriptor(device)
         # See QueryFeatureExtractor: fusion owns the PCA, `_pca_vis` proxies it.
         self.fusion = DinoGeDiFusion()
         self._last_target_skip_reason = None

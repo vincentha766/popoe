@@ -15,11 +15,11 @@ torch.zeros(1, device="cuda")
 mark("00 cuda context only")
 
 from popoe.freeze.feature_extractor import (TargetFeatureExtractor,
-                                            load_dinov2, load_gedi)
+                                            load_dinov2, load_geometric_descriptor)
 
 dino = load_dinov2("cuda")
 mark("01 +DINOv2-g")
-gedi = load_gedi("cuda")
+gedi = load_geometric_descriptor("cuda")
 mark("02 +two-scale GeDi (BOTH RESIDENT)")
 
 tfe = TargetFeatureExtractor(device="cuda", dino=dino, gedi=gedi)

@@ -18,7 +18,7 @@ Scene (RGB-D, K) ──┴──────────────────
 | Segmentation | `Segmentor` | `segmentor_detections.BOPDetectionsSegmentor` (evaluated) — 12 more in [§Segmentation backends](#segmentation-backends) |
 | Query features | `QueryEncoder` | `freeze.adapters.FreeZeQueryEncoder` (DINOv2 visual + `PointDescriptor` geometric branch) |
 | Target features | `TargetEncoder` | `freeze.adapters.FreeZeTargetEncoder` |
-| Geometric descriptors | `PointDescriptor` | GeDi default via `freeze.feature_extractor.load_gedi`; `descriptors.FPFHDescriptor`; dGeDi via `POPOE_GEOM_BACKBONE` |
+| Geometric descriptors | `PointDescriptor` | `freeze.feature_extractor.load_geometric_descriptor` dispatches on `POPOE_GEOM_BACKBONE`: `load_gedi` (default); `descriptors.FPFHDescriptor`; dGeDi via `POPOE_GEOM_BACKBONE` |
 | Fusion | `FeatureFusion` | `freeze.fusion.DinoGeDiFusion` |
 | Pose solve | `PoseSolver` | `solvers.Open3DFeatureRansacSolver` (default) — 3 more in [§Pluggability proven](#pluggability-proven--the-posesolver-stage) |
 | External coarse pose | `CoarseEstimator` | `segmentor_sam6d.SAM6DPemResultsCoarseEstimator` over already-written PEM results |

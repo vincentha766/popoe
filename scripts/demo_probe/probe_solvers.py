@@ -9,7 +9,7 @@ import torch, cv2
 SCENE, IMID, CACHE = sys.argv[1], sys.argv[2], sys.argv[3]
 
 torch.zeros(1, device="cuda")
-from popoe.freeze.feature_extractor import TargetFeatureExtractor, load_dinov2, load_gedi
+from popoe.freeze.feature_extractor import TargetFeatureExtractor, load_dinov2, load_geometric_descriptor
 from popoe.interfaces import PointFeatures, CanonFrame
 from popoe.solvers.open3d_ransac import Open3DFeatureRansacSolver
 from popoe.solvers.gpu_ransac import GPURansacSolver

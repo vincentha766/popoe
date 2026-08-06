@@ -25,12 +25,12 @@ class FreeZeV2:
     def __init__(self, device='cuda', tau_inlier=0.03, tau_icp=0.03,
                  n_ransac=10000, k_corr=10):
         from popoe.freeze.feature_extractor import (
-            QueryFeatureExtractor, TargetFeatureExtractor, load_dinov2, load_gedi)
+            QueryFeatureExtractor, TargetFeatureExtractor, load_dinov2, load_geometric_descriptor)
         # Load heavy models once and share
         print("Loading DINOv2...")
         shared_dino = load_dinov2(device)
         print("Loading GeDi...")
-        shared_gedi = load_gedi(device)
+        shared_gedi = load_geometric_descriptor(device)
         self.query_extractor = QueryFeatureExtractor(device, dino=shared_dino, gedi=shared_gedi)
         self.target_extractor = TargetFeatureExtractor(device, dino=shared_dino, gedi=shared_gedi)
         self.tau_inlier = tau_inlier

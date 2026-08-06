@@ -84,11 +84,11 @@ class ModelPool:
     def _load_sam2(self):
         return build_sam2_model(self.sam2_size, self.device, self.sam_ckpt_dir)
 
-    def _load_gedi(self):
+    def _load_geometric_descriptor(self):
         # Module-level heavy: importing popoe.freeze.feature_extractor needs
         # the GeDi package reachable via POPOE_GEDI_PATH, so defer it to here.
-        from popoe.freeze.feature_extractor import load_gedi
-        return load_gedi(self.device)
+        from popoe.freeze.feature_extractor import load_geometric_descriptor
+        return load_geometric_descriptor(self.device)
 
     # ── cached getters ──────────────────────────────────────────────────
 
@@ -104,7 +104,7 @@ class ModelPool:
 
     def gedi(self):
         if self._gedi is None:
-            self._gedi = self._load_gedi()
+            self._gedi = self._load_geometric_descriptor()
         return self._gedi
 
 

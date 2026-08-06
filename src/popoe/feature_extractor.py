@@ -4,4 +4,5 @@ imports working. (Heavy: importing this pulls torch and GeDi, as before.)"""
 from popoe.freeze.feature_extractor import *  # noqa: F401,F403
 from popoe.freeze.feature_extractor import (  # noqa: F401
     QueryFeatureExtractor, TargetFeatureExtractor, load_dinov2, load_gedi,
+    load_geometric_descriptor,
 )

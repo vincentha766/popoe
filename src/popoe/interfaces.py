@@ -246,7 +246,7 @@ class Segmentor(Protocol):
 class PointDescriptor(Protocol):
     """Per-point 3D geometric descriptor — the encoders' geometric branch.
 
-    GeDi is the FreeZe default (`popoe.freeze.feature_extractor.load_gedi`);
+    GeDi is the FreeZe default (`popoe.freeze.feature_extractor.load_gedi`, dispatched by `load_geometric_descriptor`);
     FPFH (`popoe.descriptors.FPFHDescriptor`) is the hand-crafted control and
     dGeDi the fast learned one. Both encoders call this and nothing else, so a
     backbone swap is one env var (POPOE_GEOM_BACKBONE).

@@ -61,7 +61,7 @@ def main():
     from bop_toolkit_lib import misc as btk_misc
 
     from popoe.freeze.feature_extractor import (
-        QueryFeatureExtractor, TargetFeatureExtractor, load_dinov2, load_gedi,
+        QueryFeatureExtractor, TargetFeatureExtractor, load_dinov2, load_geometric_descriptor,
         _dino_layer)
     from popoe.freeze.recipes import best_segmentor
     from popoe.interfaces import CanonFrame, ObjectModel, PointFeatures, Scene
@@ -75,7 +75,7 @@ def main():
     mesh_path = str(bop / layout["models_dir"] / f"obj_{oid:06d}.ply")
 
     dino = load_dinov2("cuda")
-    gedi = load_gedi("cuda")
+    gedi = load_geometric_descriptor("cuda")
     qx = QueryFeatureExtractor("cuda", dino=dino, gedi=gedi,
                                render_backend="nvdiffrast")
     tx = TargetFeatureExtractor("cuda", dino=dino, gedi=gedi)
