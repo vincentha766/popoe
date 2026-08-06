@@ -308,10 +308,12 @@ if [ -n "${POPOE_PIN:-}" ] && [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
   echo "POPOE_PIN=$POPOE_PIN does not match HEAD=$(git rev-parse HEAD)" >&2
   exit 1
 fi
-if [ ! -f scripts/check_rerank_symmetry.py ]; then
-  echo "missing scripts/check_rerank_symmetry.py — stale tag tip; fetch --tags --force" >&2
+for req in scripts/check_rerank_symmetry.py scripts/sar_render_compare.py; do
+if [ ! -f "$req" ]; then
+  echo "missing $req — stale tag tip (render_rerank loads sar_render_compare at RUNTIME); fetch --tags --force" >&2
   exit 1
 fi
+done
 if [ -n "$(git status --porcelain)" ]; then
   echo "refusing dirty popoe worktree" >&2
   exit 1
@@ -413,10 +415,12 @@ if [ -n "${POPOE_PIN:-}" ] && [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
   echo "POPOE_PIN=$POPOE_PIN does not match HEAD=$(git rev-parse HEAD)" >&2
   exit 1
 fi
-if [ ! -f scripts/check_rerank_symmetry.py ]; then
-  echo "missing scripts/check_rerank_symmetry.py — stale tag tip; fetch --tags --force" >&2
+for req in scripts/check_rerank_symmetry.py scripts/sar_render_compare.py; do
+if [ ! -f "$req" ]; then
+  echo "missing $req — stale tag tip (render_rerank loads sar_render_compare at RUNTIME); fetch --tags --force" >&2
   exit 1
 fi
+done
 if [ -n "$(git status --porcelain)" ]; then
   echo "refusing dirty popoe worktree" >&2
   exit 1
@@ -518,10 +522,12 @@ if [ -n "${POPOE_PIN:-}" ] && [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
   echo "POPOE_PIN=$POPOE_PIN does not match HEAD=$(git rev-parse HEAD)" >&2
   exit 1
 fi
-if [ ! -f scripts/check_rerank_symmetry.py ]; then
-  echo "missing scripts/check_rerank_symmetry.py — stale tag tip; fetch --tags --force" >&2
+for req in scripts/check_rerank_symmetry.py scripts/sar_render_compare.py; do
+if [ ! -f "$req" ]; then
+  echo "missing $req — stale tag tip (render_rerank loads sar_render_compare at RUNTIME); fetch --tags --force" >&2
   exit 1
 fi
+done
 if [ -n "$(git status --porcelain)" ]; then
   echo "refusing dirty popoe worktree" >&2
   exit 1
@@ -613,10 +619,12 @@ if [ -n "${POPOE_PIN:-}" ] && [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
   echo "POPOE_PIN=$POPOE_PIN does not match HEAD=$(git rev-parse HEAD)" >&2
   exit 1
 fi
-if [ ! -f scripts/check_rerank_symmetry.py ]; then
-  echo "missing scripts/check_rerank_symmetry.py — stale tag tip; fetch --tags --force" >&2
+for req in scripts/check_rerank_symmetry.py scripts/sar_render_compare.py; do
+if [ ! -f "$req" ]; then
+  echo "missing $req — stale tag tip (render_rerank loads sar_render_compare at RUNTIME); fetch --tags --force" >&2
   exit 1
 fi
+done
 if [ -n "$(git status --porcelain)" ]; then
   echo "refusing dirty popoe worktree" >&2
   exit 1
