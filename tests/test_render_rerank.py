@@ -166,3 +166,65 @@ def test_reranker_skips_without_bbox():
     assert out.score == 0.42
     assert np.allclose(out.breakdown["R_prererank"], pose.R)
     assert np.allclose(out.breakdown["t_prererank"], pose.t)
+
+
+def test_flip_winner_corrects_coarse_pose(monkeypatch):
+    """B1-F2: when a flip wins, the SAME model-frame delta must reach the
+    coarse pose in the breakdown — otherwise ChampionScorer's S_coarse
+    measures the pre-flip orientation and penalises the corrected candidate."""
+    from popoe.render_rerank import pca_flip_variants
+    q, t, scene, obj = _icp_scene()
+    rr = RenderAppearanceReranker(re_icp=True)
+    monkeypatch.setattr(
+        rr, "_sar_ti",
+        lambda scene, obj, R, t_m, bbox: 0.0 if np.allclose(R, np.eye(3)) else 1.0)
+    R_coarse0 = rot_about(np.array([0.0, 0.0, 1.0]), 30.0)
+    pose = PoseHypothesis(np.eye(3), np.zeros(3), 1.0,
+                          {"s_icp": 0.11, "tau_icp": 0.03 * 0.1,
+                           "R_coarse": R_coarse0.copy(),
+                           "t_coarse": np.zeros(3)})
+    out = rr.refine(pose, scene, obj, q, t)
+    assert out.breakdown["render_rerank"] == "flip0"
+    # pose.R = I, so the model-frame delta IS the flip0 variant rotation.
+    flip0 = dict(pca_flip_variants(np.eye(3), q.pts))["flip0"]
+    assert np.allclose(out.breakdown["R_coarse"], R_coarse0 @ flip0)
+    assert np.allclose(out.breakdown["t_coarse"], 0.0)   # translation untouched
+
+
+def test_champion_winner_leaves_coarse_untouched(monkeypatch):
+    q, t, scene, obj = _icp_scene()
+    rr = RenderAppearanceReranker(re_icp=True)
+    monkeypatch.setattr(
+        rr, "_sar_ti",
+        lambda scene, obj, R, t_m, bbox: 1.0 if np.allclose(R, np.eye(3)) else 0.0)
+    R_coarse0 = rot_about(np.array([0.0, 0.0, 1.0]), 30.0)
+    pose = PoseHypothesis(np.eye(3), np.zeros(3), 1.0,
+                          {"s_icp": 0.11, "tau_icp": 0.03 * 0.1,
+                           "R_coarse": R_coarse0.copy()})
+    out = rr.refine(pose, scene, obj, q, t)
+    assert out.breakdown["render_rerank"] == "champion"
+    assert np.allclose(out.breakdown["R_coarse"], R_coarse0)
+
+
+def test_re_icp_failure_reverts_the_flip(monkeypatch):
+    """A flipped R carrying the champion's pre-flip s_icp is not a scoreable
+    candidate; without a consistent re-measurement the champion pose stays."""
+    q, t, scene, obj = _icp_scene()
+    rr = RenderAppearanceReranker(re_icp=True)
+    monkeypatch.setattr(
+        rr, "_sar_ti",
+        lambda scene, obj, R, t_m, bbox: 0.0 if np.allclose(R, np.eye(3)) else 1.0)
+
+    def boom(*a, **kw):
+        raise RuntimeError("icp exploded")
+    monkeypatch.setattr("popoe.registration.icp_refinement", boom)
+    R_coarse0 = rot_about(np.array([0.0, 0.0, 1.0]), 30.0)
+    pose = PoseHypothesis(np.eye(3), np.zeros(3), 1.0,
+                          {"s_icp": 0.11, "tau_icp": 0.03 * 0.1,
+                           "R_coarse": R_coarse0.copy()})
+    out = rr.refine(pose, scene, obj, q, t)
+    assert out.breakdown["render_rerank"] == "reverted:flip0"
+    assert out.breakdown["render_rerank_re_icp"].startswith("failed:")
+    assert np.allclose(out.R, np.eye(3))                   # champion pose kept
+    assert out.breakdown["s_icp"] == pytest.approx(0.11)   # consistent pair
+    assert np.allclose(out.breakdown["R_coarse"], R_coarse0)

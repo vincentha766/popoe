@@ -232,11 +232,28 @@ class RenderAppearanceReranker:
 
         t_mm = np.asarray(t_m, float).reshape(3) * 1000.0
         asset = self._load_asset(obj.mesh_path)
-        # Calibrate y_sign once per asset size
+        # Calibrate y_sign once per process — but latch ONLY on a reliable
+        # calibration. The sign is chosen by rendering the FIRST candidate
+        # pose both ways and taking the higher mask-IoU vs a numpy pinhole
+        # projection; on a degenerate pose (empty or garbage render) both
+        # IoUs are ~0 and the argmax is noise — latching it silently mirrors
+        # every later render for the whole run (triage B1-F3). Gate at 0.3
+        # (a sane pose scores well above; the wrong sign scores ~0), retry on
+        # the next candidate, and always log the outcome.
         if not getattr(self._pose_renderer, "_calibrated", False):
-            self._pose_renderer.calibrate(
+            sign, iou = self._pose_renderer.calibrate(
                 asset, R, t_mm, scene.K, H, W)
-            self._pose_renderer._calibrated = True  # type: ignore[attr-defined]
+            if iou >= 0.3:
+                self._pose_renderer._calibrated = True  # type: ignore[attr-defined]
+                print(f"[rerank] y_sign latched {sign:+.0f} "
+                      f"(calibration IoU {iou:.3f}, obj {obj.obj_id})",
+                      flush=True)
+            else:
+                self._pose_renderer.y_sign = 1.0
+                print(f"[rerank] y_sign calibration UNRELIABLE "
+                      f"(IoU {iou:.3f} < 0.3, obj {obj.obj_id}) — not "
+                      f"latched; default +1 for this render, will retry",
+                      flush=True)
 
         rgb_r, _mask, _depth = self._pose_renderer.render(
             asset, R, t_mm, scene.K, H, W)
@@ -309,6 +326,14 @@ class RenderAppearanceReranker:
         bd["render_rerank"] = name
         bd["sar_ti"] = float(s_best)
         bd["sar_ti_by_variant"] = {k: float(v) for k, v in scores.items()}
+        # Model-frame delta of the chosen variant (Rv = R @ D), captured
+        # BEFORE re-ICP moves R_best off the pure flip. Applied to the coarse
+        # pose below so ChampionScorer's S_coarse measures the orientation
+        # family actually being scored — leaving the pre-flip R_coarse there
+        # made the arbitration factor penalise exactly the flips this stage
+        # exists to rescue (s_coarse × rerank ordering, triage B1-F2).
+        flip_delta = (None if name == "champion"
+                      else np.asarray(pose.R, float).T @ np.asarray(R_best, float))
 
         # Re-ICP so translation / s_icp match the chosen R (ChampionScorer then
         # re-scores on consistent geometry). The champion goes through it TOO,
@@ -331,5 +356,18 @@ class RenderAppearanceReranker:
                     bd["render_rerank_re_icp"] = True
                 except Exception as e:
                     bd["render_rerank_re_icp"] = f"failed:{type(e).__name__}"
+                    if name != "champion":
+                        # A flipped R carrying the champion's pre-flip s_icp is
+                        # not a scoreable candidate (the 07-31 asymmetry trap
+                        # in reverse). Without a consistent re-measurement,
+                        # keep the champion pose.
+                        bd["render_rerank"] = f"reverted:{name}"
+                        name = "champion"
+                        flip_delta = None
+                        R_best = np.asarray(pose.R, float).copy()
+                        t_best = np.asarray(pose.t, float).copy()
+
+        if flip_delta is not None and "R_coarse" in bd:
+            bd["R_coarse"] = np.asarray(bd["R_coarse"], float) @ flip_delta
 
         return PoseHypothesis(R_best.copy(), t_best, float(s_best), bd)
