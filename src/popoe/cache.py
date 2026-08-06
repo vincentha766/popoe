@@ -36,6 +36,36 @@ from typing import Optional
 import numpy as np
 
 
+CONDITIONAL_ENC_KEYS = {
+    # Paper-fidelity feature knobs: each enters enc_cfg ONLY at a non-default
+    # value, so every cache built before a knob existed keeps its exact key.
+    # THE single authority — bop_eval and scripts/flip_rescore_ab both build
+    # their conditional entries from here. The mirrored copy in flip_rescore
+    # drifted THREE times (missing keys -> faithful lookups miss, or worse,
+    # hit legacy-render features under a stale key); a shared table is the
+    # only fix that stays fixed.
+    "query_canon": ("POPOE_QUERY_CANON", "224"),
+    "query_fill": ("POPOE_QUERY_FILL", "0.45"),
+    "query_fill_mode": ("POPOE_QUERY_FILL_MODE", "legacy"),
+    "query_min_views": ("POPOE_QUERY_MIN_VIEWS", "0"),
+    "canon_basis": ("POPOE_CANON_BASIS", "extent"),
+    "query_views": ("POPOE_QUERY_VIEWS", "spiral"),
+    "target_dense": ("POPOE_TARGET_DENSE", "0"),
+    "target_paper_grid": ("POPOE_TARGET_PAPER_GRID", "0"),
+}
+
+
+def conditional_enc_entries() -> dict:
+    """{cfg_key: env_value} for every CONDITIONAL_ENC_KEYS knob currently at a
+    NON-default value. Callers merge this into their enc_cfg."""
+    out = {}
+    for key, (env, dflt) in CONDITIONAL_ENC_KEYS.items():
+        val = os.environ.get(env, dflt)
+        if val != dflt:
+            out[key] = val
+    return out
+
+
 def fingerprint(*parts) -> str:
     """Stable content hash of nested dicts / sequences / arrays / scalars.
     Dicts are order-insensitive; arrays hash dtype+shape+bytes."""

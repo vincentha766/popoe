@@ -107,7 +107,14 @@ def main():
                              std=[0.229, 0.224, 0.225])])
     H = W = canon
     golden = (1 + math.sqrt(5)) / 2
-    radius_cam = max(rmesh.extents) * 1.5
+    # Same camera geometry as the formal query renders — including the fill
+    # mode, or a faithful-env probe (effective fill 0.50) silently renders at
+    # the legacy ~0.58 framing and its per-view conclusions stop transferring.
+    from popoe.adapters import query_camera_radius
+    radius_cam = query_camera_radius(
+        max(rmesh.extents),
+        float(os.environ.get("POPOE_QUERY_FILL", "0.45")),
+        os.environ.get("POPOE_QUERY_FILL_MODE", "legacy"))
 
     DINO_DIM = 1536
     per_view = np.full((args.n_points, n_views, DINO_DIM), np.nan, np.float32)

@@ -95,3 +95,27 @@ def test_query_camera_radius_modes():
     assert e / (0.15 * 2 * math.tan(math.radians(30))) == pytest.approx(0.577, abs=1e-3)
     with pytest.raises(ValueError):
         query_camera_radius(e, 0.5, "auto")
+
+
+def test_conditional_enc_entries_single_authority(monkeypatch):
+    """Review real-bug: the flip_rescore mirror of the conditional enc keys
+    drifted THREE times. Both consumers now read popoe.cache — this pins the
+    table's semantics (non-default only) and its current membership."""
+    from popoe.cache import CONDITIONAL_ENC_KEYS, conditional_enc_entries
+    for _, (env, _) in CONDITIONAL_ENC_KEYS.items():
+        monkeypatch.delenv(env, raising=False)
+    assert conditional_enc_entries() == {}          # all-default = empty
+    monkeypatch.setenv("POPOE_QUERY_FILL_MODE", "effective")
+    monkeypatch.setenv("POPOE_TARGET_PAPER_GRID", "1")
+    assert conditional_enc_entries() == {"query_fill_mode": "effective",
+                                         "target_paper_grid": "1"}
+    assert set(CONDITIONAL_ENC_KEYS) == {
+        "query_canon", "query_fill", "query_fill_mode", "query_min_views",
+        "canon_basis", "query_views", "target_dense", "target_paper_grid"}
+
+
+def test_effective_fill_upper_bound_refused():
+    from popoe.adapters import query_camera_radius
+    with pytest.raises(ValueError, match="0.7"):
+        query_camera_radius(0.1, 0.9, "effective")
+    query_camera_radius(0.1, 0.7, "effective")      # boundary accepted

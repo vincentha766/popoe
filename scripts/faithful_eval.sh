@@ -59,9 +59,11 @@ BASE="$OUT/faithful_${TAG}"
 # Refuse to reuse outputs: bop_eval's resume classifies targets by ROW COUNT
 # only — pre-fix poses in an old $OUT would be silently kept and the run would
 # LOOK like a completed new-code run (audit P1). Fresh OUT dir per identity.
-for _f in "$BASE.csv" "${BASE}_cands.csv"; do
-  [ -e "$_f" ] && { echo "refusing: $_f exists — resume keeps old rows; use a FRESH OUT dir" >&2; exit 3; }
+for _f in "$BASE.csv" "${BASE}_cands.csv" "$BASE.csv.vsd_errs.npz" "$OUT/DONE_${TAG}"; do
+  [ -e "$_f" ] && { echo "refusing: $_f exists — resume keeps old rows (and stale vsd/DONE artifacts read as fresh); use a FRESH OUT dir" >&2; exit 3; }
 done
+export POPOE_GEDI_PATH="${POPOE_GEDI_PATH:-/workspace/gedi}"
+export POPOE_BOP_TOOLKIT="${POPOE_BOP_TOOLKIT:-/workspace/bop_toolkit}"
 
 echo "=== faithful_eval $TAG | seed=$SEED | $(date -u +%FT%TZ) ==="
 LOADED=$("$PY" -c "import popoe, os; print(os.path.dirname(popoe.__file__))")

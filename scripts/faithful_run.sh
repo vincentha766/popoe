@@ -64,9 +64,11 @@ BASE="$OUT/faithful_${DS}"
 
 # Refuse to reuse outputs (audit P1): resume classifies by ROW COUNT only —
 # an old $OUT would silently keep pre-fix poses and look freshly run.
-for _f in "$BASE.csv" "$BASE.cand.csv"; do
-  [ -e "$_f" ] && { echo "refusing: $_f exists — resume keeps old rows; use a FRESH OUT dir" >&2; exit 3; }
+for _f in "$BASE.csv" "$BASE.cand.csv" "$BASE.csv.vsd_errs.npz" "$OUT/DONE_${DS}"; do
+  [ -e "$_f" ] && { echo "refusing: $_f exists — resume keeps old rows (and stale vsd/DONE artifacts read as fresh); use a FRESH OUT dir" >&2; exit 3; }
 done
+export POPOE_GEDI_PATH="${POPOE_GEDI_PATH:-/workspace/gedi}"
+export POPOE_BOP_TOOLKIT="${POPOE_BOP_TOOLKIT:-/workspace/bop_toolkit}"
 
 case "$DS" in
   lmo_cnos) BOP_DS=lmo

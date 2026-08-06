@@ -45,7 +45,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from popoe.cache import StageCache, file_fingerprint, fingerprint
+from popoe.cache import (StageCache, conditional_enc_entries, file_fingerprint,
+                         fingerprint)
 from popoe.datasets.bop import bop_layout, default_targets_path
 from popoe.freeze.recipes import (YCBV_MERGE_LABELS, best_segmentor,
                                   stages_for_object)
@@ -150,21 +151,13 @@ def main():
         "gedi_path": os.environ.get("POPOE_GEDI_PATH", "/workspace/gedi"),
         "render_backend": "nvdiffrast",
     }
-    # The same conditional knobs bop_eval adds (paper-fidelity features + the
-    # viewpoint layout): each enters the key ONLY at a non-default value. This
-    # mirror drifted once already — the faithful cache's keys carry these and
-    # this script's replica did not, so every lookup missed. If bop_eval grows
-    # another knob, it must land here too, which is the cost of mirroring.
-    for _key, (_env, _dflt) in {
-        "query_canon": ("POPOE_QUERY_CANON", "224"),
-        "query_fill": ("POPOE_QUERY_FILL", "0.45"),
-        "query_min_views": ("POPOE_QUERY_MIN_VIEWS", "0"),
-        "canon_basis": ("POPOE_CANON_BASIS", "extent"),
-        "query_views": ("POPOE_QUERY_VIEWS", "spiral"),
-    }.items():
-        _val = os.environ.get(_env, _dflt)
-        if _val != _dflt:
-            enc_cfg[_key] = _val
+    # The same conditional knobs bop_eval adds, from the SAME table
+    # (popoe.cache.CONDITIONAL_ENC_KEYS). This used to be a hand-kept mirror
+    # and it drifted THREE times — each time the faithful cache's keys carried
+    # knobs this replica lacked, so lookups missed (or, against an older
+    # cache, HIT legacy-render features under a stale key). Shared source,
+    # no more mirror.
+    enc_cfg.update(conditional_enc_entries())
     enc_cfg["n_points"] = int(os.environ.get("POPOE_QUERY_POINTS", "3000"))
 
     champs = {}

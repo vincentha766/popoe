@@ -53,7 +53,8 @@ import numpy as np
 
 from popoe.adapters import (BestScoreSelector, resolve_resume,
                             select_top_instances)
-from popoe.cache import StageCache, file_fingerprint, fingerprint
+from popoe.cache import (StageCache, conditional_enc_entries, file_fingerprint,
+                         fingerprint)
 from popoe.datasets.bop import bop_layout, default_targets_path
 from popoe.interfaces import ObjectModel, PointFeatures, PoseHypothesis, Scene
 from popoe.confusable_select import dual_assign_hyps, partner_id
@@ -910,20 +911,9 @@ def main():
     # rule as FPFH above: each enters the key ONLY at a non-default value, so
     # every cache built before these knobs existed keeps its exact key — and a
     # faithful run can never be served the historical features by mistake.
-    for _key, (_env, _dflt) in {
-        "query_canon": ("POPOE_QUERY_CANON", "224"),      # render canvas px
-        "query_fill": ("POPOE_QUERY_FILL", "0.45"),       # object fill fraction
-        "query_fill_mode": ("POPOE_QUERY_FILL_MODE", "legacy"),  # P2: fill knob
-        # legacy = inert fill (historical cancellation); effective = real fill
-        "query_min_views": ("POPOE_QUERY_MIN_VIEWS", "0"),  # visibility gate
-        "canon_basis": ("POPOE_CANON_BASIS", "extent"),   # GeDi radius basis
-        "query_views": ("POPOE_QUERY_VIEWS", "spiral"),   # view placement
-        "target_dense": ("POPOE_TARGET_DENSE", "0"),      # shared P_T^dense cap
-        "target_paper_grid": ("POPOE_TARGET_PAPER_GRID", "0"),  # Sec III-D grid
-    }.items():
-        _val = os.environ.get(_env, _dflt)
-        if _val != _dflt:
-            enc_cfg[_key] = _val
+    # The knob table lives in popoe.cache.CONDITIONAL_ENC_KEYS (single
+    # authority; the flip_rescore mirror drifted three times before this).
+    enc_cfg.update(conditional_enc_entries())
     # Where the [vis | geo] boundary sits, for the selection-time weight sweep.
     # Taken from the SAME value the cache key records, so the split can never
     # disagree with the features it is applied to: a different POPOE_VIS_DIM is

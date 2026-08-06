@@ -158,17 +158,24 @@ def query_camera_radius(extent: float, fill: float, mode: str,
     of the 60-degree frame regardless of POPOE_QUERY_FILL. Kept byte-identical
     because every historical cache key was built on it.
 
-    ``effective``: the radius that makes the object's largest side actually
-    span ``fill`` of the canvas: ``extent / (fill * 2 * tan(fov/2))`` — the
-    paper's "occupies approximately 50% of the width and height" becomes a
-    real setting instead of a no-op. Gated behind POPOE_QUERY_FILL_MODE
-    (an enc_cfg conditional key) because making fill effective changes the
-    renders under otherwise-unchanged cache keys."""
+    ``effective``: the radius that makes the object's largest side span
+    ``fill`` of the canvas in the weak-perspective (central-chord) sense:
+    ``extent / (fill * 2 * tan(fov/2))``. Measured silhouettes deviate by
+    perspective (sphere 0.52, box median 0.50 / max 0.56 at fill=0.5) — the
+    paper's "approximately 50%" becomes a real, approximately-honoured
+    setting instead of a no-op. Gated behind POPOE_QUERY_FILL_MODE (an
+    enc_cfg conditional key) because making fill effective changes the
+    renders under otherwise-unchanged cache keys. fill above 0.7 is refused:
+    by 0.9 the measured silhouette already exits the 60-degree frame (~1.05)
+    and clipped u/v silently sample edge pixels in the depth test."""
     if mode == "legacy":
         return 1.5 * extent
     if mode == "effective":
-        return extent / (max(fill, 1e-6) * 2.0 *
-                         math.tan(math.radians(fov_deg) / 2.0))
+        if not 0.0 < fill <= 0.7:
+            raise ValueError(
+                f"effective fill must be in (0, 0.7], got {fill} — larger "
+                f"values push the silhouette out of the 60-degree frame")
+        return extent / (fill * 2.0 * math.tan(math.radians(fov_deg) / 2.0))
     raise ValueError(
         f"POPOE_QUERY_FILL_MODE must be legacy|effective, got {mode!r}")
 
