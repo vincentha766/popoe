@@ -380,7 +380,14 @@ class BOPDetectionsSegmentor:
                 self._by_img.setdefault(
                     (d["scene_id"], d["image_id"]), []).append(d)
 
-    def segment(self, scene: Scene, obj: ObjectModel) -> list[Detection]:
+    def segment(self, scene: Scene, obj: ObjectModel,
+                topk: int | None = None) -> list[Detection]:
+        """``topk`` overrides the constructor cap FOR THIS CALL — the paper's
+        M is per TARGET (Table V: M = N+1 with N the target's instance count),
+        not per dataset, so a caller that knows the current target's
+        inst_count passes the cap here (examples/bop_eval.py). None keeps the
+        constructor value; the cap is per (source, label) bucket either way."""
+        cap = self.topk if topk is None else topk
         labels = self.merge_labels.get(obj.obj_id, [obj.obj_id])
         cands = [d for d in self._by_img.get((scene.scene_id, scene.im_id), [])
                  if d["category_id"] in labels]
@@ -391,7 +398,7 @@ class BOPDetectionsSegmentor:
             buckets.setdefault((d.get("source", "_"), d["category_id"]), []).append(d)
         picked = []
         for lst in buckets.values():
-            picked.extend(sorted(lst, key=lambda d: -d["score"])[: self.topk])
+            picked.extend(sorted(lst, key=lambda d: -d["score"])[: cap])
 
         # The N-way top-M union does NOT filter ACROSS sources (FreeZe's
         # "top-M union without filtering"): two sources may propose the same

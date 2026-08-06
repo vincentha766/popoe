@@ -52,7 +52,7 @@ not implemented by the formal runner.
 | Dense target point set 3k | `--icp-dense --icp-dense-max 3000` caps the separately reconstructed ICP cloud. GeDi target encoding still builds neighborhoods from all valid mask-depth pixels. | **Missing as a shared budget.** The 3k cap applies to ICP only, not to the dense target set used throughout feature extraction. |
 | Sparse target point set at most 256 | Faithful recipes use `--grid 16`, giving at most 256 samples. The implementation uses a rectangular mask grid and target-side bilinear feature sampling rather than the paper-highlighted square/no-interpolation behavior. | **Partial.** The count matches; sampling semantics do not. |
 | Top-`k=10` feature correspondences | Faithful recipes pass `--corr-topk 10`. | **Match for the configured solver path.** |
-| Localization keeps `M=N+1` proposals | `examples/bop_eval.py` floors `M` using the dataset-wide maximum target multiplicity. This gives `M=2` on the single-instance LM-O/YCB-V cases, but does not compute `N+1` per target on general multi-instance datasets. | **Partial / missing generally.** |
+| Localization keeps `M=N+1` proposals | `examples/bop_eval.py` floors the per-(source, label) mask budget PER TARGET at `inst_count + 1` (`floored_topk`, passed at each `segment()` call); the default `--topk 2` equals `N+1` on single-instance targets. | **Match.** |
 | Detection uses `M=100` and discards masks below `tau_mask=0.4` | The formal runner consumes BOP `test_targets_bop19.json` and exposes neither this detection-mode proposal count nor the paper confidence cutoff. | **Missing.** Current formal runs are localization-protocol runs. |
 | Two-scale GeDi: 32D per scale, neighborhoods at 30% and 40% of object diameter | `_TwoScaleGeDi` concatenates two 32D descriptors; faithful diameter normalization makes radii 0.3 and 0.4 object diameter. | **Match.** |
 | PCA/fusion output dimension 128 | Two-scale geometry is 64D; visual PCA defaults to 64D; normalized concatenation produces 128D. | **Match.** |
@@ -89,7 +89,7 @@ they must not be collapsed into one "missing":
 
 | v2.1 delta | Status | Reason / what it would take |
 |---|---|---|
-| `M = 2N` masks per segmentation model | **Missing, but alignable.** No closed dependency. | **Two distinct sources, do not conflate.** (a) *Where `2N` is stated*: §IV-D prose on Row 19 only — "increases the number of processed masks up to `M = 2N`". No ablation, no per-set numbers, no timing for `2N` anywhere in the report. (b) *What Table V actually ablates*: `M ∈ {N, N+1, N+2}` for the **base FreeZeV2** localization protocol (73.7 / 75.4 / 75.6 mean AR at 1.2 / 1.5 / 1.7 s), establishing that `N+1` is the paper's default and that returns are already flattening by `N+2` (+0.2). Table V therefore **does not validate `2N`** — it neither measures it nor bounds it; the `N+2` trend is only weak evidence that `2N`'s gain is small and its cost is not. What makes `2N` alignable is that the *quantity* `M` is public and parameter-free, not that it was ablated. Prerequisite is the per-target `N+1` fix already listed above — `examples/bop_eval.py` currently floors `M` from the dataset-wide maximum multiplicity, giving `M=2` on single-instance LM-O/YCB-V, so there is no per-target `N` to double yet. Once `N` is per-target, `2N` is a coefficient change; report any `2N` run as our own measurement, since the paper gives no `2N` number to compare against. |
+| `M = 2N` masks per segmentation model | **Missing, but alignable.** No closed dependency. | **Two distinct sources, do not conflate.** (a) *Where `2N` is stated*: §IV-D prose on Row 19 only — "increases the number of processed masks up to `M = 2N`". No ablation, no per-set numbers, no timing for `2N` anywhere in the report. (b) *What Table V actually ablates*: `M ∈ {N, N+1, N+2}` for the **base FreeZeV2** localization protocol (73.7 / 75.4 / 75.6 mean AR at 1.2 / 1.5 / 1.7 s), establishing that `N+1` is the paper's default and that returns are already flattening by `N+2` (+0.2). Table V therefore **does not validate `2N`** — it neither measures it nor bounds it; the `N+2` trend is only weak evidence that `2N`'s gain is small and its cost is not. What makes `2N` alignable is that the *quantity* `M` is public and parameter-free, not that it was ablated. The per-target `N+1` prerequisite is now in place (`floored_topk` floors each target's budget at `inst_count + 1`), so `2N` is a coefficient change from here; report any `2N` run as our own measurement, since the paper gives no `2N` number to compare against. |
 | Symmetry-Aware Refinement (SAR) | **Approximation ceiling: implementable, not verifiable as equivalent.** | §IV-D only says v2.1 "integrates Symmetry-Aware Refinement (SAR) [9]" — ref [9] is FreeZe v1 (`2312.00947v3` §3.6, "based on rendering and visual features"). So the spec lives in a *different* paper and there is no public code. popoe's `--render-rerank` reorders PCA flip variants only (see every recipe's Cautions row). gedi `scripts/freezev2_sym_refine.py` is closer (PCA 3 axes × 36 angles, Chamfer < 1% diameter, ≤32 symmetries) but is our own symmetry enumeration, not a port of v1 SAR. Any implementation must be disclosed as an approximation of SAR, never as SAR. |
 | Improved scoring by comparing visual features of input image vs rendered pose | **Missing.** | §IV-D gives one prose sentence, no equation and no parameters. Not reconstructible to a verifiable spec from the public text. |
 
@@ -159,10 +159,10 @@ Required follow-up before claiming exact setup parity:
   feature-aware RANSAC and verify that Eq. 5 is the executed selector.
 - [ ] Define one 3k dense target cloud and reuse it consistently for GeDi and
   ICP, or document and ablate the split budgets.
-- [ ] Implement per-target `M=N+1` and a separate detection protocol with
-  `M=100`, `tau_mask=0.4`. This is a prerequisite for the v2.1 `M=2N` row
-  above, and also touches the multi-instance sets (ITODD / IC-BIN / T-LESS)
-  whose per-dataset spread is still recorded as unexplained below.
+- [x] Implement per-target `M=N+1` (done — `floored_topk` + per-call
+  `segment(topk=...)`; unblocks the v2.1 `M=2N` row above as a coefficient
+  change). Still open: the separate detection protocol with `M=100`,
+  `tau_mask=0.4` (6D detection task only, not needed for localization runs).
 - [ ] Resolve or explicitly preserve the 480→476, post-visibility 5k, and
   sparse-target sampling approximations.
 - [ ] Add a configuration/contract test covering the complete paper setup.

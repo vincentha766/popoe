@@ -157,11 +157,12 @@ def test_missing_target_encoder_is_explicit_not_attributeerror(bop_eval):
         bop_eval.require_target_encoder(None, "target cache miss")
 
 
-def test_floored_topk(bop_eval):
-    """The floor lifts topk to at least max_inst (so a k-instance target can get
-    k champions), but never LOWERS a larger user topk."""
-    assert bop_eval.floored_topk(2, 1) == 2      # single-instance: unchanged
-    assert bop_eval.floored_topk(2, 4) == 4      # 4-instance target: lifted
+def test_floored_topk_is_per_target_n_plus_one(bop_eval):
+    """Paper M = N+1 with N = THIS target's inst_count (per target, not the
+    dataset max); a larger user --topk is never lowered."""
+    assert bop_eval.floored_topk(2, 1) == 2      # N=1: default 2 IS N+1
+    assert bop_eval.floored_topk(2, 4) == 5      # N=4: budget N+1, not N
+    assert bop_eval.floored_topk(2, 19) == 20    # ic-bin worst case, this target only
     assert bop_eval.floored_topk(6, 4) == 6      # user asked more: kept
 
 

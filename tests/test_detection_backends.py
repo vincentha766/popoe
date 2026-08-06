@@ -211,3 +211,15 @@ def test_three_way_union_provenance_and_counts(tmp_path):
     dets = seg.segment(_scene(), _obj(5))
     from collections import Counter
     assert Counter(d.source for d in dets) == {"cnos": 2, "sam6d": 2, "nids": 2}
+
+
+def test_segment_topk_override_is_per_call(tmp_path):
+    """The paper's M is per TARGET (N+1), so segment() must accept a per-call
+    cap that overrides the constructor value without mutating it."""
+    p = _write(tmp_path, "d", [_det(5, 0.9, _mask(2, 2)),
+                               _det(5, 0.8, _mask(3, 3)),
+                               _det(5, 0.7, _mask(4, 4))])
+    seg = BOPDetectionsSegmentor(p, topk=1, iou_dedupe=1.1)
+    assert len(seg.segment(_scene(), _obj(5))) == 1              # constructor cap
+    assert len(seg.segment(_scene(), _obj(5), topk=3)) == 3      # per-call lift
+    assert len(seg.segment(_scene(), _obj(5))) == 1              # not sticky

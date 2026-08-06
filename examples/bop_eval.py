@@ -361,13 +361,18 @@ def read_frame_images(sdir: Path, im_id: int, layout):
     return img, depth_raw
 
 
-def floored_topk(user_topk, max_inst):
-    """Detection top-K must not cap output below the largest inst_count, or a
-    4-instance target could never receive 4 champions. For a multi-source union
-    this floor holds PER (source, label) bucket (see BOPDetectionsSegmentor), so
-    every backend can still supply enough candidates for a multi-instance
-    target — it is not a shared global cap one source could exhaust."""
-    return max(user_topk, max_inst)
+def floored_topk(user_topk, inst_count):
+    """Per-target mask budget: the paper's M = N+1 (FreeZeV2 Table V default,
+    N = THIS target's inst_count), floored by the user's --topk. Per-target,
+    not dataset-wide: the old floor used the dataset's max inst_count, which
+    on ic-bin (inst up to 19) pushed EVERY target's budget to ~20 masks per
+    (source, label) bucket — a cost explosion the paper's protocol never pays
+    — while N+1 also guarantees a 4-instance target can receive 4 champions
+    plus one spare. For a multi-source union the cap holds PER (source, label)
+    bucket (see BOPDetectionsSegmentor.segment), so no single backend can
+    exhaust a shared budget. A future M=2N arm is a coefficient change on the
+    same per-target N (REPRODUCTION.md `M = 2N` row)."""
+    return max(user_topk, inst_count + 1)
 
 
 def load_cached_query(cache, qkey):
@@ -514,11 +519,12 @@ def main():
     ap.add_argument("--objs", default="")
     ap.add_argument("--weights", default=",".join(str(w) for w in WEIGHTS))
     ap.add_argument("--topk", type=int, default=2,
-                    help="detections kept per (source,label) bucket; floored "
-                         "at the dataset's max inst_count so multi-instance "
-                         "targets can receive enough champions. With --sources "
-                         "this cap is PER source (each backend supplies up to "
-                         "topk per label), not a shared global cap")
+                    help="detections kept per (source,label) bucket, floored "
+                         "PER TARGET at inst_count+1 (paper M=N+1, Table V "
+                         "default; at N=1 the default 2 IS N+1). With "
+                         "--sources this cap is PER source (each backend "
+                         "supplies up to the budget per label), not a shared "
+                         "global cap")
     ap.add_argument("--grid", type=int, default=32)
     ap.add_argument("--cache", default="", help="target-feature cache dir")
     ap.add_argument("--cand-csv", default="", help="dump every hypothesis")
@@ -776,12 +782,12 @@ def main():
     print(f"{len(targets)} targets / {len(by_img)} images"
           + (f" (resuming past {len(done)})" if done else ""), flush=True)
 
-    # Detection top-K floored at the dataset's max inst_count (see floored_topk);
-    # for a union the floor holds per (source, label) bucket.
-    max_inst = max(target_counts.values(), default=1)
+    # Constructor gets the raw --topk only; the effective per-target budget
+    # (paper M = N+1, see floored_topk) is passed at each segment() call,
+    # where the current target's inst_count is known.
     segmentor = resolve_segmentor(
         args.detections, args.sources,
-        topk=floored_topk(args.topk, max_inst),
+        topk=args.topk,
         merge_labels=merge,
         size_select=size_select,
         confusable_diameters=confusable_diameters,
@@ -1146,7 +1152,8 @@ def main():
                 # detections (see adapters.select_top_instances).
                 hyps_by_det: dict = {}
                 try:
-                    dets = segmentor.segment(scene, obj)
+                    dets = segmentor.segment(
+                        scene, obj, topk=floored_topk(args.topk, inst_count))
                 except Exception as e:
                     note_failure("segment",
                                  f"scene{scene_id}/im{im_id}/obj{obj_id}", e)
