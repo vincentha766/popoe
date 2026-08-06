@@ -414,6 +414,46 @@ def load_cached_query(cache, qkey):
     return arrays, pca_vis
 
 
+def restore_canon_frame(arrays, enc_cfg, pts, obj_id):
+    """Rebuild the canonicalisation frame for a cache HIT.
+
+    Cached GeDi features were computed at ONE scale (1/basis, basis chosen by
+    POPOE_CANON_BASIS and recorded in enc_cfg / the qkey), and the target side
+    reuses that scale through the CanonFrame contract — so a hit must hand back
+    the scale the features were BUILT at, never re-derive it under a different
+    convention. Re-deriving with CanonFrame.from_points() is always the extent
+    basis of the STORED cloud, which is wrong twice over: under
+    POPOE_CANON_BASIS=diameter the features live at 1/hull-diameter (2-35%
+    away on LM-O), and under POPOE_QUERY_MIN_VIEWS>0 the stored cloud is the
+    visibility-FILTERED one while the scale came from the full pre-filter
+    cloud. Either way targets get encoded at a mismatched scale and cached
+    persistently under keys that claim otherwise.
+
+    ``canon_scale`` in the arrays is the recorded build-time fact — use it.
+    A legacy entry (written before the record existed) is trusted only where
+    from_points() IS the historical convention bit-for-bit: extent basis with
+    no visibility gate, i.e. the stored cloud is the same full cloud the scale
+    was computed from. Any other legacy entry holds features at an unknowable
+    scale and is refused — and its dependent target entries are equally
+    suspect, so the remedy is a fresh cache, not a repaired query."""
+    from popoe.interfaces import CanonFrame
+    if "canon_scale" in arrays:
+        return CanonFrame(center=np.zeros(3, np.float32),
+                          scale=float(arrays["canon_scale"]))
+    if (enc_cfg.get("canon_basis", "extent") == "extent"
+            and enc_cfg.get("query_min_views", "0") == "0"):
+        return CanonFrame.from_points(pts)
+    raise SystemExit(
+        f"query cache entry for obj {obj_id} predates the canon_scale record "
+        f"and was built under canon_basis="
+        f"{enc_cfg.get('canon_basis', 'extent')!r} / query_min_views="
+        f"{enc_cfg.get('query_min_views', '0')!r} — the features' true scale "
+        f"cannot be reconstructed from the stored points (only the ungated "
+        f"extent basis can). Target entries under this qkey are equally "
+        f"suspect. Use a fresh --cache directory (or delete this one) and "
+        f"re-encode.")
+
+
 def resolve_segmentor(detections, sources, topk, merge_labels,
                       size_select=None, confusable_diameters=None,
                       size_select_fallback=True):
@@ -870,8 +910,8 @@ def main():
             hit, pca_hit = entry
             q = PointFeatures(pts=hit["pts"], feats=hit["feats"],
                               meta={"pca_vis": pca_hit})
-            from popoe.interfaces import CanonFrame
-            q.meta["canon_frame"] = CanonFrame.from_points(q.pts)
+            q.meta["canon_frame"] = restore_canon_frame(hit, enc_cfg,
+                                                        q.pts, obj_id)
         else:
             if args.probe_corr:
                 raise SystemExit(
@@ -886,7 +926,12 @@ def main():
                 # miss, harmless) rather than arrays with no basis (the silent
                 # corruption above). Neither write is atomic with the other.
                 cache.put_pickle("query", qkey, q.meta.get("pca_vis"))
-                cache.put_arrays("query", qkey, pts=q.pts, feats=q.feats)
+                # canon_scale is the build-time fact restore_canon_frame()
+                # serves on a hit — the stored cloud alone cannot reproduce it
+                # (diameter basis, or a visibility-gated cloud).
+                cache.put_arrays("query", qkey, pts=q.pts, feats=q.feats,
+                                 canon_scale=np.float64(
+                                     q.meta["canon_frame"].scale))
         q.meta["qkey"] = qkey
         q.meta["feats_w1"] = q.feats   # genuinely w=1: extraction is pinned
         extent = float(np.ptp(q.pts, axis=0).max())
