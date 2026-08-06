@@ -913,6 +913,8 @@ def main():
     for _key, (_env, _dflt) in {
         "query_canon": ("POPOE_QUERY_CANON", "224"),      # render canvas px
         "query_fill": ("POPOE_QUERY_FILL", "0.45"),       # object fill fraction
+        "query_fill_mode": ("POPOE_QUERY_FILL_MODE", "legacy"),  # P2: fill knob
+        # legacy = inert fill (historical cancellation); effective = real fill
         "query_min_views": ("POPOE_QUERY_MIN_VIEWS", "0"),  # visibility gate
         "canon_basis": ("POPOE_CANON_BASIS", "extent"),   # GeDi radius basis
         "query_views": ("POPOE_QUERY_VIEWS", "spiral"),   # view placement

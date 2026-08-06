@@ -697,7 +697,11 @@ class QueryFeatureExtractor:
         vis_counts = np.zeros(len(pts_np), dtype=np.int32)
 
         golden = (1 + math.sqrt(5)) / 2
-        radius_cam = max(mesh.extents) * 1.5
+        # fov_deg must stay in lockstep with _raycast_render's default (60).
+        from popoe.adapters import query_camera_radius
+        radius_cam = query_camera_radius(
+            max(mesh.extents), fill,
+            os.environ.get("POPOE_QUERY_FILL_MODE", "legacy"))
 
         layout = os.environ.get("POPOE_QUERY_VIEWS", "spiral")
         if layout == "ico162":

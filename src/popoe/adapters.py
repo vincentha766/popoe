@@ -15,6 +15,8 @@ e.g. freeze.FreeZeScorer / scoring.ChampionScorer). `refine` still takes
 """
 
 from __future__ import annotations
+import math
+
 import numpy as np
 
 from popoe.interfaces import (
@@ -143,6 +145,32 @@ def fixed_seed_subsample(n: int, cap: int):
     if cap and n > cap:
         return np.sort(np.random.default_rng(0).choice(n, cap, replace=False))
     return None
+
+
+def query_camera_radius(extent: float, fill: float, mode: str,
+                        fov_deg: float = 60.0) -> float:
+    """Camera orbit radius for the query renders (audit P2).
+
+    ``legacy`` (default): ``1.5 * extent`` — the historical code, where the
+    fill knob is INERT: the mesh is pre-scaled by ``fill * canon / extent``
+    and the radius is taken from the SCALED extent, so fill cancels out of
+    the projection and the object always spans ~1/(1.5 * 2*tan(fov/2)) ≈ 0.58
+    of the 60-degree frame regardless of POPOE_QUERY_FILL. Kept byte-identical
+    because every historical cache key was built on it.
+
+    ``effective``: the radius that makes the object's largest side actually
+    span ``fill`` of the canvas: ``extent / (fill * 2 * tan(fov/2))`` — the
+    paper's "occupies approximately 50% of the width and height" becomes a
+    real setting instead of a no-op. Gated behind POPOE_QUERY_FILL_MODE
+    (an enc_cfg conditional key) because making fill effective changes the
+    renders under otherwise-unchanged cache keys."""
+    if mode == "legacy":
+        return 1.5 * extent
+    if mode == "effective":
+        return extent / (max(fill, 1e-6) * 2.0 *
+                         math.tan(math.radians(fov_deg) / 2.0))
+    raise ValueError(
+        f"POPOE_QUERY_FILL_MODE must be legacy|effective, got {mode!r}")
 
 
 def paper_grid_centers(y0: int, y1: int, x0: int, x1: int, grid_size: int):

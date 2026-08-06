@@ -32,9 +32,11 @@ identified by the paper itself as "entry **FreeZeV2.1** in the leaderboard"
 (= `method_info/905`). The v2.1-only deltas are audited in a separate table
 below, since §IV-A describes the shared setup, not Row 19's extras (those are
 stated in §IV-D, Quantitative results).
-Code inspected: the working tree based on `1d785b7` (dirty at audit time).
-This is a setup/protocol audit, not a result row or a reproducible run identity;
-re-check the findings against the eventual committed diff.
+Code inspected: originally the working tree based on `1d785b7` (dirty at audit
+time); the execution-path rows have since been updated against the 2026-08-06
+fix-wave commits as each landed. This is a setup/protocol audit, not a result
+row or a reproducible run identity; the FULL table gets one final re-check at
+the pinned commit before the tables freeze (triage A3/D8).
 
 Status meanings: **match** = the paper setting and executed path agree;
 **approximation** = an explicit local substitute; **partial** = the number is
@@ -46,11 +48,11 @@ not implemented by the formal runner.
 | CNOS, SAM-6D, NIDS and MUSE, evaluated individually or as an ensemble (§IV-A verbatim; the ensemble rows 18/19 use all four) | The A and B ensemble recipes below both run the same four official sources (CNOS + SAM6D-441 + NIDS + MUSE); official files for all seven core sets are in `data/detections/`. `scripts/faithful_eval.sh` is CNOS-only and serves the single-source arms. | **Match on composition** for the ensemble arms (four-way, per the rows-18/19 merged segmentation cell; Vincent 2026-08-06, replacing the earlier three-way scoping). Composition match does not make B paper-faithful — B is tuned elsewhere in the pipeline. |
 | 162 templates per object, using the CNOS camera viewpoints | Faithful pins set `POPOE_N_VIEWS=162` and `POPOE_QUERY_VIEWS=ico162`. | **Match.** |
 | Retain raw query points visible in at least `V=18` views | Faithful pins set `POPOE_QUERY_MIN_VIEWS=18`; filtering is implemented in `src/popoe/freeze/feature_extractor.py`. | **Match.** |
-| Render at 480×480 with the object occupying approximately 50% of width/height | Faithful pins use `POPOE_QUERY_CANON=476` and `POPOE_QUERY_FILL=0.5`; 476 is the local DINO patch-grid-compatible substitute. | **Approximation.** Always disclose 476/0.5, not “exact 480×480”. |
+| Render at 480×480 with the object occupying approximately 50% of width/height | Faithful pins use `POPOE_QUERY_CANON=476`, `POPOE_QUERY_FILL=0.5` and `POPOE_QUERY_FILL_MODE=effective`. 476 is the local DINO patch-grid-compatible substitute. The fill knob was historically INERT (mesh pre-scale and camera radius cancelled, leaving a constant ~0.58 frame fraction for the 60° camera — audit P2); `effective` mode sets the camera radius so the largest side actually spans `fill` of the canvas. Legacy mode remains the tuned/historical identity. | **Approximation.** Always disclose 476/0.5-effective, not “exact 480×480”. |
 | ViT-giant DINOv2 patch features from intermediate layers, following FoundPose | The backbone is `dinov2_vitg14_reg`. The implementation selects one inferred FoundPose-style layer (block 30 for ViT-g), because the public text does not pin an exact block/list. | **Partial / pinned-by-us.** Backbone matches; layer selection is a local inference. |
 | Query point set 5k | The adapter samples 5k surface points before the `V=18` visibility gate; the final retained query set can therefore contain fewer than 5k points. | **Partial.** The paper's stated 5k budget is not enforced after filtering. |
 | Dense target point set 3k | Faithful recipes pin `POPOE_TARGET_DENSE=3000` alongside `--icp-dense --icp-dense-max 3000`: the GeDi neighbourhood and the ICP cloud subsample through the same fixed-seed rule (`adapters.fixed_seed_subsample`) over the same index space, reaching the identical 3k cloud. | **Match** (one shared `P_T^dense`, as the paper describes). |
-| Sparse target point set at most 256 | Faithful recipes use `--grid 16`, giving at most 256 samples. The implementation uses a rectangular mask grid and target-side bilinear feature sampling rather than the paper-highlighted square/no-interpolation behavior. | **Partial.** The count matches; sampling semantics do not. |
+| Sparse target point set at most 256 | Faithful recipes pin `POPOE_TARGET_PAPER_GRID=1`: minimal axis-aligned SQUARE bbox, sparse targets = its 16x16 patch CENTRES, per-patch direct feature assignment (no bilinear), off-object centres dropped with no fallback. Legacy rectangular-grid/bilinear remains the tuned identity. | **Match on the faithful path.** |
 | Top-`k=10` feature correspondences | Faithful recipes run `--solver gpu-feat`, whose `GPURansacSolver` samples from top-`k=10` feature correspondences natively (`k=10` is the solver default, pinned in code). `--corr-topk` is an o3d-only knob and is NOT passed — `_build_solver` refuses it on non-o3d solvers. | **Match.** |
 | Localization keeps `M=N+1` proposals | `examples/bop_eval.py` floors the per-(source, label) mask budget PER TARGET at `inst_count + 1` (`floored_topk`, passed at each `segment()` call); the default `--topk 2` equals `N+1` on single-instance targets. | **Match.** |
 | Detection uses `M=100` and discards masks below `tau_mask=0.4` | The formal runner consumes BOP `test_targets_bop19.json` and exposes neither this detection-mode proposal count nor the paper confidence cutoff. | **Missing.** Current formal runs are localization-protocol runs. |
@@ -60,9 +62,10 @@ not implemented by the formal runner.
 | Parallel GPU RANSAC, 10,000 iterations, selected with the feature-aware score | Faithful recipes run `--solver gpu-feat` (Vincent 2026-08-06): `GPURansacSolver` with `fitness="feature"`, the fixed-denominator Eq. 5 hypothesis selection, at 10,000 iterations. Tuned recipes keep `--solver o3d` (CPU Open3D geometry RANSAC) as a declared tuning choice — it measured +6-8 pt over the gpu path historically and is NOT the paper's selector. | **Match on the faithful path.** Tuned's o3d selection stays a declared deviation of the tuned system, not of the reproduction. |
 | Timing hardware: NVIDIA A40 and Xeon Silver 4316 @ 2.30 GHz | Recorded project runs use the lab 4×RTX 4090 host or other stated infrastructure; recipes do not assert the paper CPU/GPU model. | **Hardware mismatch.** Accuracy results may still be compared with full disclosure; runtime/FPS must not be presented as paper-hardware parity. |
 
-Additional algorithmic variable: every formal recipe below enables
-`--render-rerank`, which is not specified in §IV-A. It must be reported as a
-popoe extension rather than folded into the “faithful” label.
+Additional algorithmic variable: the TUNED recipes enable `--render-rerank`,
+which is not specified in §IV-A — a popoe extension, reported as such. The
+faithful recipes carry no rerank (base protocol; Decision 9 revised, triage
+D5).
 
 ### v2.1-only deltas (Table II Row 19 = FreeZeV2-Accurate = `method_info/905`)
 
@@ -161,8 +164,10 @@ Required follow-up before claiming exact setup parity:
   defaults `iters=10000`, ranks hypotheses by the fixed-denominator Eq. 5
   `fitness="feature"`, and matches top-`k=10` query NNs per TARGET point —
   the paper's Eq. 3 direction — with the mutual filter off).
-- [ ] Define one 3k dense target cloud and reuse it consistently for GeDi and
-  ICP, or document and ablate the split budgets.
+- [x] Define one 3k dense target cloud and reuse it consistently for GeDi and
+  ICP (done — `POPOE_TARGET_DENSE=3000` + `--icp-dense-max 3000` draw through
+  one `fixed_seed_subsample` over the same index space; a mismatch between
+  the two values refuses to start).
 - [x] Implement per-target `M=N+1` (done — `floored_topk` + per-call
   `segment(topk=...)`; unblocks the v2.1 `M=2N` row above as a coefficient
   change). Still open: the separate detection protocol with `M=100`,
@@ -323,6 +328,7 @@ export POPOE_QUERY_POINTS=5000
 export POPOE_N_VIEWS=162
 export POPOE_QUERY_CANON=476
 export POPOE_QUERY_FILL=0.5
+export POPOE_QUERY_FILL_MODE=effective
 export POPOE_QUERY_MIN_VIEWS=18
 export POPOE_QUERY_VIEWS=ico162
 export POPOE_TARGET_DENSE=3000
@@ -424,6 +430,7 @@ export POPOE_QUERY_POINTS=5000
 export POPOE_N_VIEWS=162
 export POPOE_QUERY_CANON=476
 export POPOE_QUERY_FILL=0.5
+export POPOE_QUERY_FILL_MODE=effective
 export POPOE_QUERY_MIN_VIEWS=18
 export POPOE_QUERY_VIEWS=ico162
 export POPOE_TARGET_DENSE=3000

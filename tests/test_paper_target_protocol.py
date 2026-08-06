@@ -9,6 +9,7 @@ both sides subsample through adapters.fixed_seed_subsample over the same
 index space, so sharing the function IS the equality guarantee.
 """
 import numpy as np
+import pytest
 
 from popoe.adapters import fixed_seed_subsample, paper_grid_centers
 
@@ -74,3 +75,23 @@ def test_box_is_integer_snapped_and_tiles_align_with_the_crop():
         # exactly the patch whose feature it receives (feat_map[rows, cols]).
         assert np.array_equal(np.floor((cx - bx0) * g / side).astype(int), cols)
         assert np.array_equal(np.floor((cy - by0) * g / side).astype(int), rows)
+
+
+def test_query_camera_radius_modes():
+    """Audit P2: legacy = the historical 1.5x (fill INERT); effective makes
+    fill a real setting — the projected fraction of the 60-degree frame."""
+    from popoe.adapters import query_camera_radius
+    import math
+    e = 0.1
+    assert query_camera_radius(e, 0.5, "legacy") == pytest.approx(0.15)
+    assert query_camera_radius(e, 0.45, "legacy") == pytest.approx(0.15)  # inert
+    r50 = query_camera_radius(e, 0.5, "effective")
+    r45 = query_camera_radius(e, 0.45, "effective")
+    assert r50 != r45                                   # fill now matters
+    # geometry: extent / (r * 2 tan(fov/2)) == fill exactly
+    assert e / (r50 * 2 * math.tan(math.radians(30))) == pytest.approx(0.5)
+    assert e / (r45 * 2 * math.tan(math.radians(30))) == pytest.approx(0.45)
+    # the legacy constant the cancellation actually produced
+    assert e / (0.15 * 2 * math.tan(math.radians(30))) == pytest.approx(0.577, abs=1e-3)
+    with pytest.raises(ValueError):
+        query_camera_radius(e, 0.5, "auto")

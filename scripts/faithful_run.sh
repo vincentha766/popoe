@@ -53,6 +53,7 @@ export POPOE_N_VIEWS=162
 export POPOE_QUERY_VIEWS=ico162
 export POPOE_QUERY_CANON=476
 export POPOE_QUERY_FILL=0.5
+export POPOE_QUERY_FILL_MODE=effective
 export POPOE_QUERY_MIN_VIEWS=18
 export POPOE_CANON_BASIS=diameter
 export POPOE_TARGET_DENSE=3000
@@ -60,6 +61,12 @@ export POPOE_TARGET_PAPER_GRID=1
 
 mkdir -p "$OUT"
 BASE="$OUT/faithful_${DS}"
+
+# Refuse to reuse outputs (audit P1): resume classifies by ROW COUNT only —
+# an old $OUT would silently keep pre-fix poses and look freshly run.
+for _f in "$BASE.csv" "$BASE.cand.csv"; do
+  [ -e "$_f" ] && { echo "refusing: $_f exists — resume keeps old rows; use a FRESH OUT dir" >&2; exit 3; }
+done
 
 case "$DS" in
   lmo_cnos) BOP_DS=lmo
