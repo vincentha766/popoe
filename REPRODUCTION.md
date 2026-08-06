@@ -325,6 +325,8 @@ export POPOE_QUERY_CANON=476
 export POPOE_QUERY_FILL=0.5
 export POPOE_QUERY_MIN_VIEWS=18
 export POPOE_QUERY_VIEWS=ico162
+export POPOE_TARGET_DENSE=3000
+export POPOE_TARGET_PAPER_GRID=1
 
 mkdir -p "$RUN/lmo" "$RUN/ycbv"
 for f in "$RUN/lmo/poses.csv" "$RUN/lmo/cand.csv" \
@@ -426,6 +428,8 @@ export POPOE_QUERY_CANON=476
 export POPOE_QUERY_FILL=0.5
 export POPOE_QUERY_MIN_VIEWS=18
 export POPOE_QUERY_VIEWS=ico162
+export POPOE_TARGET_DENSE=3000
+export POPOE_TARGET_PAPER_GRID=1
 
 mkdir -p "$RUN/lmo" "$RUN/ycbv"
 for f in "$RUN/lmo/poses.csv" "$RUN/lmo/cand.csv" \

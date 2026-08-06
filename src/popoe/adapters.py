@@ -131,6 +131,46 @@ def resolve_resume(row_stats: dict, target_counts: dict) -> tuple:
     return done, partial
 
 
+def fixed_seed_subsample(n: int, cap: int):
+    """Sorted fixed-seed uniform draw of ``cap`` of ``n`` indices; None = keep
+    all. THE single source for P_T^dense subsampling: the paper's Sec. IV-A
+    dense target cloud is ONE 3k cloud serving both the GeDi neighbourhood
+    (feature_extractor, POPOE_TARGET_DENSE) and ICP (bop_eval's
+    dense_mask_cloud). Both sides draw through this function over the same
+    row-major (depth>0)&mask index space, so they reach the identical cloud
+    without threading it through the feature cache — duplicate the rule and
+    the single-cloud contract silently splits again (triage D4)."""
+    if cap and n > cap:
+        return np.sort(np.random.default_rng(0).choice(n, cap, replace=False))
+    return None
+
+
+def paper_grid_centers(y0: int, y1: int, x0: int, x1: int, grid_size: int):
+    """Patch centres of the minimal axis-aligned SQUARE bbox containing the
+    mask bbox [y0..y1] x [x0..x1] (paper Sec. III-D target protocol, triage
+    D3): the square's side is the mask bbox's larger side, centred on it; the
+    centres are a grid_size x grid_size tiling — centre of tile (i, j) sits at
+    (i+0.5, j+0.5) / grid_size of the square. Returns (rows, cols, u, v,
+    (bx0, by0, side)) with u/v rounded to ints, UNFILTERED — the caller drops
+    centres outside the image / mask / valid depth. rows/cols index straight
+    into the grid_size x grid_size DINOv2 patch feature map of the square
+    crop resized to grid_size*14 (direct patch assignment, no bilinear)."""
+    side = float(max(y1 - y0, x1 - x0) + 1)
+    by0 = (y0 + y1 + 1) / 2.0 - side / 2.0
+    bx0 = (x0 + x1 + 1) / 2.0 - side / 2.0
+    rows, cols = np.meshgrid(np.arange(grid_size), np.arange(grid_size),
+                             indexing="ij")
+    rows = rows.reshape(-1)
+    cols = cols.reshape(-1)
+    # floor, not round: pixel k covers the continuous span [k, k+1), so the
+    # pixel CONTAINING a centre is floor(centre). np.round's half-to-even
+    # would duplicate pixels and step outside the box whenever centres land
+    # exactly on .5 (every integer side/grid ratio does).
+    u = np.floor(bx0 + (cols + 0.5) * side / grid_size).astype(int)
+    v = np.floor(by0 + (rows + 0.5) * side / grid_size).astype(int)
+    return rows, cols, u, v, (bx0, by0, side)
+
+
 def select_top_instances(hyps_by_det: dict, selector, k: int,
                          nms_dist: float = 0.0) -> list:
     """BOP multi-instance selection: one champion per detection, translation

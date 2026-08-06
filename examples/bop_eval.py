@@ -317,12 +317,12 @@ def dense_mask_cloud(scene, mask, max_pts: int = 3000):
 
     Returns None when the mask has fewer than 4 valid depth pixels; the caller
     then leaves `pts_dense` unset and ICP falls back to the sparse cloud."""
+    from popoe.adapters import fixed_seed_subsample
     ys, xs = np.where((scene.depth > 0) & mask)
     if len(ys) < 4:
         return None
-    if max_pts and len(ys) > max_pts:
-        idx = np.sort(np.random.default_rng(0).choice(len(ys), max_pts,
-                                                      replace=False))
+    idx = fixed_seed_subsample(len(ys), max_pts)
+    if idx is not None:
         ys, xs = ys[idx], xs[idx]
     d = scene.depth[ys, xs]
     fx, fy = scene.K[0, 0], scene.K[1, 1]
@@ -899,6 +899,8 @@ def main():
         "query_min_views": ("POPOE_QUERY_MIN_VIEWS", "0"),  # visibility gate
         "canon_basis": ("POPOE_CANON_BASIS", "extent"),   # GeDi radius basis
         "query_views": ("POPOE_QUERY_VIEWS", "spiral"),   # view placement
+        "target_dense": ("POPOE_TARGET_DENSE", "0"),      # shared P_T^dense cap
+        "target_paper_grid": ("POPOE_TARGET_PAPER_GRID", "0"),  # Sec III-D grid
     }.items():
         _val = os.environ.get(_env, _dflt)
         if _val != _dflt:

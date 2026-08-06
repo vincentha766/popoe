@@ -862,38 +862,60 @@ class TargetFeatureExtractor:
         y0, y1 = ys.min(), ys.max()
         x0, x1 = xs.min(), xs.max()
 
-        grid_y = np.linspace(y0, y1, grid_size).astype(int).clip(0, H-1)
-        grid_x = np.linspace(x0, x1, grid_size).astype(int).clip(0, W-1)
-        gx, gy = np.meshgrid(grid_x, grid_y)
-        patch_u = gx.flatten()
-        patch_v = gy.flatten()
-
-        # Filter to points inside mask
-        in_mask = mask[patch_v, patch_u]
-        patch_u = patch_u[in_mask]
-        patch_v = patch_v[in_mask]
-
         ys_all, xs_all = np.where((depth > 0) & mask)
         if len(ys_all) < 4:
             return self._skip_target(
                 f"only {len(ys_all)} valid depth pixel(s) in mask")
 
-        # 2D -> 3D backprojection using depth
-        d = depth[patch_v, patch_u]
-        valid_depth = d > 0
-        patch_u = patch_u[valid_depth]
-        patch_v = patch_v[valid_depth]
-        d = d[valid_depth]
-        n_unique = len(np.unique(np.stack([patch_u, patch_v], axis=1), axis=0))
-        if len(d) == 0 or n_unique < 4:
-            max_sparse = grid_size * grid_size
-            idx = np.arange(len(ys_all))
-            if max_sparse and len(idx) > max_sparse:
-                idx = np.sort(np.random.default_rng(0).choice(
-                    len(idx), max_sparse, replace=False))
-            patch_u = xs_all[idx]
-            patch_v = ys_all[idx]
+        paper_grid = os.environ.get("POPOE_TARGET_PAPER_GRID", "0") == "1"
+        pg_rows = pg_cols = pg_box = None
+        if paper_grid:
+            # Paper Sec. III-D target protocol (triage D3): minimal SQUARE
+            # bbox, sparse targets = the grid's PATCH CENTRES, features
+            # assigned per patch directly (no bilinear), centres off the
+            # object simply DROPPED — no random-pixel fallback.
+            from popoe.adapters import paper_grid_centers
+            rows_g, cols_g, patch_u, patch_v, pg_box = paper_grid_centers(
+                y0, y1, x0, x1, grid_size)
+            keep = ((patch_u >= 0) & (patch_u < W)
+                    & (patch_v >= 0) & (patch_v < H))
+            keep[keep] = mask[patch_v[keep], patch_u[keep]]
+            keep[keep] = depth[patch_v[keep], patch_u[keep]] > 0
+            patch_u, patch_v = patch_u[keep], patch_v[keep]
+            pg_rows, pg_cols = rows_g[keep], cols_g[keep]
             d = depth[patch_v, patch_u]
+            if len(d) < 4:
+                return self._skip_target(
+                    f"only {len(d)} paper-grid centre(s) on valid object depth")
+        else:
+            grid_y = np.linspace(y0, y1, grid_size).astype(int).clip(0, H-1)
+            grid_x = np.linspace(x0, x1, grid_size).astype(int).clip(0, W-1)
+            gx, gy = np.meshgrid(grid_x, grid_y)
+            patch_u = gx.flatten()
+            patch_v = gy.flatten()
+
+            # Filter to points inside mask
+            in_mask = mask[patch_v, patch_u]
+            patch_u = patch_u[in_mask]
+            patch_v = patch_v[in_mask]
+
+            # 2D -> 3D backprojection using depth
+            d = depth[patch_v, patch_u]
+            valid_depth = d > 0
+            patch_u = patch_u[valid_depth]
+            patch_v = patch_v[valid_depth]
+            d = d[valid_depth]
+            n_unique = len(np.unique(np.stack([patch_u, patch_v], axis=1),
+                                     axis=0))
+            if len(d) == 0 or n_unique < 4:
+                max_sparse = grid_size * grid_size
+                idx = np.arange(len(ys_all))
+                if max_sparse and len(idx) > max_sparse:
+                    idx = np.sort(np.random.default_rng(0).choice(
+                        len(idx), max_sparse, replace=False))
+                patch_u = xs_all[idx]
+                patch_v = ys_all[idx]
+                d = depth[patch_v, patch_u]
 
         X = (patch_u - cx) * d / fx
         Y = (patch_v - cy) * d / fy
@@ -903,14 +925,33 @@ class TargetFeatureExtractor:
             return self._skip_target(
                 f"only {len(pts_sparse)} sparse target point(s)")
 
-        # Visual features: extract DINOv2 patch features at these 2D locations
-        vis_feats = self._extract_dino_at_points(rgb, patch_u, patch_v)
+        # Visual features: paper mode assigns each kept centre its OWN patch's
+        # DINOv2 feature (square crop resized to grid*14, so ViT patches and
+        # the tiling coincide 1:1); legacy mode bilinearly samples the feature
+        # map at arbitrary pixel locations.
+        if paper_grid:
+            feat_map = self._extract_dino_patch_grid(rgb, pg_box, grid_size)
+            vis_feats = feat_map[pg_rows, pg_cols].astype(np.float32)
+        else:
+            vis_feats = self._extract_dino_at_points(rgb, patch_u, patch_v)
 
         # Dense depth point cloud for GeDi neighbourhood
         d_all = depth[ys_all, xs_all]
         X_all = (xs_all - cx) * d_all / fx
         Y_all = (ys_all - cy) * d_all / fy
         pcd_dense = np.stack([X_all, Y_all, d_all], axis=1).astype(np.float32)
+        # Paper P_T^dense is ONE 3k cloud serving both GeDi and ICP (triage
+        # D4). POPOE_TARGET_DENSE=N subsamples here with the SAME fixed-seed
+        # rule bop_eval.dense_mask_cloud applies to the ICP cloud (both over
+        # the row-major (depth>0)&mask index space), so with N ==
+        # --icp-dense-max the two sides independently reach the identical
+        # cloud. 0 (default) keeps the historical full-mask neighbourhood.
+        n_dense = int(os.environ.get("POPOE_TARGET_DENSE", "0"))
+        if n_dense:
+            from popoe.adapters import fixed_seed_subsample
+            sel = fixed_seed_subsample(len(pcd_dense), n_dense)
+            if sel is not None:
+                pcd_dense = pcd_dense[sel]
 
         canon = getattr(self, '_canon_scale', 1.0)
         # role="target": a single-view depth cloud, camera at the origin.
@@ -925,6 +966,33 @@ class TargetFeatureExtractor:
             self._pca_vis = pca_vis
         fused = self._fuse_features(vis_feats, geo_feats)
         return pts_sparse, fused
+
+    @torch.no_grad()
+    def _extract_dino_patch_grid(self, rgb, box, grid_size):
+        """DINOv2 features of the SQUARE crop ``box`` = (bx0, by0, side), one
+        feature per patch of the grid_size x grid_size tiling — direct patch
+        assignment, no bilinear upsampling (paper Sec. III-D target protocol,
+        triage D3). The crop is resized to grid_size*14 so ViT patches and
+        the tiling coincide 1:1; PIL zero-pads out-of-image regions, keeping
+        the geometry of the tiling exact. POPOE_TARGET_CANON/_FILL do not
+        apply here — the crop IS the minimal square bbox."""
+        from torchvision import transforms
+        import PIL.Image
+
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                 std=[0.229, 0.224, 0.225]),
+        ])
+        bx0, by0, side = box
+        canon = grid_size * 14
+        crop = (int(round(bx0)), int(round(by0)),
+                int(round(bx0 + side)), int(round(by0 + side)))
+        img_pil = PIL.Image.fromarray(rgb).crop(crop).resize((canon, canon))
+        img_t = transform(img_pil).unsqueeze(0).to(self.device)
+        out = self.dino.get_intermediate_layers(
+            img_t, n=[_dino_layer(self.dino)], return_class_token=False)[0]
+        return out[0].reshape(grid_size, grid_size, -1).cpu().numpy()
 
     @torch.no_grad()
     def _extract_dino_at_points(self, rgb, us, vs):
