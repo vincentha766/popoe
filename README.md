@@ -189,12 +189,14 @@ CNOS naming is deliberately split:
 | `cnos-lab` | Local lab recipe (formerly `cnos-v3`): proposal masks -> depth size gate -> DINOv2 foreground-patch rank |
 | `cnos-live` | Existing simplified live CNOS-style segmentor (`CNOSSegmentor`), not an official result |
 
-The ensemble's fourth member, **MUSE**, publishes neither code nor masks, so it
-has no external producer to adapt. `popoe.segmentor_muse` is a reimplementation
-from the paper: a live segmentor that can also dump its masks as a detections
-JSON, which then unions and evaluates like any other source. It writes
-`muse-repro`; the name `muse` stays reserved for official artefacts. See
-[MUSE.md](MUSE.md).
+The ensemble's fourth member, **MUSE**, publishes **no code**, so it has no
+external producer to adapt — but its **masks are public for all seven
+BOP-Classic-Core sets** (BOP `method_info/873`; IDs and SHA256s in
+[data/detections/muse/PROVENANCE.md](data/detections/muse/PROVENANCE.md)).
+`popoe.segmentor_muse` is a reimplementation from the paper: a live segmentor
+that can also dump its masks as a detections JSON, which then unions and
+evaluates like any other source. It writes `muse-repro`; the name `muse` stays
+reserved for official artefacts. See [MUSE.md](MUSE.md).
 
 ```bash
 popoe-muse --frame capture/frame_000000.json \
