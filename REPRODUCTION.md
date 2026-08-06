@@ -51,13 +51,13 @@ not implemented by the formal runner.
 | Query point set 5k | The adapter samples 5k surface points before the `V=18` visibility gate; the final retained query set can therefore contain fewer than 5k points. | **Partial.** The paper's stated 5k budget is not enforced after filtering. |
 | Dense target point set 3k | `--icp-dense --icp-dense-max 3000` caps the separately reconstructed ICP cloud. GeDi target encoding still builds neighborhoods from all valid mask-depth pixels. | **Missing as a shared budget.** The 3k cap applies to ICP only, not to the dense target set used throughout feature extraction. |
 | Sparse target point set at most 256 | Faithful recipes use `--grid 16`, giving at most 256 samples. The implementation uses a rectangular mask grid and target-side bilinear feature sampling rather than the paper-highlighted square/no-interpolation behavior. | **Partial.** The count matches; sampling semantics do not. |
-| Top-`k=10` feature correspondences | Faithful recipes pass `--corr-topk 10`. | **Match for the configured solver path.** |
+| Top-`k=10` feature correspondences | Faithful recipes run `--solver gpu-feat`, whose `GPURansacSolver` samples from top-`k=10` feature correspondences natively (`k=10` is the solver default, pinned in code). `--corr-topk` is an o3d-only knob and is NOT passed — `_build_solver` refuses it on non-o3d solvers. | **Match.** |
 | Localization keeps `M=N+1` proposals | `examples/bop_eval.py` floors the per-(source, label) mask budget PER TARGET at `inst_count + 1` (`floored_topk`, passed at each `segment()` call); the default `--topk 2` equals `N+1` on single-instance targets. | **Match.** |
 | Detection uses `M=100` and discards masks below `tau_mask=0.4` | The formal runner consumes BOP `test_targets_bop19.json` and exposes neither this detection-mode proposal count nor the paper confidence cutoff. | **Missing.** Current formal runs are localization-protocol runs. |
 | Two-scale GeDi: 32D per scale, neighborhoods at 30% and 40% of object diameter | `_TwoScaleGeDi` concatenates two 32D descriptors; faithful diameter normalization makes radii 0.3 and 0.4 object diameter. | **Match.** |
 | PCA/fusion output dimension 128 | Two-scale geometry is 64D; visual PCA defaults to 64D; normalized concatenation produces 128D. | **Match.** |
 | RANSAC inlier and ICP thresholds are 3% of object diameter | Faithful recipes pass `--tau-diameter`; the threshold is derived from the diameter-normalized canonical frame. | **Match.** |
-| Parallel GPU RANSAC, 10,000 iterations, selected with the feature-aware score | The iteration count is 10,000, but formal faithful recipes select `--solver o3d`. That path is CPU Open3D geometry RANSAC and does not execute the paper's Eq. 5 feature-aware hypothesis selection. `GPURansacSolver` contains the feature-aware score but is not wired into these recipes. | **Missing on the executed path; critical deviation.** |
+| Parallel GPU RANSAC, 10,000 iterations, selected with the feature-aware score | Faithful recipes run `--solver gpu-feat` (Vincent 2026-08-06): `GPURansacSolver` with `fitness="feature"`, the fixed-denominator Eq. 5 hypothesis selection, at 10,000 iterations. Tuned recipes keep `--solver o3d` (CPU Open3D geometry RANSAC) as a declared tuning choice — it measured +6-8 pt over the gpu path historically and is NOT the paper's selector. | **Match on the faithful path.** Tuned's o3d selection stays a declared deviation of the tuned system, not of the reproduction. |
 | Timing hardware: NVIDIA A40 and Xeon Silver 4316 @ 2.30 GHz | Recorded project runs use the lab 4×RTX 4090 host or other stated infrastructure; recipes do not assert the paper CPU/GPU model. | **Hardware mismatch.** Accuracy results may still be compared with full disclosure; runtime/FPS must not be presented as paper-hardware parity. |
 
 Additional algorithmic variable: every formal recipe below enables
@@ -146,8 +146,8 @@ render scoring are underspecified. The distance to 905 stays confounded by SAR +
 `M=2N` + render scoring — label those three whenever a triple is written
 against it. The detection-matched residual lives at A/four-way vs
 FreeZeV2.1(905): matched in **detection composition** (the same four sources),
-but the critical-deviation row above (`--solver o3d` bypassing the Eq. 5
-feature-aware selector) plus `--render-rerank` mean the *pose stage* is not
+but `--render-rerank` (a popoe-scoped variant of the official SAR: it
+reorders PCA flip variants only) means the *pose stage* is still not fully
 recipe-matched in either direction. Prose must say "detection-matched",
 never "recipe-matched". Paper Row 18 (four-way, no SAR, self-reported only —
 no leaderboard counterpart) is citable as an auxiliary reference, not as the
@@ -155,8 +155,12 @@ formal comparator.
 
 Required follow-up before claiming exact setup parity:
 
-- [ ] Route the paper-faithful recipe through 10,000-iteration GPU
-  feature-aware RANSAC and verify that Eq. 5 is the executed selector.
+- [x] Route the paper-faithful recipe through 10,000-iteration GPU
+  feature-aware RANSAC and verify that Eq. 5 is the executed selector
+  (done — faithful recipes run `--solver gpu-feat`: `GPURansacSolver`
+  defaults `iters=10000`, ranks hypotheses by the fixed-denominator Eq. 5
+  `fitness="feature"`, and matches top-`k=10` query NNs per TARGET point —
+  the paper's Eq. 3 direction — with the mutual filter off).
 - [ ] Define one 3k dense target cloud and reuse it consistently for GeDi and
   ICP, or document and ablate the split budgets.
 - [x] Implement per-target `M=N+1` (done — `floored_topk` + per-call
@@ -341,10 +345,9 @@ done
 "$PY" examples/bop_eval.py \
   --bop "$BOP/lmo" --dataset lmo \
   --detections "$DET/cnos/cnos-fastsam_lmo-test.json" \
-  --merge none --topk 2 --grid 16 --solver o3d --seed "$SEED" \
+  --merge none --topk 2 --grid 16 --solver gpu-feat --seed "$SEED" \
   --weights 1.0 \
   --use-s-coarse \
-  --corr-topk 10 \
   --tau-diameter \
   --icp-dense --icp-dense-max 3000 \
   --render-rerank \
@@ -355,10 +358,9 @@ done
 "$PY" examples/bop_eval.py \
   --bop "$BOP/ycbv" --dataset ycbv \
   --detections "$DET/cnos/cnos-fastsam_ycbv-test.json" \
-  --merge none --topk 2 --grid 16 --solver o3d --seed "$SEED" \
+  --merge none --topk 2 --grid 16 --solver gpu-feat --seed "$SEED" \
   --weights 1.0 \
   --use-s-coarse \
-  --corr-topk 10 \
   --tau-diameter \
   --icp-dense --icp-dense-max 3000 \
   --render-rerank \
@@ -448,10 +450,9 @@ done
 "$PY" examples/bop_eval.py \
   --bop "$BOP/lmo" --dataset lmo \
   --sources "cnos=$DET/cnos/cnos-fastsam_lmo-test.json,sam6d=$DET/sam6d/sam6d_official_lmo.json,nids=$DET/nids/nids_wa_sappe_lmo.json,muse=$DET/muse/muse-full_lmo-test.json" \
-  --merge none --topk 2 --grid 16 --solver o3d --seed "$SEED" \
+  --merge none --topk 2 --grid 16 --solver gpu-feat --seed "$SEED" \
   --weights 1.0 \
   --use-s-coarse \
-  --corr-topk 10 \
   --tau-diameter \
   --icp-dense --icp-dense-max 3000 \
   --render-rerank \
@@ -462,10 +463,9 @@ done
 "$PY" examples/bop_eval.py \
   --bop "$BOP/ycbv" --dataset ycbv \
   --sources "cnos=$DET/cnos/cnos-fastsam_ycbv-test.json,sam6d=$DET/sam6d/sam6d_official_ycbv.json,nids=$DET/nids/nids_wa_sappe_ycbv.json,muse=$DET/muse/muse-full_ycbv-test.json" \
-  --merge none --topk 2 --grid 16 --solver o3d --seed "$SEED" \
+  --merge none --topk 2 --grid 16 --solver gpu-feat --seed "$SEED" \
   --weights 1.0 \
   --use-s-coarse \
-  --corr-topk 10 \
   --tau-diameter \
   --icp-dense --icp-dense-max 3000 \
   --render-rerank \
