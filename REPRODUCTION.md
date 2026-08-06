@@ -43,7 +43,7 @@ not implemented by the formal runner.
 
 | Paper setting | Current popoe formal path | Status / disclosure |
 |---|---|---|
-| CNOS, SAM-6D, NIDS and MUSE, evaluated individually or as an ensemble (§IV-A verbatim; the ensemble rows 18/19 use all four) | `scripts/faithful_eval.sh` is CNOS-only. The A ensemble recipe below is three-source; the B four-source recipe is tuned rather than paper-faithful. Four-source detection assets are currently complete only for LM-O and YCB-V, not all seven BOP-Classic-Core datasets. | **Partial.** Do not describe either A/three-way or B/four-way as an exact reproduction of the complete segmentation setup. **Why A is three-way**: a **project scoping decision, not an availability limit** — official MUSE masks for LM-O and YCB-V were already in `data/detections/muse/` when the recipe froze on 2026-07-30, and the other five core sets are downloadable too (see the resolved MUSE note below). Never justify three-way as a MUSE-availability limit. Do *not* justify three-way as "matching `method_info/756`'s three-source self-description" — three-way appears nowhere in the paper, and 756 is the only FreeZeV2 config with no corresponding paper row. |
+| CNOS, SAM-6D, NIDS and MUSE, evaluated individually or as an ensemble (§IV-A verbatim; the ensemble rows 18/19 use all four) | The A and B ensemble recipes below both run the same four official sources (CNOS + SAM6D-441 + NIDS + MUSE); official files for all seven core sets are in `data/detections/`. `scripts/faithful_eval.sh` is CNOS-only and serves the single-source arms. | **Match on composition** for the ensemble arms (four-way, per the rows-18/19 merged segmentation cell; Vincent 2026-08-06, replacing the earlier three-way scoping). Composition match does not make B paper-faithful — B is tuned elsewhere in the pipeline. |
 | 162 templates per object, using the CNOS camera viewpoints | Faithful pins set `POPOE_N_VIEWS=162` and `POPOE_QUERY_VIEWS=ico162`. | **Match.** |
 | Retain raw query points visible in at least `V=18` views | Faithful pins set `POPOE_QUERY_MIN_VIEWS=18`; filtering is implemented in `src/popoe/freeze/feature_extractor.py`. | **Match.** |
 | Render at 480×480 with the object occupying approximately 50% of width/height | Faithful pins use `POPOE_QUERY_CANON=476` and `POPOE_QUERY_FILL=0.5`; 476 is the local DINO patch-grid-compatible substitute. | **Approximation.** Always disclose 476/0.5, not “exact 480×480”. |
@@ -142,14 +142,16 @@ runs.
 
 Consequence for the dissertation: the MUSE artefacts and the `M=2N` rule are
 obtainable, but exact Row 19 recipe parity remains unverifiable because SAR and
-render scoring are underspecified. The distance to 905 is confounded by SAR +
-`M=2N` + render scoring — report it as a not-yet-matched ceiling, never as a
-reproduction residual. The
-detection-matched residual stays at A/three-way vs `method_info/756`, and even
-that is matched only in **detection source count**: the critical-deviation row
-above (`--solver o3d` bypassing the Eq. 5 feature-aware selector) plus
-`--render-rerank` mean the *pose stage* is not recipe-matched in either
-direction. Prose must say "detection-matched", never "recipe-matched".
+render scoring are underspecified. The distance to 905 stays confounded by SAR +
+`M=2N` + render scoring — label those three whenever a triple is written
+against it. The detection-matched residual lives at A/four-way vs
+FreeZeV2.1(905): matched in **detection composition** (the same four sources),
+but the critical-deviation row above (`--solver o3d` bypassing the Eq. 5
+feature-aware selector) plus `--render-rerank` mean the *pose stage* is not
+recipe-matched in either direction. Prose must say "detection-matched",
+never "recipe-matched". Paper Row 18 (four-way, no SAR, self-reported only —
+no leaderboard counterpart) is citable as an auxiliary reference, not as the
+formal comparator.
 
 Required follow-up before claiming exact setup parity:
 
@@ -245,8 +247,8 @@ Required follow-up before claiming exact setup parity:
 > submission id after the private upload), `grasp_summary.md` (same-CSV
 > ADD(-S) via the gedi grasp script).
 
-Artifact convention for every dataset run follows `../gedi/CONSOLIDATION.md`
-§3.2:
+Artifact convention for every dataset run follows `../gedi/specs/ARTIFACT_SPEC.md`
+(run directory contract):
 
 ```
 out_dir/
@@ -365,16 +367,16 @@ done
   --cand-csv "$RUN/ycbv/cand.csv"
 ```
 
-### faithful-3way
+### faithful-4way
 
 | Field | Frozen value |
 |---|---|
-| Report point | A / three-way |
+| Report point | A / four-way |
 | Code | `twoline-rerank-fix-20260731` (`git rev-parse twoline-rerank-fix-20260731^{commit}` = `509072e`; includes one-sided S1 smoke checker) |
 | Datasets | LM-O + YCB-V; one full BOP test run each |
-| Detection inputs | CNOS + SAM6D + NIDS official JSONs under `data/detections/`; `--merge none` keeps the paper-style union unfiltered |
+| Detection inputs | CNOS + SAM6D (official 441) + NIDS + MUSE official JSONs under `data/detections/` — the four-source composition of the paper's rows-18/19 merged segmentation cell; `--merge none` keeps the paper-style union unfiltered |
 | Scoring | Paper Eq.7 three-term form with `--use-s-coarse`; Eq.7 exponents are **pinned-by-us** to unit exponents |
-| Leaderboard comparator | A / three-way -> FreeZeV2(756) LM-O/YCB-V = 0.764 / 0.906 — **detection-matched** to 756's three-source self-description (no MUSE) |
+| Leaderboard comparator | A / four-way -> FreeZeV2.1(905) LM-O/YCB-V = 0.771 / 0.915 — **detection-matched** (same four sources); label the SAR + `M=2N` + render-scoring confounds. Paper Row 18 (75.9 / 91.3, four-way no SAR, self-reported, no leaderboard row) is auxiliary reference only |
 | Artifacts | `$RUN/{lmo,ycbv}/` each contains `poses.csv`, `cand.csv`, `RECIPE.md`, `AR_SUMMARY.md`, `bop_server.md`, `grasp_summary.md` |
 | Cautions | Rerank scope differs from official SAR: popoe only reorders PCA flip variants. Dense resampling uses `rng(0)` where invoked and is independent of `--seed`. Encoding degradation is explicit in logs as `DEGRADE`. These runs are not bit/row comparable to historical anchors because seed, rerank and implementation fixes are new variables. |
 
@@ -385,7 +387,7 @@ POPOE="${POPOE:-/workspace/popoe}"
 BOP="${BOP:-/workspace/bop_data}"
 DET="${DET:-$POPOE/data/detections}"
 RUN_ROOT="${RUN_ROOT:-/workspace/results/twoline_20260731_rerankfix}"
-RUN="$RUN_ROOT/faithful-3way"
+RUN="$RUN_ROOT/faithful-4way"
 PY="${PY:-python}"
 SEED=42
 
@@ -445,7 +447,7 @@ done
 
 "$PY" examples/bop_eval.py \
   --bop "$BOP/lmo" --dataset lmo \
-  --sources "cnos=$DET/cnos/cnos-fastsam_lmo-test.json,sam6d=$DET/sam6d/sam6d_ism_lmo.json,nids=$DET/nids/nids_wa_sappe_lmo.json" \
+  --sources "cnos=$DET/cnos/cnos-fastsam_lmo-test.json,sam6d=$DET/sam6d/sam6d_official_lmo.json,nids=$DET/nids/nids_wa_sappe_lmo.json,muse=$DET/muse/muse-full_lmo-test.json" \
   --merge none --topk 2 --grid 16 --solver o3d --seed "$SEED" \
   --weights 1.0 \
   --use-s-coarse \
@@ -459,7 +461,7 @@ done
 
 "$PY" examples/bop_eval.py \
   --bop "$BOP/ycbv" --dataset ycbv \
-  --sources "cnos=$DET/cnos/cnos-fastsam_ycbv-test.json,sam6d=$DET/sam6d/sam6d_ism_ycbv.json,nids=$DET/nids/nids_wa_sappe_ycbv.json" \
+  --sources "cnos=$DET/cnos/cnos-fastsam_ycbv-test.json,sam6d=$DET/sam6d/sam6d_official_ycbv.json,nids=$DET/nids/nids_wa_sappe_ycbv.json,muse=$DET/muse/muse-full_ycbv-test.json" \
   --merge none --topk 2 --grid 16 --solver o3d --seed "$SEED" \
   --weights 1.0 \
   --use-s-coarse \
@@ -576,7 +578,7 @@ done
 | Datasets | LM-O + YCB-V; one full BOP test run each |
 | Detection inputs | CNOS + SAM6D + NIDS + official MUSE JSONs under `data/detections/`; `muse` means downloaded official artefacts, not `muse-repro` |
 | Scoring | Campaign2 tuned ChampionScorer: grid32, weights `1.0,0.7,0.5,0.3,0.2`; YCB-V uses `--merge ycbv --use-s-coarse`, LM-O uses `--merge none` and no `--use-s-coarse` |
-| Leaderboard comparator | B / four-way -> FreeZeV2(756) LM-O/YCB-V = 0.764 / 0.906 — detection carries **one extra source (MUSE)** vs 756's self-description; the detection-matched like-for-like lives at A/three-way, state this in prose |
+| Leaderboard comparator | B / four-way -> FreeZeV2.1(905) LM-O/YCB-V = 0.771 / 0.915 — detection-matched (same four sources); label the SAR + `M=2N` + render-scoring confounds. A/four-way -> B/four-way is the clean improvement-package column (identical detection inputs) |
 | Artifacts | `$RUN/{lmo,ycbv}/` each contains `poses.csv`, `cand.csv`, `RECIPE.md`, `AR_SUMMARY.md`, `bop_server.md`, `grasp_summary.md` |
 | Cautions | Rerank scope differs from official SAR: popoe only reorders PCA flip variants. Dense resampling uses `rng(0)` where invoked and is independent of `--seed`. Encoding degradation is explicit in logs as `DEGRADE`. These runs are not bit/row comparable to historical anchors because seed, rerank and implementation fixes are new variables. |
 
@@ -642,7 +644,7 @@ done
 
 "$PY" examples/bop_eval.py \
   --bop "$BOP/lmo" --dataset lmo \
-  --sources "cnos=$DET/cnos/cnos-fastsam_lmo-test.json,sam6d=$DET/sam6d/sam6d_ism_lmo.json,nids=$DET/nids/nids_wa_sappe_lmo.json,muse=$DET/muse/muse-full_lmo-test.json" \
+  --sources "cnos=$DET/cnos/cnos-fastsam_lmo-test.json,sam6d=$DET/sam6d/sam6d_official_lmo.json,nids=$DET/nids/nids_wa_sappe_lmo.json,muse=$DET/muse/muse-full_lmo-test.json" \
   --merge none --topk 2 --grid 32 --solver o3d --seed "$SEED" \
   --weights 1.0,0.7,0.5,0.3,0.2 \
   --render-rerank \
@@ -652,7 +654,7 @@ done
 
 "$PY" examples/bop_eval.py \
   --bop "$BOP/ycbv" --dataset ycbv \
-  --sources "cnos=$DET/cnos/cnos-fastsam_ycbv-test.json,sam6d=$DET/sam6d/sam6d_ism_ycbv.json,nids=$DET/nids/nids_wa_sappe_ycbv.json,muse=$DET/muse/muse-full_ycbv-test.json" \
+  --sources "cnos=$DET/cnos/cnos-fastsam_ycbv-test.json,sam6d=$DET/sam6d/sam6d_official_ycbv.json,nids=$DET/nids/nids_wa_sappe_ycbv.json,muse=$DET/muse/muse-full_ycbv-test.json" \
   --merge ycbv --topk 2 --grid 32 --solver o3d --seed "$SEED" \
   --weights 1.0,0.7,0.5,0.3,0.2 \
   --use-s-coarse \
@@ -1220,7 +1222,9 @@ reproduce exactly from `mssd140_run.log`. `solver_swap_demo` now prints the
 
 One table family covers both the 2x2 depth matrix and the seven-set breadth
 lines (gedi `EXPERIMENT_PLAN.md` §5): `faithful-cnos` LM-O+YCB-V (2),
-`faithful-3way` LM-O+YCB-V (2, **SAM6D switched to official method 441**),
+`faithful-4way` LM-O+YCB-V (2 — four-way per the paper's rows-18/19 merged
+segmentation cell, Vincent 2026-08-06; its inputs are byte-identical to the
+E-4way LM-O/YCB-V rows below, so no new detection pins are needed),
 `tuned-cnos` x7 (= E-cnos; its LM-O/YCB-V rows feed the 2x2), `tuned-4way` x7
 (= E-4way). All detection inputs are official BOP artefacts (CNOS 4003-4009,
 SAM6D 441 seg batch 6965-6971, NIDS 8980-8986, MUSE 873 first batch) — SHA256
