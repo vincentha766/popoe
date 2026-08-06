@@ -116,6 +116,40 @@ def test_cand_csv_legacy_headers_are_compatible(bop_eval):
             in bop_eval.cand_csv_compatible_headers(True))
 
 
+def test_cand_csv_header_s_feat_w_is_appended_last(bop_eval):
+    """--score-feat-w appends at the END, so every pre-existing column keeps its
+    index and position-addressing readers still line up."""
+    off = bop_eval.cand_csv_header(False)
+    on = bop_eval.cand_csv_header(False, True)
+    assert on == off + ["s_feat_w"]
+    assert bop_eval.cand_csv_header(True, True) == \
+        bop_eval.cand_csv_header(True) + ["s_feat_w"]
+
+
+def test_cand_csv_s_feat_w_refuses_legacy_headers(bop_eval):
+    """Appending an s_feat_w run to a dump without that column would silently
+    drop the one number the run exists to produce — so only the exact header is
+    accepted."""
+    assert bop_eval.cand_csv_compatible_headers(False, True) == \
+        [bop_eval.cand_csv_header(False, True)]
+    legacy = ["scene_id", "im_id", "obj_id", "cand", "w", "s_icp",
+              "s_feat_1", "metric_fit", "score", "R", "t"]
+    assert legacy not in bop_eval.cand_csv_compatible_headers(False, True)
+
+
+def test_cand_csv_row_s_feat_w_is_loud_when_the_scorer_did_not_record_it(bop_eval):
+    """Flag on but no s_feat_w in the breakdown = misconfigured scorer. Fail,
+    rather than writing 0.0000 into a column that will be read as evidence."""
+    header = bop_eval.cand_csv_header(False, True)
+    with pytest.raises(KeyError):
+        bop_eval.cand_csv_row(1, 7, 5, 0, 1.0, _hyp(breakdown={"s_icp": 0.5}),
+                              "", "o3d", False, header, True)
+    row = bop_eval.cand_csv_row(
+        1, 7, 5, 0, 1.0, _hyp(breakdown={"s_icp": 0.5, "s_feat_w": 0.4242}),
+        "", "o3d", False, header, True)
+    assert dict(zip(header, row))["s_feat_w"] == "0.4242"
+
+
 def test_missing_target_encoder_is_explicit_not_attributeerror(bop_eval):
     """Regression for the removed cache-only probe path: a target cache miss
     with no live encoder used to call None.install_pca()."""

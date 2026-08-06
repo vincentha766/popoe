@@ -86,9 +86,13 @@ CAND_BASE_HEADER = ["scene_id", "im_id", "obj_id", "cand", "w", "s_icp",
                     "s_feat_1", "metric_fit", "score", "R", "t"]
 CAND_COARSE_HEADER = ["s_coarse", "R_coarse", "t_coarse"]
 CAND_EXTRA_HEADER = ["source", "R_prererank", "t_prererank"]
+# --score-feat-w rides at the very END of the header: appending keeps every
+# existing column at its current index, so readers that address columns by
+# position (the campaign2-era analysis scripts) still line up.
+CAND_FEATW_HEADER = ["s_feat_w"]
 
 
-def cand_csv_header(score_coarse):
+def cand_csv_header(score_coarse, score_feat_w=False):
     """Column header for the --cand-csv dump. The optional --score-coarse block
     (s_coarse plus the PRE-ICP pose it was measured at, R_coarse / t_coarse),
     `solver`, and new provenance/replay columns are appended after the original
@@ -102,15 +106,22 @@ def cand_csv_header(score_coarse):
     row-major, translation in mm), so the same downstream reader handles both."""
     return (CAND_BASE_HEADER
             + (CAND_COARSE_HEADER if score_coarse else [])
-            + ["solver"] + CAND_EXTRA_HEADER)
+            + ["solver"] + CAND_EXTRA_HEADER
+            + (CAND_FEATW_HEADER if score_feat_w else []))
 
 
-def cand_csv_compatible_headers(score_coarse):
+def cand_csv_compatible_headers(score_coarse, score_feat_w=False):
     """Headers this run can append to without corrupting column alignment.
 
     campaign2-era dumps exist in a few schemas. A fresh file gets the current
     header; appending to a legacy file writes only the columns that header names.
+
+    --score-feat-w is the exception: a legacy header has no s_feat_w column, so
+    appending would silently DROP the one measurement the diagnostic run exists
+    to produce. Demand the exact matching header instead.
     """
+    if score_feat_w:
+        return [cand_csv_header(score_coarse, True)]
     if score_coarse:
         return [
             CAND_BASE_HEADER + ["s_coarse"],
@@ -150,7 +161,7 @@ def _fmt_t_mm(t):
 
 
 def cand_csv_row(scene_id, im_id, obj_id, cand, w, hyp, source, solver,
-                 score_coarse, header=None):
+                 score_coarse, header=None, score_feat_w=False):
     bd = hyp.breakdown
     values = {
         "scene_id": scene_id,
@@ -175,7 +186,12 @@ def cand_csv_row(scene_id, im_id, obj_id, cand, w, hyp, source, solver,
             "R_coarse": _fmt_R(bd["R_coarse"]),
             "t_coarse": _fmt_t_mm(bd["t_coarse"]),
         })
-    header = header or cand_csv_header(score_coarse)
+    if score_feat_w:
+        # bd['s_feat_w'] with no .get default: if the scorer was not actually
+        # configured to record it, the run must fail here rather than write a
+        # column of zeros that reads like a measurement.
+        values["s_feat_w"] = f"{bd['s_feat_w']:.4f}"
+    header = header or cand_csv_header(score_coarse, score_feat_w)
     return [values.get(c, "") for c in header]
 
 
@@ -473,6 +489,16 @@ def main():
                          "(and the main --out rows) are unchanged; only the "
                          "extra s_coarse column and the wall-clock `time` "
                          "column (more compute) differ.")
+    ap.add_argument("--score-feat-w", action="store_true",
+                    help="also record the MATCHED-space feature score as an "
+                         "s_feat_w column in --cand-csv: the same score as "
+                         "s_feat_1 at the same pose, but in the weight-scaled "
+                         "space instead of the canonical w=1 one. Diagnostic "
+                         "only — champion score/R/t and the --out rows are "
+                         "unchanged; it costs one extra feature score per "
+                         "hypothesis. Needed for the canonical-vs-matched rule "
+                         "comparison, which CANNOT be reconstructed from "
+                         "s_feat_1 and w.")
     ap.add_argument("--use-s-coarse", action="store_true",
                     help="USE S_coarse in arbitration: score *= max(s_coarse,0) "
                          "(rule s_icp*s_feat_1*metric_fit*s_coarse). Per-DATASET "
@@ -766,7 +792,7 @@ def main():
         "render_backend": (args.render_backend if args.probe_corr
                            else q_enc.render_backend),
     }
-    # .lower() to match how load_gedi() resolves the backbone: POPOE_GEOM_BACKBONE
+    # .lower() to match how load_geometric_descriptor() resolves the backbone: POPOE_GEOM_BACKBONE
     # =FPFH loads FPFH, and its knobs must reach the key or a radius sweep reuses
     # the previous radius' features.
     if enc_cfg["geom_backbone"].lower() == "fpfh":
@@ -873,6 +899,7 @@ def main():
         stages = stages_for_object(extent, size_aware=obj_id in merge,
                                    score_coarse=args.score_coarse,
                                    use_s_coarse=args.use_s_coarse,
+                                   score_feat_w=args.score_feat_w,
                                    corr_topk=args.corr_topk,
                                    n_restarts=args.n_restarts,
                                    solver=args.solver, seed=args.seed,
@@ -895,7 +922,7 @@ def main():
     cand_f = None
     cand_header = None
     if args.cand_csv:
-        header = cand_csv_header(args.score_coarse)
+        header = cand_csv_header(args.score_coarse, args.score_feat_w)
         cand_header = header
         new = not os.path.exists(args.cand_csv)
         if not new:
@@ -904,7 +931,8 @@ def main():
             # mismatched header (silent schema corruption).
             with open(args.cand_csv, newline="") as fchk:
                 existing = next(csv.reader(fchk), [])
-            if existing not in cand_csv_compatible_headers(args.score_coarse):
+            if existing not in cand_csv_compatible_headers(args.score_coarse,
+                                                           args.score_feat_w):
                 raise SystemExit(
                     f"--cand-csv {args.cand_csv} has header {existing} but this "
                     f"run would write {header} (score-coarse mismatch). Use a "
@@ -1121,7 +1149,7 @@ def main():
                                         scene_id, im_id, obj_id, ci, w, h,
                                         getattr(det, "source", ""),
                                         args.solver, args.score_coarse,
-                                        cand_header,
+                                        cand_header, args.score_feat_w,
                                     ))
                         except Exception as e:
                             note_failure("solve/refine/score", f"obj{obj_id}", e)

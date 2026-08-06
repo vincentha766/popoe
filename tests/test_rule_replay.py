@@ -177,6 +177,116 @@ def test_end_to_end_writes_results_and_reports_flips(rr, tmp_path, capsys):
     assert len(res) == 2                          # one row per target
 
 
+def _pool_df():
+    """Two targets. Target A has one candidate per (source, w); target B is
+    MUSE-only at w=0.7 — so restricting the pool can empty a target entirely."""
+    rows = [
+        dict(scene_id=1, im_id=1, obj_id=5, cand=0, w=1.0, source="cnos",
+             s_icp=0.9, s_feat_1=0.2, metric_fit=1.0, score=0.18,
+             R="1 0 0 0 1 0 0 0 1", t="0 0 0"),
+        dict(scene_id=1, im_id=1, obj_id=5, cand=1, w=0.7, source="cnos",
+             s_icp=0.3, s_feat_1=0.9, metric_fit=1.0, score=0.27,
+             R="1 0 0 0 1 0 0 0 1", t="1 1 1"),
+        dict(scene_id=1, im_id=1, obj_id=5, cand=2, w=0.7, source="muse",
+             s_icp=0.8, s_feat_1=0.8, metric_fit=1.0, score=0.64,
+             R="1 0 0 0 1 0 0 0 1", t="2 2 2"),
+        dict(scene_id=1, im_id=2, obj_id=5, cand=0, w=0.7, source="muse",
+             s_icp=0.5, s_feat_1=0.5, metric_fit=1.0, score=0.25,
+             R="1 0 0 0 1 0 0 0 1", t="3 3 3"),
+    ]
+    return pd.DataFrame(rows)
+
+
+def test_restrict_keeps_only_requested_values(rr):
+    df = _pool_df()
+    kept, label = rr.restrict(df, "w", [0.7], rr._round6)
+    assert len(kept) == 3 and set(kept["w"]) == {0.7}
+    assert label == "w=0.7"
+    kept, label = rr.restrict(df, "source", ["cnos"], str)
+    assert set(kept["source"]) == {"cnos"} and label == "source=cnos"
+
+
+def test_restrict_unknown_value_is_loud(rr):
+    """A typo'd source must not read as 'this source contributes nothing'."""
+    df = _pool_df()
+    with pytest.raises(SystemExit, match="absent from the dump"):
+        rr.restrict(df, "source", ["nids"], str)
+    with pytest.raises(SystemExit, match="absent from the dump"):
+        rr.restrict(df, "w", [0.3], rr._round6)
+
+
+def test_restrict_missing_column_is_loud(rr):
+    df = _pool_df().drop(columns=["source"])
+    with pytest.raises(SystemExit, match="no 'source' column"):
+        rr.restrict(df, "source", ["cnos"], str)
+
+
+def _run_cli(rr, argv):
+    import sys
+    old = sys.argv
+    try:
+        sys.argv = ["rule_replay.py"] + argv
+        rr.main()
+    finally:
+        sys.argv = old
+
+
+def test_keep_source_arm_zero_pads_targets_it_empties(rr, tmp_path, capsys):
+    """C4: restricting to CNOS leaves target B (MUSE-only) with no candidate.
+    With --target-csv it stays in the denominator as a zero-score failure —
+    otherwise the arm would score 1 target and look artificially strong."""
+    csv = tmp_path / "cands.csv"
+    _pool_df().to_csv(csv, index=False)
+    targets = tmp_path / "poses.csv"
+    _pool_df()[rr.KEY].drop_duplicates().to_csv(targets, index=False)
+    _run_cli(rr, [str(csv), "--rule", "s_icp*s_feat_1*metric_fit",
+                  "--target-csv", str(targets), "--keep-source", "cnos",
+                  "--out-dir", str(tmp_path / "out")])
+    out = capsys.readouterr().out
+    assert "kept 2/4 hypotheses, 1/2 candidate-bearing targets" in out
+    assert "2 targets (1 zero-padded)" in out
+    res = pd.read_csv(tmp_path / "out" /
+                      "replay_s_icp_s_feat_1_metric_fit_source_cnos.csv")
+    assert len(res) == 2
+    assert res[res["im_id"] == 2].iloc[0]["score"] == 0.0
+
+
+def test_keep_obj_slices_to_the_ablation_objects(rr, tmp_path, capsys):
+    """C3 runs on YCB-V obj19/20 only, so the pooled arms must be sliced to the
+    same objects the no-pool GPU arm produced — with a target universe sliced
+    identically, or the replay trips the 'outside --target-csv' guard."""
+    df = _pool_df()
+    df.loc[df.im_id == 2, "obj_id"] = 19            # a second object in the dump
+    csv = tmp_path / "cands.csv"
+    df.to_csv(csv, index=False)
+    targets = tmp_path / "poses.csv"
+    df[df.obj_id == 19][rr.KEY].drop_duplicates().to_csv(targets, index=False)
+    _run_cli(rr, [str(csv), "--rule", "s_icp*s_feat_1*metric_fit",
+                  "--target-csv", str(targets), "--keep-obj", "19",
+                  "--out-dir", str(tmp_path / "out")])
+    out = capsys.readouterr().out
+    assert "kept 1/4 hypotheses" in out
+    res = pd.read_csv(tmp_path / "out" /
+                      "replay_s_icp_s_feat_1_metric_fit_obj_id_19.csv")
+    assert len(res) == 1 and set(res["obj_id"]) == {19}
+
+
+def test_keep_w_arm_restricts_before_argmax(rr, tmp_path, capsys):
+    """C1: at w=1.0 only cand 0 survives for target A, so the champion is the
+    one the adaptive arm did NOT pick (cand 2 at w=0.7 scores higher)."""
+    csv = tmp_path / "cands.csv"
+    _pool_df().to_csv(csv, index=False)
+    _run_cli(rr, [str(csv), "--rule", "s_icp*s_feat_1*metric_fit",
+                  "--keep-w", "1.0", "--out-dir", str(tmp_path / "out")])
+    out = capsys.readouterr().out
+    assert "kept 1/4 hypotheses" in out
+    assert "1 lost every candidate" in out
+    assert "NOT comparable" in out          # no --target-csv -> loud warning
+    res = pd.read_csv(tmp_path / "out" /
+                      "replay_s_icp_s_feat_1_metric_fit_w_1_0.csv")
+    assert len(res) == 1 and res.iloc[0]["t"] == "0 0 0"
+
+
 def test_end_to_end_target_csv_zero_pads_missing_targets(rr, tmp_path, capsys):
     csv = tmp_path / "cands.csv"
     _df().to_csv(csv, index=False)

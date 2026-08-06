@@ -110,9 +110,9 @@ def best_encoders(device: str = "cuda", target_grid: int = 32,
     os.environ.setdefault("POPOE_TARGET_GRID", str(target_grid))
     from popoe.freeze.adapters import make_freeze_encoders
     from popoe.freeze.feature_extractor import (
-        QueryFeatureExtractor, TargetFeatureExtractor, load_dinov2, load_gedi)
+        QueryFeatureExtractor, TargetFeatureExtractor, load_dinov2, load_geometric_descriptor)
     dino = load_dinov2(device)
-    gedi = load_gedi(device)
+    gedi = load_geometric_descriptor(device)
     qx = QueryFeatureExtractor(device, dino=dino, gedi=gedi,
                                render_backend=render_backend)
     tx = TargetFeatureExtractor(device, dino=dino, gedi=gedi)
@@ -252,6 +252,15 @@ def solver_provenance(name: str, seed: int | None) -> str:
     # NOT been measured, so the word here is the weaker one for every solver
     # rather than a claim that happens to be checked for one of them.
     #
+    # 2026-08-04: those 6.5% / 6.4% figures PRE-DATE --render-rerank. Re-measured
+    # WITH the reranker (LM-O --objs 1, same machine, same warm cache, serial,
+    # same seed, back-to-back): 75/175 targets = 43% move by >0.1mm or >0.1deg.
+    # Do NOT use the 2026-07-28 numbers as an acceptance floor for a
+    # rerank-enabled run — an A/B against them reads any rerun as a behaviour
+    # change. AR is the stable quantity: the same three runs land within 0.20 pt
+    # (0.7814 / 0.7820 / 0.7834), matching the SEED-VAR finding that this
+    # pipeline moves many rows by amounts far below the MSSD threshold band.
+    #
     # The distinction is not pedantry: provenance that reads "deterministic"
     # licenses treating a 0.0x pt difference between two runs as signal, and
     # this project has already spent a pod run re-deriving a noise floor that
@@ -279,7 +288,8 @@ def stages_for_object(extent_m: float, size_aware: bool = False,
                       tau_basis_m: float | None = None,
                       corr_topk: int = 0,
                       n_restarts: int = 1,
-                      render_rerank: bool = False):
+                      render_rerank: bool = False,
+                      score_feat_w: bool = False):
     """Per-object solver/refiner/scorer with thresholds scaled to the object.
     ``extent_m``: max bounding-box side of the sampled query cloud (metres).
 
@@ -305,6 +315,12 @@ def stages_for_object(extent_m: float, size_aware: bool = False,
     tau_ICP, and the feature score's inlier radius (Eq. 4 defines a single
     tau_inlier that Eq. 5 reuses), so they cannot drift apart.
 
+    ``score_feat_w``: additionally record the MATCHED-space feature score as
+    ``breakdown["s_feat_w"]`` (diagnostic; the score is unchanged). Needed to
+    compare the canonical-space rule family against the matched-space one on a
+    single frozen candidate pool — the campaign2-era dumps carry only s_feat_1,
+    and s_feat_w cannot be reconstructed from s_feat_1 and w.
+
     ``render_rerank``: append :class:`popoe.render_rerank.RenderAppearanceReranker`
     after ICP (knife-4 SAR-style DINOv2 render-vs-scene re-rank). Off by default
     so the headline path stays byte-identical; enable for the measured YCB-V
@@ -325,6 +341,8 @@ def stages_for_object(extent_m: float, size_aware: bool = False,
     scorer = ChampionScorer(tau_inlier_frac=TAU_FRAC, size_aware=size_aware,
                             compute_s_coarse=score_coarse or use_s_coarse,
                             use_s_coarse=use_s_coarse,
+                            # matched-space diagnostic; never enters the score
+                            compute_s_feat_w=score_feat_w,
                             # None on the historical path: the scorer then
                             # recomputes TAU_FRAC * extent itself, identically.
                             tau_abs=None if tau_basis_m is None else tau)

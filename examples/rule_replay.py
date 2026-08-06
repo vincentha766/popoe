@@ -32,10 +32,22 @@ full-precision argmax. For candidates that tie within ~1e-4 the champion can
 differ from a live run; this bounds replay's fidelity (it applies to the
 existing champion columns too, not just s_coarse).
 
+Pool restrictions (`--keep-w`, `--keep-source`) drop candidate rows BEFORE the
+argmax, which is a different kind of ablation from a rule change: the rule stays
+the frozen one and the question becomes "what could still be selected". A target
+whose every candidate is dropped keeps its place in the denominator only via
+`--target-csv`, so pass it for any restricted arm you intend to report.
+
 Usage:
     python examples/rule_replay.py cands.csv \
         --target-csv poses.csv \
         --rule "s_icp*s_feat_1" --rule "s_icp*s_feat_1*s_coarse" --out-dir replays/
+
+    # C1 fixed-w arm; C4 source-availability arm
+    python examples/rule_replay.py cands.csv --target-csv poses.csv \
+        --rule "s_icp*s_feat_1*metric_fit" --keep-w 0.7 --out-dir replays/
+    python examples/rule_replay.py cands.csv --target-csv poses.csv \
+        --rule "s_icp*s_feat_1*metric_fit" --keep-source cnos,sam6d --out-dir replays/
 """
 
 from __future__ import annotations
@@ -163,6 +175,46 @@ def complete_results(champs: pd.DataFrame,
     return out[RESULT], int(missed.sum())
 
 
+def _split_values(values) -> list:
+    """--keep-w 1.0,0.7 --keep-w 0.5 -> ['1.0', '0.7', '0.5']."""
+    out: list = []
+    for chunk in values or []:
+        out.extend(v.strip() for v in chunk.split(",") if v.strip())
+    return out
+
+
+def restrict(df: pd.DataFrame, column: str, wanted: list,
+             cast=lambda v: v) -> tuple[pd.DataFrame, str]:
+    """Keep only rows whose `column` is in `wanted` — the candidate-availability
+    ablations (C1 fixed-w, C4 detection source) are pool restrictions, not rule
+    changes, so they must happen BEFORE the champion argmax.
+
+    A value the dump never contains is a LOUD error: silently returning an empty
+    or partial arm would read as 'this source buys nothing' when the truth is
+    'you misspelled the source'.
+    """
+    if column not in df.columns:
+        raise SystemExit(
+            f"dump has no {column!r} column — cannot restrict by it "
+            f"(columns: {sorted(df.columns)})")
+    present = df[column].map(cast)
+    available = sorted(set(present.dropna()))
+    keep = [cast(v) for v in wanted]
+    unknown = [v for v in keep if v not in set(available)]
+    if unknown:
+        raise SystemExit(
+            f"--keep-{column} value(s) {unknown} absent from the dump "
+            f"(present: {available})")
+    return df[present.isin(keep)], f"{column}={'+'.join(str(v) for v in keep)}"
+
+
+def _round6(v):
+    try:
+        return round(float(v), 6)
+    except (TypeError, ValueError):
+        return v
+
+
 def _slug(rule: str) -> str:
     return re.sub(r"[^0-9A-Za-z]+", "_", rule).strip("_")
 
@@ -182,6 +234,24 @@ def main():
     ap.add_argument("--baseline-col", default="score",
                     help="column whose champion is the flip baseline (the dump's "
                          "own arbitration score by default)")
+    ap.add_argument("--keep-w", action="append", default=[],
+                    help="restrict the candidate pool to these visual weights "
+                         "(comma-separated or repeatable), e.g. --keep-w 0.7. "
+                         "This is the C1 fixed-w arm: adaptive selection is the "
+                         "unrestricted run, a fixed w is this pool minus every "
+                         "other weight")
+    ap.add_argument("--keep-obj", action="append", default=[],
+                    help="restrict to these obj_id values (comma-separated or "
+                         "repeatable). Use with a --target-csv restricted to the "
+                         "same objects — this is the C3 obj19/20 slice, where the "
+                         "pooled arms must cover exactly the objects the no-pool "
+                         "GPU arm ran")
+    ap.add_argument("--keep-source", action="append", default=[],
+                    help="restrict the candidate pool to these detection sources "
+                         "(comma-separated or repeatable), e.g. "
+                         "--keep-source cnos,sam6d. This is the C4 frozen-pool "
+                         "source-availability arm; it does NOT re-run detection, "
+                         "so it cannot claim end-to-end detector-union equivalence")
     args = ap.parse_args()
 
     df = pd.read_csv(args.cand_csv)
@@ -191,6 +261,26 @@ def main():
         if c not in df.columns:
             raise SystemExit(f"{args.cand_csv} missing required column {c!r}")
     targets = load_target_universe(args.target_csv) if args.target_csv else None
+
+    n_all, arm = len(df), []
+    targets_all = df.groupby(KEY).ngroups
+    for col, wanted, cast in (("w", _split_values(args.keep_w), _round6),
+                              ("obj_id", _split_values(args.keep_obj), int),
+                              ("source", _split_values(args.keep_source), str)):
+        if wanted:
+            df, label = restrict(df, col, wanted, cast)
+            arm.append(label)
+    if arm:
+        if df.empty:
+            raise SystemExit(f"filter {' '.join(arm)} kept 0 hypotheses")
+        kept_targets = df.groupby(KEY).ngroups
+        print(f"filter {' '.join(arm)}: kept {len(df)}/{n_all} hypotheses, "
+              f"{kept_targets}/{targets_all} candidate-bearing targets "
+              f"({targets_all - kept_targets} lost every candidate)")
+        if targets is None and kept_targets < targets_all:
+            print("  WARNING: restriction emptied some targets; without "
+                  "--target-csv they vanish from the denominator and the AR is "
+                  "NOT comparable to the unrestricted arm")
     if args.out_dir:
         os.makedirs(args.out_dir, exist_ok=True)
 
@@ -223,7 +313,10 @@ def main():
         print(f"  rule {rule!r}: {flips}/{n_targets} targets flip vs baseline "
               f"({flips / n_targets:.1%})")
         if args.out_dir:
-            out = os.path.join(args.out_dir, f"replay_{_slug(rule)}.csv")
+            # arm slug in the filename: two restriction arms of the SAME rule
+            # would otherwise overwrite each other in one --out-dir.
+            stem = "_".join([_slug(rule)] + [_slug(a) for a in arm])
+            out = os.path.join(args.out_dir, f"replay_{stem}.csv")
             champs = df.loc[r_idx.values].copy()
             champs["score"] = rule_score(champs, terms).values
             result = champs[RESULT]
