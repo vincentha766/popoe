@@ -660,6 +660,11 @@ def main():
                          "query cloud's largest bounding-box side (which is "
                          "2-35%% smaller on LM-O). Pose-side only; caches hit. "
                          "Score-affecting — use a FRESH --out.")
+    ap.add_argument("--max-targets", type=int, default=0,
+                    help="PROBE knob: stop after this many completed targets "
+                         "(0 = full run). For per-set single-image "
+                         "preflights; the output CSV is partial by design "
+                         "and must never feed a formal score.")
     ap.add_argument("--min-mask-pixels", type=int, default=100,
                     help="drop candidate masks smaller than this many pixels "
                          "(unreliable geometry). Paper Sec. III-C keeps the "
@@ -1312,6 +1317,11 @@ def main():
                 n_done += 1
                 if n_done % 50 == 0:
                     print(f"{n_done} targets this run", flush=True)
+            if args.max_targets and n_done >= args.max_targets:
+                print(f"--max-targets {args.max_targets} reached — probe "
+                      f"stops here (output is a PARTIAL run by design)",
+                      flush=True)
+                break
     if cand_f is not None:
         cand_f.close()
     if probe_wr is not None:
