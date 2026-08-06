@@ -1233,8 +1233,8 @@ no `--use-s-coarse`. OMP/host/sharding are runtime provenance only.
 
 Comparator: FreeZe(CNOS) per-set (same detection input). LM-O + YCB-V were to
 reuse the accepted Phase D B-single results (identical inputs) — **reuse
-condition void (2026-08-06): all eight Phase D server scores were voided
-pending re-run; reuse LM-O/YCB-V only after the Phase D re-run is accepted.**
+condition void: all eight Phase D server scores were voided pending re-run;
+reuse LM-O/YCB-V only after the Phase D re-run is accepted.**
 Five new runs for the other sets.
 
 | Dataset | Detection input | SHA256 |
