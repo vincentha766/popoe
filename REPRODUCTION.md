@@ -68,10 +68,12 @@ not implemented by the formal runner.
 | Parallel GPU RANSAC, 10,000 iterations, selected with the feature-aware score | Faithful recipes run `--solver gpu-feat` (Vincent 2026-08-06): `GPURansacSolver` with `fitness="feature"`, the fixed-denominator Eq. 5 hypothesis selection, at 10,000 iterations (two further local pins the paper does not state: `min_inliers=6` and the 0.9 relative-edge-length triplet check). Tuned recipes keep `--solver o3d` (CPU Open3D geometry RANSAC) as a declared tuning choice — it measured +6-8 pt over the gpu path historically and is NOT the paper's selector. | **Match on the faithful path.** Tuned's o3d selection stays a declared deviation of the tuned system, not of the reproduction. |
 | Timing hardware: NVIDIA A40 and Xeon Silver 4316 @ 2.30 GHz | Recorded project runs use the lab 4×RTX 4090 host or other stated infrastructure; recipes do not assert the paper CPU/GPU model. | **Hardware mismatch.** Accuracy results may still be compared with full disclosure; runtime/FPS must not be presented as paper-hardware parity. |
 
-Additional algorithmic variable: the TUNED recipes enable `--render-rerank`,
-which is not specified in §IV-A — a popoe extension, reported as such. The
-faithful recipes carry no rerank (base protocol; Decision 9 revised, triage
-D5).
+Additional algorithmic variables: BOTH arms enable `--render-rerank
+--render-score --mask-m 2n` (decision 13, 2026-08-07 — the three v2.1
+components, same-knob across arms; none is specified in §IV-A, and all three
+are pinned-by-us approximations reported as such — see the v2.1-only deltas
+table below). Decision 9's revision (faithful carries no rerank, triage D5)
+is superseded by decision 13.
 
 ### v2.1-only deltas (Table II Row 19 = FreeZeV2-Accurate = `method_info/905`)
 
@@ -98,9 +100,9 @@ they must not be collapsed into one "missing":
 
 | v2.1 delta | Status | Reason / what it would take |
 |---|---|---|
-| `M = 2N` masks per segmentation model | **Missing, but alignable.** No closed dependency. | **Two distinct sources, do not conflate.** (a) *Where `2N` is stated*: §IV-D prose on Row 19 only — "increases the number of processed masks up to `M = 2N`". No ablation, no per-set numbers, no timing for `2N` anywhere in the report. (b) *What Table V actually ablates*: `M ∈ {N, N+1, N+2}` for the **base FreeZeV2** localization protocol (73.7 / 75.4 / 75.6 mean AR at 1.2 / 1.5 / 1.7 s), establishing that `N+1` is the paper's default and that returns are already flattening by `N+2` (+0.2). Table V therefore **does not validate `2N`** — it neither measures it nor bounds it; the `N+2` trend is only weak evidence that `2N`'s gain is small and its cost is not. What makes `2N` alignable is that the *quantity* `M` is public and parameter-free, not that it was ablated. The per-target `N+1` prerequisite is now in place (`floored_topk` floors each target's budget at `inst_count + 1`), so `2N` is a coefficient change from here; report any `2N` run as our own measurement, since the paper gives no `2N` number to compare against. |
-| Symmetry-Aware Refinement (SAR) | **Approximation ceiling: implementable, not verifiable as equivalent.** | §IV-D only says v2.1 "integrates Symmetry-Aware Refinement (SAR) [9]" — ref [9] is FreeZe v1 (`2312.00947v3` §3.6, "based on rendering and visual features"). So the spec lives in a *different* paper and there is no public code. popoe's `--render-rerank` reorders a fixed PCA-axis variant set only (champion + three 180-degree flips + az90/az270; see the tuned recipes' Cautions rows). gedi `scripts/freezev2_sym_refine.py` is closer (PCA 3 axes × 36 angles, Chamfer < 1% diameter, ≤32 symmetries) but is our own symmetry enumeration, not a port of v1 SAR. Any implementation must be disclosed as an approximation of SAR, never as SAR. |
-| Improved scoring by comparing visual features of input image vs rendered pose | **Missing.** | §IV-D gives one prose sentence, no equation and no parameters. Not reconstructible to a verifiable spec from the public text. |
+| `M = 2N` masks per segmentation model | **Implemented (2026-08-07, `31d277e`): `--mask-m 2n`**, per-target floor `max(--topk, 2·inst_count)`; at N=1 identical to N+1, so single-instance targets are byte-same across modes. In BOTH arms' frozen recipes per decision 13. | **Two distinct sources, do not conflate.** (a) *Where `2N` is stated*: §IV-D prose on Row 19 only — "increases the number of processed masks up to `M = 2N`". No ablation, no per-set numbers, no timing for `2N` anywhere in the report. (b) *What Table V actually ablates*: `M ∈ {N, N+1, N+2}` for the **base FreeZeV2** localization protocol (73.7 / 75.4 / 75.6 mean AR at 1.2 / 1.5 / 1.7 s), establishing that `N+1` is the paper's default and that returns are already flattening by `N+2` (+0.2). Table V therefore **does not validate `2N`** — it neither measures it nor bounds it; the `N+2` trend is only weak evidence that `2N`'s gain is small and its cost is not. What makes `2N` alignable is that the *quantity* `M` is public and parameter-free, not that it was ablated. The per-target `N+1` prerequisite is in place (`floored_topk`), and the coefficient change landed as `--mask-m 2n`; report any `2N` run as our own measurement, since the paper gives no `2N` number to compare against. |
+| Symmetry-Aware Refinement (SAR) | **Approximation ceiling: implementable, not verifiable as equivalent.** | §IV-D only says v2.1 "integrates Symmetry-Aware Refinement (SAR) [9]" — ref [9] is FreeZe v1 (`2312.00947v3` §3.6, "based on rendering and visual features"). So the spec lives in a *different* paper and there is no public code. popoe's `--render-rerank` reorders a fixed PCA-axis variant set only (champion + three 180-degree flips + az90/az270; see the tuned recipes' Cautions rows). gedi `scripts/freezev2_sym_refine.py` is closer (PCA 3 axes × 36 angles, Chamfer < 1% diameter, ≤32 symmetries) but is our own symmetry enumeration, not a port of v1 SAR. Any implementation must be disclosed as an approximation of SAR, never as SAR. Decision 13 (2026-08-07) puts `--render-rerank` in BOTH arms' frozen recipes (previously tuned-only after the decision-9 revision). |
+| Improved scoring by comparing visual features of input image vs rendered pose | **Implemented as a pinned-by-us approximation (2026-08-07, `31d277e`): `--render-score`** — champion selection multiplies in the clamped `sar_ti` (input-vs-render DINOv2 patch cosine) the rerank stage leaves on every candidate; zero extra renders. In BOTH arms' frozen recipes per decision 13. | §IV-D gives one prose sentence, no equation and no parameters — the factor form (unit-exponent multiplicative, clamped at 0, the `use_s_coarse` arbitration shape) is our own choice and must be disclosed as such, never as the official component. Not reconstructible to a verifiable spec from the public text. |
 
 **Four-source masks including MUSE are NOT a v2.1-only delta** — Rows 18 and 19
 use the same four sources, so MUSE belongs to the shared §IV-A setup row above,
@@ -149,11 +151,12 @@ therefore keeps its original role — evidence for the T1 from-paper reproductio
 claim in gedi `EXPERIMENTS.md`, not a replacement for official masks in pose
 runs.
 
-Consequence for the dissertation: the MUSE artefacts and the `M=2N` rule are
-obtainable, but exact Row 19 recipe parity remains unverifiable because SAR and
-render scoring are underspecified. The distance to 905 stays confounded by SAR +
-`M=2N` + render scoring — label those three whenever a triple is written
-against it. The detection-matched residual lives at A/four-way vs
+Consequence for the dissertation: all three components now run in both arms
+(decision 13: rerank≈SAR, `--mask-m 2n`, `--render-score`), but exact Row 19
+recipe parity remains unverifiable because SAR and render scoring are
+underspecified — our versions are pinned-by-us approximations, not ports. The
+distance to 905 stays confounded by those three implementation deviations —
+label them whenever a triple is written against it. The detection-matched residual lives at A/four-way vs
 FreeZeV2.1(905): matched in **detection composition** (the same four sources),
 but `--render-rerank` (a popoe-scoped variant of the official SAR: it
 reorders a fixed PCA-axis variant set only) means the *pose stage* is still not fully
@@ -287,7 +290,7 @@ out_dir/
 | Scoring | Paper Eq.7 three-term form with `--use-s-coarse` and `--eq5-terms` (both feature terms in the Eq.5 formulation: target->query top-k pool, fixed \|P_T^sparse\| denominator); Eq.7 exponents are **pinned-by-us** to unit exponents |
 | Leaderboard comparator | A / single-source -> FreeZe(CNOS) LM-O/YCB-V = 0.689 / 0.853 |
 | Artifacts | `$RUN/{lmo,ycbv}/` each contains `poses.csv`, `cand.csv`, `RECIPE.md`, `AR_SUMMARY.md`, `bop_server.md`, `grasp_summary.md` |
-| Cautions | **No render rerank**: the faithful arms run the BASE protocol — paper Row 18 carries no SAR, and popoe's `--render-rerank` is an approximation that belongs to the tuned system only (Decision 9 revised, triage D5). Dense resampling uses `rng(0)` where invoked and is independent of `--seed`. Encoding degradation is explicit in logs as `DEGRADE`. These runs are not bit/row comparable to historical anchors because seed and implementation fixes are new variables. |
+| Cautions | **Rerank + render score + M=2N carried (decision 13)**: the faithful arms align to v2.1 (Row 19), which carries SAR, M=2N and render scoring — popoe's `--render-rerank --render-score --mask-m 2n` are pinned-by-us approximations of those three (see the v2.1-only deltas table), disclosed as such, never as the official components. Dense resampling uses `rng(0)` where invoked and is independent of `--seed`. Encoding degradation is explicit in logs as `DEGRADE`. These runs are not bit/row comparable to historical anchors because seed and implementation fixes are new variables; the pre-decision-13 dev anchors (faithful 0.7314 / tuned 0.8174) are void. |
 
 ```bash
 set -euo pipefail
@@ -310,7 +313,13 @@ if [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
   echo "wrong popoe checkout; need POPOE_PIN=$POPOE_PIN (got HEAD=$(git rev-parse HEAD))" >&2
   exit 1
 fi
-# Faithful arms carry no --render-rerank (Decision 9); do not require sar_render_compare.
+# Rerank file guard — faithful re-carries rerank per decision 13 (2026-08-07):
+for req in scripts/check_rerank_symmetry.py scripts/sar_render_compare.py; do
+if [ ! -f "$req" ]; then
+  echo "missing $req — stale tag tip (render_rerank loads sar_render_compare at RUNTIME); fetch --tags --force" >&2
+  exit 1
+fi
+done
 if [ -n "$(git status --porcelain)" ]; then
   echo "refusing dirty popoe worktree" >&2
   exit 1
@@ -355,6 +364,7 @@ done
   --tau-diameter \
   --trans-nms 0.05 \
   --icp-dense --icp-dense-max 3000 \
+  --render-rerank --render-score --mask-m 2n \
   --render-backend nvdiffrast \
   --out "$RUN/lmo/poses.csv" --cache "$RUN/lmo/cache" \
   --cand-csv "$RUN/lmo/cand.csv"
@@ -370,6 +380,7 @@ done
   --tau-diameter \
   --trans-nms 0.05 \
   --icp-dense --icp-dense-max 3000 \
+  --render-rerank --render-score --mask-m 2n \
   --render-backend nvdiffrast \
   --out "$RUN/ycbv/poses.csv" --cache "$RUN/ycbv/cache" \
   --cand-csv "$RUN/ycbv/cand.csv"
@@ -386,7 +397,7 @@ done
 | Scoring | Paper Eq.7 three-term form with `--use-s-coarse` and `--eq5-terms` (both feature terms in the Eq.5 formulation: target->query top-k pool, fixed \|P_T^sparse\| denominator); Eq.7 exponents are **pinned-by-us** to unit exponents |
 | Leaderboard comparator | A / four-way -> FreeZeV2.1(905) LM-O/YCB-V = 0.771 / 0.915 — **detection-matched** (same four sources); label the SAR + `M=2N` + render-scoring confounds. Paper Row 18 (75.9 / 91.3, four-way no SAR, self-reported, no leaderboard row) is auxiliary reference only |
 | Artifacts | `$RUN/{lmo,ycbv}/` each contains `poses.csv`, `cand.csv`, `RECIPE.md`, `AR_SUMMARY.md`, `bop_server.md`, `grasp_summary.md` |
-| Cautions | **No render rerank**: the faithful arms run the BASE protocol — paper Row 18 carries no SAR, and popoe's `--render-rerank` is an approximation that belongs to the tuned system only (Decision 9 revised, triage D5). Dense resampling uses `rng(0)` where invoked and is independent of `--seed`. Encoding degradation is explicit in logs as `DEGRADE`. These runs are not bit/row comparable to historical anchors because seed and implementation fixes are new variables. |
+| Cautions | **Rerank + render score + M=2N carried (decision 13)**: the faithful arms align to v2.1 (Row 19), which carries SAR, M=2N and render scoring — popoe's `--render-rerank --render-score --mask-m 2n` are pinned-by-us approximations of those three (see the v2.1-only deltas table), disclosed as such, never as the official components. Dense resampling uses `rng(0)` where invoked and is independent of `--seed`. Encoding degradation is explicit in logs as `DEGRADE`. These runs are not bit/row comparable to historical anchors because seed and implementation fixes are new variables; the pre-decision-13 dev anchors (faithful 0.7314 / tuned 0.8174) are void. |
 
 ```bash
 set -euo pipefail
@@ -409,7 +420,13 @@ if [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
   echo "wrong popoe checkout; need POPOE_PIN=$POPOE_PIN (got HEAD=$(git rev-parse HEAD))" >&2
   exit 1
 fi
-# Faithful arms carry no --render-rerank (Decision 9); do not require sar_render_compare.
+# Rerank file guard — faithful re-carries rerank per decision 13 (2026-08-07):
+for req in scripts/check_rerank_symmetry.py scripts/sar_render_compare.py; do
+if [ ! -f "$req" ]; then
+  echo "missing $req — stale tag tip (render_rerank loads sar_render_compare at RUNTIME); fetch --tags --force" >&2
+  exit 1
+fi
+done
 if [ -n "$(git status --porcelain)" ]; then
   echo "refusing dirty popoe worktree" >&2
   exit 1
@@ -454,6 +471,7 @@ done
   --tau-diameter \
   --trans-nms 0.05 \
   --icp-dense --icp-dense-max 3000 \
+  --render-rerank --render-score --mask-m 2n \
   --render-backend nvdiffrast \
   --out "$RUN/lmo/poses.csv" --cache "$RUN/lmo/cache" \
   --cand-csv "$RUN/lmo/cand.csv"
@@ -469,6 +487,7 @@ done
   --tau-diameter \
   --trans-nms 0.05 \
   --icp-dense --icp-dense-max 3000 \
+  --render-rerank --render-score --mask-m 2n \
   --render-backend nvdiffrast \
   --out "$RUN/ycbv/poses.csv" --cache "$RUN/ycbv/cache" \
   --cand-csv "$RUN/ycbv/cand.csv"
@@ -547,7 +566,7 @@ done
   --merge none --topk 2 --grid 32 --solver o3d --seed "$SEED" \
   --weights 1.0,0.7,0.5,0.3,0.2 \
   --trans-nms 0.05 \
-  --render-rerank \
+  --render-rerank --render-score --mask-m 2n \
   --render-backend nvdiffrast \
   --out "$RUN/lmo/poses.csv" --cache "$RUN/lmo/cache" \
   --cand-csv "$RUN/lmo/cand.csv"
@@ -559,7 +578,7 @@ done
   --weights 1.0,0.7,0.5,0.3,0.2 \
   --use-s-coarse \
   --trans-nms 0.05 \
-  --render-rerank \
+  --render-rerank --render-score --mask-m 2n \
   --render-backend nvdiffrast \
   --out "$RUN/ycbv/poses.csv" --cache "$RUN/ycbv/cache" \
   --cand-csv "$RUN/ycbv/cand.csv"
@@ -638,7 +657,7 @@ done
   --merge none --topk 2 --grid 32 --solver o3d --seed "$SEED" \
   --weights 1.0,0.7,0.5,0.3,0.2 \
   --trans-nms 0.05 \
-  --render-rerank \
+  --render-rerank --render-score --mask-m 2n \
   --render-backend nvdiffrast \
   --out "$RUN/lmo/poses.csv" --cache "$RUN/lmo/cache" \
   --cand-csv "$RUN/lmo/cand.csv"
@@ -650,7 +669,7 @@ done
   --weights 1.0,0.7,0.5,0.3,0.2 \
   --use-s-coarse \
   --trans-nms 0.05 \
-  --render-rerank \
+  --render-rerank --render-score --mask-m 2n \
   --render-backend nvdiffrast \
   --out "$RUN/ycbv/poses.csv" --cache "$RUN/ycbv/cache" \
   --cand-csv "$RUN/ycbv/cand.csv"
@@ -1282,8 +1301,8 @@ reading as an empty-but-clean tree).
 7. **Merge spelling (F7)**: `--merge ycbv` exists ONLY on the tuned YCB-V
    leg; every other (set, arm) runs `--merge none`. Copy recipes line by
    line — the same flag means different things on different lines.
-8. **Rerank sanity (F3, tuned arms only — faithful runs carry no rerank
-   since Decision 9's revision)**: the run log must show `[rerank] y_sign
+8. **Rerank sanity (F3, ALL arms — faithful re-carries rerank since
+   decision 13)**: the run log must show `[rerank] y_sign
    latched` with a healthy IoU before bulk targets; an `UNRELIABLE` line
    repeating across candidates means the renderer is miscalibrated — stop
    and look. The previous Phase D scores (subs 40054/40057-40059,
@@ -1291,7 +1310,8 @@ reading as an empty-but-clean tree).
 this section.
 
 Common pins (both lines): `--topk 2 --grid 32 --solver o3d --seed 42
---weights 1.0,0.7,0.5,0.3,0.2 --render-rerank --render-backend nvdiffrast`;
+--weights 1.0,0.7,0.5,0.3,0.2 --render-rerank --render-score --mask-m 2n
+--render-backend nvdiffrast`;
 YCB-V uses `--merge ycbv --use-s-coarse`; all other datasets `--merge none`,
 no `--use-s-coarse`. OMP/host/sharding are runtime provenance only.
 
