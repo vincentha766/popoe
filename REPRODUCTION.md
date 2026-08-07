@@ -35,17 +35,21 @@ stated in §IV-D, Quantitative results).
 Code inspected: originally the working tree based on `1d785b7` (dirty at audit
 time); the execution-path rows have since been updated against the 2026-08-06
 fix-wave commits as each landed. This is a setup/protocol audit, not a result
-row or a reproducible run identity; the FULL table gets one final re-check at
-the pinned commit before the tables freeze (triage A3/D8).
+row or a reproducible run identity. **Full-table re-verification performed at
+`a101594` (2026-08-07, adversarial agent, row-by-row against code + paper
+text): zero conclusion-level errors, no cross-invalidation from the
+patch-style updates; the wording/attribution fixes it listed were applied in
+the same pass (triage A3/D8 closed).**
 
 Status meanings: **match** = the paper setting and executed path agree;
+**pinned-by-us** = the paper is silent and a frozen local choice fills the gap;
 **approximation** = an explicit local substitute; **partial** = the number is
 present but its scope or semantics differs; **missing** = the paper protocol is
 not implemented by the formal runner.
 
 | Paper setting | Current popoe formal path | Status / disclosure |
 |---|---|---|
-| CNOS, SAM-6D, NIDS and MUSE, evaluated individually or as an ensemble (§IV-A verbatim; the ensemble rows 18/19 use all four) | The A and B ensemble recipes below both run the same four official sources (CNOS + SAM6D-441 + NIDS + MUSE); official files for all seven core sets are in `data/detections/`. `scripts/faithful_eval.sh` is CNOS-only and serves the single-source arms. | **Match on composition** for the ensemble arms (four-way, per the rows-18/19 merged segmentation cell; Vincent 2026-08-06, replacing the earlier three-way scoping). Composition match does not make B paper-faithful — B is tuned elsewhere in the pipeline. |
+| CNOS, SAM-6D, NIDS and MUSE, evaluated individually or as an ensemble (§IV-A: "used either individually or as an ensemble"; the ensemble rows 18/19 use all four) | The A and B ensemble recipes below both run the same four official sources (CNOS + SAM6D-441 + NIDS + MUSE); official files for all seven core sets are in `data/detections/`. `scripts/faithful_eval.sh` is CNOS-only and serves the single-source arms. | **Match on composition** for the ensemble arms (four-way, per the rows-18/19 merged segmentation cell; Vincent 2026-08-06, replacing the earlier three-way scoping). Composition match does not make B paper-faithful — B is tuned elsewhere in the pipeline. |
 | 162 templates per object, using the CNOS camera viewpoints | Faithful pins set `POPOE_N_VIEWS=162` and `POPOE_QUERY_VIEWS=ico162`. | **Match.** |
 | Poisson disk sampling of the raw query surface points | The query cloud is drawn with `trimesh.sample.sample_surface_even` — rejection-based approximately-even sampling, not a strict Poisson-disk sampler. | **Approximation / pinned-by-us.** |
 | Per-point multi-view feature aggregation ("weighted average") | Aggregation is a binary-visibility equal-weight mean (`sum / visible_count`): a view that sees the point weighs 1, others 0. The paper does not publish its weight formula. | **Pinned-by-us.** Do not claim the paper confirms the absence of e.g. view-angle weights. |
@@ -60,8 +64,8 @@ not implemented by the formal runner.
 | Detection uses `M=100` and discards masks below `tau_mask=0.4` | The formal runner consumes BOP `test_targets_bop19.json` and exposes neither this detection-mode proposal count nor the paper confidence cutoff. | **Missing.** Current formal runs are localization-protocol runs. |
 | Two-scale GeDi: 32D per scale, neighborhoods at 30% and 40% of object diameter | `_TwoScaleGeDi` concatenates two 32D descriptors; faithful diameter normalization makes radii 0.3 and 0.4 object diameter. | **Match.** |
 | PCA/fusion output dimension 128 | Two-scale geometry is 64D; visual PCA defaults to 64D; normalized concatenation produces 128D. | **Match.** |
-| RANSAC inlier and ICP thresholds are 3% of object diameter | Faithful recipes pass `--tau-diameter`; the threshold is derived from the diameter-normalized canonical frame. | **Match.** |
-| Parallel GPU RANSAC, 10,000 iterations, selected with the feature-aware score | Faithful recipes run `--solver gpu-feat` (Vincent 2026-08-06): `GPURansacSolver` with `fitness="feature"`, the fixed-denominator Eq. 5 hypothesis selection, at 10,000 iterations. Tuned recipes keep `--solver o3d` (CPU Open3D geometry RANSAC) as a declared tuning choice — it measured +6-8 pt over the gpu path historically and is NOT the paper's selector. | **Match on the faithful path.** Tuned's o3d selection stays a declared deviation of the tuned system, not of the reproduction. |
+| RANSAC inlier and ICP thresholds are 3% of object diameter | Faithful recipes pass `--tau-diameter`; the threshold is 3% of the BOP `models_info` diameter, loaded once in `bop_eval` and fed as ONE basis to RANSAC tau_inlier, ICP tau_ICP and the feature-score radius. (The canonical frame's diameter normalisation is a separate path serving the GeDi radii, not the source of tau.) | **Match.** |
+| Parallel GPU RANSAC, 10,000 iterations, selected with the feature-aware score | Faithful recipes run `--solver gpu-feat` (Vincent 2026-08-06): `GPURansacSolver` with `fitness="feature"`, the fixed-denominator Eq. 5 hypothesis selection, at 10,000 iterations (two further local pins the paper does not state: `min_inliers=6` and the 0.9 relative-edge-length triplet check). Tuned recipes keep `--solver o3d` (CPU Open3D geometry RANSAC) as a declared tuning choice — it measured +6-8 pt over the gpu path historically and is NOT the paper's selector. | **Match on the faithful path.** Tuned's o3d selection stays a declared deviation of the tuned system, not of the reproduction. |
 | Timing hardware: NVIDIA A40 and Xeon Silver 4316 @ 2.30 GHz | Recorded project runs use the lab 4×RTX 4090 host or other stated infrastructure; recipes do not assert the paper CPU/GPU model. | **Hardware mismatch.** Accuracy results may still be compared with full disclosure; runtime/FPS must not be presented as paper-hardware parity. |
 
 Additional algorithmic variable: the TUNED recipes enable `--render-rerank`,
@@ -82,8 +86,8 @@ vs v2.1's 0.821 — LM-O 0.777 / YCB-V 0.918 (gedi
 `BOP_OFFICIAL_BASELINES.md`). Its stated delta is feature-similarity in the
 RANSAC fitness, and its **segmentor composition is publicly undeclared**, which
 is why gedi `DISSERTATION_PLAN.md` treats v2.2 as a Ch2 frontier reference point
-only and never as a like-for-like target. Above v2.2 the board itself has
-FRTPose-WAPR.v2 at 0.837. So qualify the superlative every time: Row 19 is the
+only and never as a like-for-like target. Above v2.2 the board has
+WAPR.v2 at 0.845 and FRTPose-WAPR.v2 at 0.844 (its Default variant at 0.837). So qualify the superlative every time: Row 19 is the
 best config *in this paper*, v2.1 is the best *documented and decomposable
 ceiling* for this audit, and neither is state of the art.
 
@@ -95,7 +99,7 @@ they must not be collapsed into one "missing":
 | v2.1 delta | Status | Reason / what it would take |
 |---|---|---|
 | `M = 2N` masks per segmentation model | **Missing, but alignable.** No closed dependency. | **Two distinct sources, do not conflate.** (a) *Where `2N` is stated*: §IV-D prose on Row 19 only — "increases the number of processed masks up to `M = 2N`". No ablation, no per-set numbers, no timing for `2N` anywhere in the report. (b) *What Table V actually ablates*: `M ∈ {N, N+1, N+2}` for the **base FreeZeV2** localization protocol (73.7 / 75.4 / 75.6 mean AR at 1.2 / 1.5 / 1.7 s), establishing that `N+1` is the paper's default and that returns are already flattening by `N+2` (+0.2). Table V therefore **does not validate `2N`** — it neither measures it nor bounds it; the `N+2` trend is only weak evidence that `2N`'s gain is small and its cost is not. What makes `2N` alignable is that the *quantity* `M` is public and parameter-free, not that it was ablated. The per-target `N+1` prerequisite is now in place (`floored_topk` floors each target's budget at `inst_count + 1`), so `2N` is a coefficient change from here; report any `2N` run as our own measurement, since the paper gives no `2N` number to compare against. |
-| Symmetry-Aware Refinement (SAR) | **Approximation ceiling: implementable, not verifiable as equivalent.** | §IV-D only says v2.1 "integrates Symmetry-Aware Refinement (SAR) [9]" — ref [9] is FreeZe v1 (`2312.00947v3` §3.6, "based on rendering and visual features"). So the spec lives in a *different* paper and there is no public code. popoe's `--render-rerank` reorders PCA flip variants only (see every recipe's Cautions row). gedi `scripts/freezev2_sym_refine.py` is closer (PCA 3 axes × 36 angles, Chamfer < 1% diameter, ≤32 symmetries) but is our own symmetry enumeration, not a port of v1 SAR. Any implementation must be disclosed as an approximation of SAR, never as SAR. |
+| Symmetry-Aware Refinement (SAR) | **Approximation ceiling: implementable, not verifiable as equivalent.** | §IV-D only says v2.1 "integrates Symmetry-Aware Refinement (SAR) [9]" — ref [9] is FreeZe v1 (`2312.00947v3` §3.6, "based on rendering and visual features"). So the spec lives in a *different* paper and there is no public code. popoe's `--render-rerank` reorders a fixed PCA-axis variant set only (champion + three 180-degree flips + az90/az270; see the tuned recipes' Cautions rows). gedi `scripts/freezev2_sym_refine.py` is closer (PCA 3 axes × 36 angles, Chamfer < 1% diameter, ≤32 symmetries) but is our own symmetry enumeration, not a port of v1 SAR. Any implementation must be disclosed as an approximation of SAR, never as SAR. |
 | Improved scoring by comparing visual features of input image vs rendered pose | **Missing.** | §IV-D gives one prose sentence, no equation and no parameters. Not reconstructible to a verifiable spec from the public text. |
 
 **Four-source masks including MUSE are NOT a v2.1-only delta** — Rows 18 and 19
@@ -152,7 +156,7 @@ render scoring are underspecified. The distance to 905 stays confounded by SAR +
 against it. The detection-matched residual lives at A/four-way vs
 FreeZeV2.1(905): matched in **detection composition** (the same four sources),
 but `--render-rerank` (a popoe-scoped variant of the official SAR: it
-reorders PCA flip variants only) means the *pose stage* is still not fully
+reorders a fixed PCA-axis variant set only) means the *pose stage* is still not fully
 recipe-matched in either direction. Prose must say "detection-matched",
 never "recipe-matched". Paper Row 18 (four-way, no SAR, self-reported only —
 no leaderboard counterpart) is citable as an auxiliary reference, not as the
@@ -210,7 +214,8 @@ Required follow-up before claiming exact setup parity:
 > value; the smoke batch ran at 1234, which validated mechanics only and is
 > unaffected), A-line Eq.7 unit exponents (`alpha=beta=gamma=1`) for the
 > `--use-s-coarse` product term, and `POPOE_QUERY_CANON=476` (render canvas;
-> the paper names 480²/50% — 476/0.5 is our measured-equivalent pin). The
+> the paper names 480²/50% — 476/0.5 is our measured-equivalent pin), and
+> `--trans-nms 0.05` (Sec. III-F names translation NMS but no radius). The
 > `--render-rerank` switch is score-affecting, so every one of the eight runs
 > below must use fresh `poses.csv` and `cand.csv` paths.
 >
@@ -279,7 +284,7 @@ out_dir/
 | Code | **PENDING** — operator-supplied `POPOE_PIN=<frozen full sha>` (script refuses to run without it); the retired pin `twoline-rerank-fix-20260731` @ `509072e` predates the 2026-08-06 fix wave and identifies the voided runs only |
 | Datasets | LM-O + YCB-V; one full BOP test run each |
 | Detection inputs | CNOS only: `data/detections/cnos/cnos-fastsam_lmo-test.json`, `data/detections/cnos/cnos-fastsam_ycbv-test.json` |
-| Scoring | Paper Eq.7 three-term form with `--use-s-coarse`; Eq.7 exponents are **pinned-by-us** to unit exponents |
+| Scoring | Paper Eq.7 three-term form with `--use-s-coarse` and `--eq5-terms` (both feature terms in the Eq.5 formulation: target->query top-k pool, fixed \|P_T^sparse\| denominator); Eq.7 exponents are **pinned-by-us** to unit exponents |
 | Leaderboard comparator | A / single-source -> FreeZe(CNOS) LM-O/YCB-V = 0.689 / 0.853 |
 | Artifacts | `$RUN/{lmo,ycbv}/` each contains `poses.csv`, `cand.csv`, `RECIPE.md`, `AR_SUMMARY.md`, `bop_server.md`, `grasp_summary.md` |
 | Cautions | **No render rerank**: the faithful arms run the BASE protocol — paper Row 18 carries no SAR, and popoe's `--render-rerank` is an approximation that belongs to the tuned system only (Decision 9 revised, triage D5). Dense resampling uses `rng(0)` where invoked and is independent of `--seed`. Encoding degradation is explicit in logs as `DEGRADE`. These runs are not bit/row comparable to historical anchors because seed and implementation fixes are new variables. |
@@ -377,8 +382,8 @@ done
 | Report point | A / four-way |
 | Code | **PENDING** — operator-supplied `POPOE_PIN=<frozen full sha>` (script refuses to run without it); the retired pin `twoline-rerank-fix-20260731` @ `509072e` predates the 2026-08-06 fix wave and identifies the voided runs only |
 | Datasets | LM-O + YCB-V; one full BOP test run each |
-| Detection inputs | CNOS + SAM6D (official 441) + NIDS + MUSE official JSONs under `data/detections/` — the four-source composition of the paper's rows-18/19 merged segmentation cell; `--merge none` keeps the paper-style union unfiltered |
-| Scoring | Paper Eq.7 three-term form with `--use-s-coarse`; Eq.7 exponents are **pinned-by-us** to unit exponents |
+| Detection inputs | CNOS + SAM6D (official 441) + NIDS + MUSE official JSONs under `data/detections/` — the four-source composition of the paper's rows-18/19 merged segmentation cell. The paper-style UNFILTERED union comes from `--min-mask-pixels 0` + `--mask-iou-dedupe 1.1` (cross-source masks are never deduped by design); `--merge none` separately disables the YCB-V clamp-pair label pooling (a no-op on LM-O) |
+| Scoring | Paper Eq.7 three-term form with `--use-s-coarse` and `--eq5-terms` (both feature terms in the Eq.5 formulation: target->query top-k pool, fixed \|P_T^sparse\| denominator); Eq.7 exponents are **pinned-by-us** to unit exponents |
 | Leaderboard comparator | A / four-way -> FreeZeV2.1(905) LM-O/YCB-V = 0.771 / 0.915 — **detection-matched** (same four sources); label the SAR + `M=2N` + render-scoring confounds. Paper Row 18 (75.9 / 91.3, four-way no SAR, self-reported, no leaderboard row) is auxiliary reference only |
 | Artifacts | `$RUN/{lmo,ycbv}/` each contains `poses.csv`, `cand.csv`, `RECIPE.md`, `AR_SUMMARY.md`, `bop_server.md`, `grasp_summary.md` |
 | Cautions | **No render rerank**: the faithful arms run the BASE protocol — paper Row 18 carries no SAR, and popoe's `--render-rerank` is an approximation that belongs to the tuned system only (Decision 9 revised, triage D5). Dense resampling uses `rng(0)` where invoked and is independent of `--seed`. Encoding degradation is explicit in logs as `DEGRADE`. These runs are not bit/row comparable to historical anchors because seed and implementation fixes are new variables. |
