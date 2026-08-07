@@ -25,6 +25,13 @@
 #                                       --corr-topk must NOT be passed here)
 #   --tau-diameter                 # 8  tau = 3% of the diameter (PR #20)
 #   --icp-dense --icp-dense-max 3000  # 7  ICP against P_T^dense, 3k points
+#   --render-rerank --render-score    v2.1 (decision 13): SAR≈rerank + the
+#                                       render-vs-input appearance score in
+#                                       champion selection (pinned-by-us
+#                                       approximations of Row 19 prose)
+#   --mask-m 2n                       v2.1 (decision 13): mask budget floor
+#                                       "up to M = 2N"; at N=1 identical to
+#                                       the paper's N+1
 #
 # Exponents alpha/beta/gamma are UNPUBLISHED (ledger #19); unit exponents are
 # our choice and the offline sweep bounds the difference at <= +0.24pt (乙-7).
@@ -71,6 +78,14 @@ BASE="$OUT/faithful_${DS}"
 for _f in "$BASE.csv" "$BASE.cand.csv" "$BASE.csv.vsd_errs.npz" "$OUT/DONE_${DS}"; do
   [ -e "$_f" ] && { echo "refusing: $_f exists — resume keeps old rows (and stale vsd/DONE artifacts read as fresh); use a FRESH OUT dir" >&2; exit 3; }
 done
+
+# Rerank file guard (A4; back with decision 13 — faithful carries rerank again):
+for req in scripts/check_rerank_symmetry.py scripts/sar_render_compare.py; do
+if [ ! -f "$req" ]; then
+  echo "missing $req — stale tag tip (render_rerank loads sar_render_compare at RUNTIME); fetch --tags --force" >&2
+  exit 1
+fi
+done
 export POPOE_GEDI_PATH="${POPOE_GEDI_PATH:-/workspace/gedi}"
 export POPOE_BOP_TOOLKIT="${POPOE_BOP_TOOLKIT:-/workspace/bop_toolkit}"
 
@@ -101,6 +116,7 @@ env | grep '^POPOE_' | sort
   --tau-diameter \
   --trans-nms 0.05 \
   --icp-dense --icp-dense-max 3000 \
+  --render-rerank --render-score --mask-m 2n \
   --render-backend nvdiffrast \
   --out "$BASE.csv" --cache "$OUT/cache_${DS}" \
   --cand-csv "$BASE.cand.csv"

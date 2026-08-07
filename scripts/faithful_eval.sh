@@ -65,6 +65,14 @@ BASE="$OUT/faithful_${TAG}"
 for _f in "$BASE.csv" "${BASE}_cands.csv" "$BASE.csv.vsd_errs.npz" "$OUT/DONE_${TAG}"; do
   [ -e "$_f" ] && { echo "refusing: $_f exists — resume keeps old rows (and stale vsd/DONE artifacts read as fresh); use a FRESH OUT dir" >&2; exit 3; }
 done
+
+# Rerank file guard (A4; back with decision 13 — faithful carries rerank again):
+for req in scripts/check_rerank_symmetry.py scripts/sar_render_compare.py; do
+if [ ! -f "$req" ]; then
+  echo "missing $req — stale tag tip (render_rerank loads sar_render_compare at RUNTIME); fetch --tags --force" >&2
+  exit 1
+fi
+done
 export POPOE_GEDI_PATH="${POPOE_GEDI_PATH:-/workspace/gedi}"
 export POPOE_BOP_TOOLKIT="${POPOE_BOP_TOOLKIT:-/workspace/bop_toolkit}"
 
@@ -89,6 +97,7 @@ env | grep '^POPOE_' | sort
   --tau-diameter \
   --trans-nms 0.05 \
   --icp-dense --icp-dense-max 3000 \
+  --render-rerank --render-score --mask-m 2n \
   --render-backend nvdiffrast \
   --out "$BASE.csv" --cache "$OUT/cache_${TAG}" \
   --cand-csv "${BASE}_cands.csv"

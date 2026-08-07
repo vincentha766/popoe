@@ -166,6 +166,18 @@ def test_floored_topk_is_per_target_n_plus_one(bop_eval):
     assert bop_eval.floored_topk(6, 4) == 6      # user asked more: kept
 
 
+def test_floored_topk_2n_mode(bop_eval):
+    """--mask-m 2n: v2.1's "up to M = 2N" (Row 19 prose, decision 13). At N=1
+    both floors are 2, so single-instance targets are identical between modes;
+    the divergence starts at inst_count >= 2. --topk still floors either way."""
+    assert bop_eval.floored_topk(2, 1, "2n") == 2    # N=1: 2N == N+1 == 2
+    assert bop_eval.floored_topk(2, 4, "2n") == 8    # N=4: 2N, not N+1
+    assert bop_eval.floored_topk(2, 19, "2n") == 38  # ic-bin worst case doubles
+    assert bop_eval.floored_topk(10, 4, "2n") == 10  # user asked more: kept
+    with pytest.raises(ValueError, match="mask_m"):
+        bop_eval.floored_topk(2, 4, "n2")            # typo'd mode is loud
+
+
 def _scene():
     from popoe.interfaces import Scene
     return Scene(rgb=np.zeros((48, 64, 3), np.uint8),

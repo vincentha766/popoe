@@ -68,6 +68,10 @@ class ChampionScorer:
             arbitrate with ``s_icp * s_feat_1 * metric_fit * s_coarse``,
             byte-identical to rule_replay's rule of that name (all evidence
             clamped at 0; s_icp/metric_fit are already >= 0). Implies recording.
+        use_render_score: multiply the final score by ``max(sar_ti, 0)`` — the
+            input-vs-render appearance score the rerank stage left in the
+            breakdown (v2.1's "compare input image with the rendered pose"
+            component, decision 13). Requires ``--render-rerank`` upstream.
 
     Either needs the coarse pose in the breakdown (``R_coarse``/``t_coarse`` —
     set ICPRefiner(keep_coarse=True)); a missing coarse pose is a loud error,
@@ -80,7 +84,8 @@ class ChampionScorer:
     def __init__(self, tau_inlier_frac: float = 0.03, size_thr: float = 0.0075,
                  size_aware: bool = False, compute_s_coarse: bool = False,
                  use_s_coarse: bool = False, tau_abs: float | None = None,
-                 compute_s_feat_w: bool = False, eq5_terms: bool = False):
+                 compute_s_feat_w: bool = False, eq5_terms: bool = False,
+                 use_render_score: bool = False):
         self.tau_inlier_frac = tau_inlier_frac      # fraction of query extent
         # Absolute tau_inlier in metres, overriding tau_inlier_frac * extent.
         # FreeZeV2 Sec. IV-A: "Thresholds tau_inlier and tau_ICP are set to 3% of
@@ -105,6 +110,16 @@ class ChampionScorer:
         # recomputed "using the same formulation provided in Eq. (5)". Off by
         # default: the tuned scoring identity stays byte-identical.
         self.eq5_terms = eq5_terms
+        # v2.1 third component (decision 13): multiply the final score by the
+        # clamped input-vs-render DINOv2 appearance score (`sar_ti`) of the
+        # variant the rerank stage kept — the paper only says v2.1 "compares
+        # the visual features of the input image with the rendered pose" to
+        # improve scoring; this factor form is pinned-by-us (same clamped
+        # arbitration shape as use_s_coarse). The render pass is the rerank
+        # stage's own, so this adds ZERO renders; a chain without that stage
+        # is a wiring error (loud), not a degraded mode. Off by default: both
+        # arms' pre-decision-13 identities stay byte-identical.
+        self.use_render_score = use_render_score
 
     def score(self, pose: PoseHypothesis,
               query: PointFeatures, target: PointFeatures) -> PoseHypothesis:
@@ -150,7 +165,24 @@ class ChampionScorer:
             if self.use_s_coarse:
                 sc_factor = max(float(sc), 0.0)     # arbitration factor
 
-        score = float(s_icp) * max(float(s1), 0.0) * float(met) * sc_factor
+        rs_factor = 1.0
+        if self.use_render_score:
+            if "sar_ti" in pose.breakdown:
+                rs_factor = max(float(pose.breakdown["sar_ti"]), 0.0)
+            elif pose.breakdown.get("render_rerank") == "skipped_no_bbox":
+                # The rerank stage ran but had no bbox to render against (its
+                # one explicit skip path; unreachable from bop_eval, where
+                # every target is built from a detection). Neutral factor,
+                # and the marker is already in the breakdown.
+                pass
+            else:
+                raise ValueError(
+                    "use_render_score needs sar_ti in the breakdown; wire "
+                    "RenderAppearanceReranker (--render-rerank) before the "
+                    "scorer")
+
+        score = (float(s_icp) * max(float(s1), 0.0) * float(met) * sc_factor
+                 * rs_factor)
         return PoseHypothesis(
             R=pose.R, t=pose.t, score=score,
             breakdown={**pose.breakdown, "s_feat_1": float(s1),

@@ -296,7 +296,8 @@ def stages_for_object(extent_m: float, size_aware: bool = False,
                       n_restarts: int = 1,
                       render_rerank: bool = False,
                       score_feat_w: bool = False,
-                      eq5_terms: bool = False):
+                      eq5_terms: bool = False,
+                      render_score: bool = False):
     """Per-object solver/refiner/scorer with thresholds scaled to the object.
     ``extent_m``: max bounding-box side of the sampled query cloud (metres).
 
@@ -331,9 +332,19 @@ def stages_for_object(extent_m: float, size_aware: bool = False,
     ``render_rerank``: append :class:`popoe.render_rerank.RenderAppearanceReranker`
     after ICP (knife-4 SAR-style DINOv2 render-vs-scene re-rank). Off by default
     so the headline path stays byte-identical; enable for the measured YCB-V
-    combo_sym full-AR lift (0.8275 → 0.8605 flat, offline)."""
+    combo_sym full-AR lift (0.8275 → 0.8605 flat, offline).
+
+    ``render_score``: the v2.1 third component (decision 13) — the rerank
+    stage's winning ``sar_ti`` (input-vs-render DINOv2 appearance score, one
+    per candidate) enters champion selection as a clamped multiplicative
+    factor (``ChampionScorer(use_render_score=True)``). Zero extra renders:
+    the rerank stage already scores every candidate's variant family.
+    Requires ``render_rerank`` — the score has no producer without it."""
     from popoe.adapters import ICPRefiner
     from popoe.scoring import ChampionScorer
+    if render_score and not render_rerank:
+        raise ValueError("render_score requires render_rerank: sar_ti is "
+                         "produced by the rerank stage")
     tau = TAU_FRAC * (extent_m if tau_basis_m is None else tau_basis_m)
     solver = _build_solver(solver, tau, n_ransac, seed=seed,
                            corr_topk=corr_topk, n_restarts=n_restarts)
@@ -355,5 +366,7 @@ def stages_for_object(extent_m: float, size_aware: bool = False,
                             tau_abs=None if tau_basis_m is None else tau,
                             # Paper Eq.7 form (faithful arms): both feature
                             # terms in the Eq.5 formulation. See ChampionScorer.
-                            eq5_terms=eq5_terms)
+                            eq5_terms=eq5_terms,
+                            # v2.1 render-vs-input component (decision 13).
+                            use_render_score=render_score)
     return solver, refiner, scorer

@@ -362,18 +362,26 @@ def read_frame_images(sdir: Path, im_id: int, layout):
     return img, depth_raw
 
 
-def floored_topk(user_topk, inst_count):
-    """Per-target mask budget: the paper's M = N+1 (FreeZeV2 Table V default,
-    N = THIS target's inst_count), floored by the user's --topk. Per-target,
+def floored_topk(user_topk, inst_count, mask_m="n1"):
+    """Per-target mask budget, floored by the user's --topk. Per-target,
     not dataset-wide: the old floor used the dataset's max inst_count, which
     on ic-bin (inst up to 19) pushed EVERY target's budget to ~20 masks per
     (source, label) bucket — a cost explosion the paper's protocol never pays
-    — while N+1 also guarantees a 4-instance target can receive 4 champions
-    plus one spare. For a multi-source union the cap holds PER (source, label)
-    bucket (see BOPDetectionsSegmentor.segment), so no single backend can
-    exhaust a shared budget. A future M=2N arm is a coefficient change on the
-    same per-target N (REPRODUCTION.md `M = 2N` row)."""
-    return max(user_topk, inst_count + 1)
+    — while a per-target floor also guarantees a 4-instance target can receive
+    4 champions plus one spare. For a multi-source union the cap holds PER
+    (source, label) bucket (see BOPDetectionsSegmentor.segment), so no single
+    backend can exhaust a shared budget.
+
+    ``mask_m`` picks the floor rule (N = THIS target's inst_count):
+      * ``"n1"`` — the paper's M = N+1 (FreeZeV2 Table V default);
+      * ``"2n"`` — v2.1's "up to M = 2N" (Row 19 prose, decision 13; the
+        paper gives no 2N ablation, so any 2N number is our own measurement).
+    At N=1 both floors are 2, so single-instance targets are identical under
+    either mode; the modes diverge only where inst_count >= 2."""
+    if mask_m not in ("n1", "2n"):
+        raise ValueError(f"unknown mask_m {mask_m!r} (expected 'n1' or '2n')")
+    floor = 2 * inst_count if mask_m == "2n" else inst_count + 1
+    return max(user_topk, floor)
 
 
 def load_cached_query(cache, qkey):
@@ -566,6 +574,22 @@ def main():
                          "Off by default (headline path unchanged). Measured "
                          "offline: YCB-V combo_sym full AR flat 0.8275→0.8605. "
                          "Needs CUDA + nvdiffrast + DINOv2. Fresh --out required.")
+    ap.add_argument("--render-score", action="store_true",
+                    help="Champion selection multiplies in the clamped sar_ti "
+                         "(input-vs-render DINOv2 appearance score) that the "
+                         "rerank stage left on each candidate — v2.1's "
+                         "render-vs-input scoring component (decision 13); the "
+                         "factor form is pinned-by-us (paper gives prose only). "
+                         "Requires --render-rerank (the score has no producer "
+                         "without it; zero extra renders with it). Fresh --out "
+                         "required.")
+    ap.add_argument("--mask-m", choices=["n1", "2n"], default="n1",
+                    help="Per-target mask floor rule: n1 = paper M=N+1 (Table V "
+                         "default), 2n = v2.1's 'up to M=2N' (Row 19, decision "
+                         "13). At N=1 both floors are 2, so single-instance "
+                         "targets are identical; the modes differ only where "
+                         "inst_count >= 2. --topk still floors the budget "
+                         "either way. Fresh --out required.")
     ap.add_argument("--solver", default="o3d",
                     choices=["o3d", "gpu", "gpu-feat", "teaser"],
                     help="pose solver: o3d (default, evaluated mainline — "
@@ -727,6 +751,11 @@ def main():
     # the coarse-pose wiring), so it depends on --score-coarse.
     if args.use_s_coarse:
         args.score_coarse = True
+    # sar_ti is produced by the rerank stage; a scorer consuming it without
+    # that stage is a wiring error. Refuse at launch, not 20 h in.
+    if args.render_score and not args.render_rerank:
+        raise SystemExit("--render-score requires --render-rerank: sar_ti is "
+                         "produced by the rerank stage")
     # Validate the source-mode BEFORE any file work (resume cleanup rewrites
     # --out): a CLI-argument error must not fire after destructive steps.
     validate_source_args(args.detections, args.sources)
@@ -830,7 +859,8 @@ def main():
           + (f" (resuming past {len(done)})" if done else ""), flush=True)
 
     # Constructor gets the raw --topk only; the effective per-target budget
-    # (paper M = N+1, see floored_topk) is passed at each segment() call,
+    # (paper M = N+1, or v2.1 M = 2N under --mask-m 2n; see floored_topk) is
+    # passed at each segment() call,
     # where the current target's inst_count is known.
     segmentor = resolve_segmentor(
         args.detections, args.sources,
@@ -1012,7 +1042,8 @@ def main():
                                    solver=args.solver, seed=args.seed,
                                    tau_basis_m=tau_basis,
                                    render_rerank=args.render_rerank,
-                                   eq5_terms=args.eq5_terms)
+                                   eq5_terms=args.eq5_terms,
+                                   render_score=args.render_score)
         query_cache[obj_id] = (obj, q, stages)
         tau_note = ("" if tau_basis is None else
                     f" diam={tau_basis*1000:.0f}mm "
@@ -1196,7 +1227,8 @@ def main():
                 hyps_by_det: dict = {}
                 try:
                     dets = segmentor.segment(
-                        scene, obj, topk=floored_topk(args.topk, inst_count))
+                        scene, obj,
+                        topk=floored_topk(args.topk, inst_count, args.mask_m))
                 except Exception as e:
                     note_failure("segment",
                                  f"scene{scene_id}/im{im_id}/obj{obj_id}", e)
