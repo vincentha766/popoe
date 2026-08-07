@@ -38,3 +38,8 @@ realsense_*_review_*/
 *.stl
 *.fbx
 *.blend
+
+# Paper PDFs kept at the repo root for local reading (Vincent) — never publish:
+# arXiv authors hold copyright; the canonical copies live in gedi papers/.
+2506.09784.pdf
+2506.09784v1-1.pdf
