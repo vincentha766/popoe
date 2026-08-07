@@ -39,7 +39,13 @@ row or a reproducible run identity. **Full-table re-verification performed at
 `a101594` (2026-08-07, adversarial agent, row-by-row against code + paper
 text): zero conclusion-level errors, no cross-invalidation from the
 patch-style updates; the wording/attribution fixes it listed were applied in
-the same pass (triage A3/D8 closed).**
+the same pass (triage A3/D8 closed).** **Terminal delta re-check (2026-08-07,
+pre-pin): the only behavioural code change since `a101594` is `31d277e`
+(--render-score / --mask-m 2n / faithful wrappers re-carry rerank). Its
+surface touches exactly one row — `M=N+1`, updated to a declared deliberate
+deviation in the frozen recipes — plus the additional-variables paragraph
+below; every other row's subject (sampling, aggregation, canvas, DINOv2,
+budgets, tau, solvers, timing) is outside that diff. A3 closed at the pin.**
 
 Status meanings: **match** = the paper setting and executed path agree;
 **pinned-by-us** = the paper is silent and a frozen local choice fills the gap;
@@ -60,7 +66,7 @@ not implemented by the formal runner.
 | Dense target point set 3k | Faithful recipes pin `POPOE_TARGET_DENSE=3000` alongside `--icp-dense --icp-dense-max 3000`: the GeDi neighbourhood and the ICP cloud subsample through the same fixed-seed rule (`adapters.fixed_seed_subsample`) over the same index space, reaching the identical 3k cloud. | **Match** (one shared `P_T^dense`, as the paper describes). |
 | Sparse target point set at most 256 | Faithful recipes pin `POPOE_TARGET_PAPER_GRID=1`: minimal axis-aligned SQUARE bbox, sparse targets = its 16x16 patch CENTRES, per-patch direct feature assignment (no bilinear), off-object centres dropped with no fallback. Legacy rectangular-grid/bilinear remains the tuned identity. | **Match on the faithful path.** |
 | Top-`k=10` feature correspondences | Faithful recipes run `--solver gpu-feat`, whose `GPURansacSolver` samples from top-`k=10` feature correspondences natively (`k=10` is the solver default, pinned in code). `--corr-topk` is an o3d-only knob and is NOT passed — `_build_solver` refuses it on non-o3d solvers. | **Match.** |
-| Localization keeps `M=N+1` proposals | `examples/bop_eval.py` floors the per-(source, label) mask budget PER TARGET at `inst_count + 1` (`floored_topk`, passed at each `segment()` call); the default `--topk 2` equals `N+1` on single-instance targets. | **Match.** |
+| Localization keeps `M=N+1` proposals | `examples/bop_eval.py` floors the per-(source, label) mask budget PER TARGET (`floored_topk`, passed at each `segment()` call). The CLI default `--mask-m n1` is the paper's `N+1`; the FROZEN recipes pass `--mask-m 2n` (= `max(--topk, 2·inst_count)`) per decision 13's v2.1 alignment — at N=1 the two floors coincide (both 2), so the executed path deviates from §IV-A's `N+1` only on multi-instance targets. | **Deliberate deviation in the frozen recipes** (v2.1 `M=2N`, decision 13; see the v2.1-only deltas table). The base `N+1` path remains the default and is byte-identical on single-instance targets. |
 | Detection uses `M=100` and discards masks below `tau_mask=0.4` | The formal runner consumes BOP `test_targets_bop19.json` and exposes neither this detection-mode proposal count nor the paper confidence cutoff. | **Missing.** Current formal runs are localization-protocol runs. |
 | Two-scale GeDi: 32D per scale, neighborhoods at 30% and 40% of object diameter | `_TwoScaleGeDi` concatenates two 32D descriptors; faithful diameter normalization makes radii 0.3 and 0.4 object diameter. | **Match.** |
 | PCA/fusion output dimension 128 | Two-scale geometry is 64D; visual PCA defaults to 64D; normalized concatenation produces 128D. | **Match.** |
