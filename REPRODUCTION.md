@@ -1298,10 +1298,9 @@ no `--use-s-coarse`. OMP/host/sharding are runtime provenance only.
 ### E-cnos (`tuned-cnos` x 7)
 
 Comparator: FreeZe(CNOS) per-set (same detection input). LM-O + YCB-V were to
-reuse the accepted Phase D B-single results (identical inputs) — **reuse
-condition void: all eight Phase D server scores were voided pending re-run;
-reuse LM-O/YCB-V only after the Phase D re-run is accepted.**
-Five new runs for the other sets.
+serve as Phase D B-single results as well: under the unified 18-run table they
+are the same runs, not a later reuse or a second identity. All seven rows are
+run under the new frozen pin.
 
 | Dataset | Detection input | SHA256 |
 |---|---|---|
@@ -1322,10 +1321,9 @@ amended same day from 546 FastSAM(RGB) BEFORE any server score — 441 is the
 strongest official SAM6D variant, mean seg AP 0.481 vs 546's 0.428, board
 family spread 5.3pt; seg batch 6965-6971, 2023-12-05; 441's method page mixes
 THREE tasks — seg, 2D detection, and 6D localization batches — the seg batch
-was identified by matching per-set AP against the leaderboard row). A
-DIFFERENT detection identity from Phase D `tuned-4way` (local ISM); all seven
-sets run fresh, and Phase D vs Phase E numbers must never be presented as
-same-input.
+was identified by matching per-set AP against the leaderboard row). The
+LM-O/YCB-V rows are simultaneously Phase D B-four and Phase E E-4way rows;
+there is no local-ISM Phase D identity in the unified table.
 
 | Dataset | Source | Detection input | SHA256 |
 |---|---|---|---|
