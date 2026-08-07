@@ -1234,6 +1234,17 @@ and parameterised. Default-on in `bop_eval.py`; the four runbooks and the
 change cannot silently re-identity the freezes. `--trans-nms 0` disables and
 must be recorded as a deviation.
 
+**Server-only acceptance for the four itodd/hb runs (B2-F4).** Their test GT
+is withheld by BOP, so `ar_flat.py` has nothing to score and there is NO local
+AR gate — deciding what to do about that mid-run is how accidents happen, so
+the criteria are fixed here in advance. Acceptance for E-cnos/itodd, E-cnos/hb,
+E-4way/itodd, E-4way/hb is: (a) the row-count completion invariant holds
+exactly; (b) DEGRADE counts and per-source candidate counts are the same order
+as the neighbouring sets' runs; (c) submit private to the BOP server directly —
+the server return is the ONLY score. Do not wire `--probe-corr` there (needs
+GT; preflight item 6). Diagnosis on these sets uses the val splits (public GT,
+downloaded 2026-08-07) and is a post-run activity, never an acceptance gate.
+
 Detection inputs are real bytes (no symlinks, file or directory) bound to
 their paths by `data/detections/MANIFEST.sha256` (tracked; path+hash — a
 registered file at the wrong path fails) and registered in the per-source
