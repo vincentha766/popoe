@@ -195,8 +195,9 @@ Required follow-up before claiming exact setup parity:
 
 > Formal score = BOP evaluation server only. Local full AR in
 > `AR_SUMMARY.md` is a development self-check, not the dissertation score.
-> Code identity is **PENDING** (see the 18-run freeze section): each script
-> refuses to run unless the operator supplies `POPOE_PIN=<frozen full sha>`.
+> Code identity is **FROZEN**: tag `eighteen-run-freeze-20260807` (see the
+> 18-run freeze section); each script still refuses to run unless the operator
+> supplies `POPOE_PIN=<dereferenced full sha of that tag>`.
 > The retired tag `twoline-rerank-fix-20260731` @ `509072e` predates the
 > 2026-08-06 fix wave and identifies the voided runs only.
 > Run root default: `/workspace/results/twoline_20260731_rerankfix`
@@ -290,7 +291,7 @@ out_dir/
 | Field | Frozen value |
 |---|---|
 | Report point | A / single-source |
-| Code | **PENDING** — operator-supplied `POPOE_PIN=<frozen full sha>` (script refuses to run without it); the retired pin `twoline-rerank-fix-20260731` @ `509072e` predates the 2026-08-06 fix wave and identifies the voided runs only |
+| Code | **FROZEN** — tag `eighteen-run-freeze-20260807`; the operator supplies `POPOE_PIN=<its dereferenced full sha>` at run time (script refuses without it) and RUN_SPEC requires HEAD == PIN == tag^{commit}; the retired pin `twoline-rerank-fix-20260731` @ `509072e` predates the 2026-08-06 fix wave and identifies the voided runs only |
 | Datasets | LM-O + YCB-V; one full BOP test run each |
 | Detection inputs | CNOS only: `data/detections/cnos/cnos-fastsam_lmo-test.json`, `data/detections/cnos/cnos-fastsam_ycbv-test.json` |
 | Scoring | Paper Eq.7 three-term form with `--use-s-coarse` and `--eq5-terms` (both feature terms in the Eq.5 formulation: target->query top-k pool, fixed \|P_T^sparse\| denominator); Eq.7 exponents are **pinned-by-us** to unit exponents |
@@ -310,11 +311,11 @@ PY="${PY:-python}"
 SEED=42
 
 cd "$POPOE"
-# Code identity is PENDING (post-fix-wave tag not cut): the operator supplies
-# the frozen full sha explicitly. The old hard pin here
-# (twoline-rerank-fix-20260731 @ 509072e) predates the 2026-08-06 fix wave —
-# executing it would force the PRE-fix code these tables no longer describe.
-: "${POPOE_PIN:?Code identity PENDING — set POPOE_PIN=<frozen full sha> once the 18-run tables are re-marked FROZEN}"
+# Code identity: tag eighteen-run-freeze-20260807. The operator supplies its
+# dereferenced full sha explicitly — never a bare tag name (stale-tag guard,
+# RUN_SPEC). The old pin (twoline-rerank-fix-20260731 @ 509072e) predates the
+# 2026-08-06 fix wave and identifies the voided runs only.
+: "${POPOE_PIN:?set POPOE_PIN=<dereferenced full sha of tag eighteen-run-freeze-20260807>}"
 if [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
   echo "wrong popoe checkout; need POPOE_PIN=$POPOE_PIN (got HEAD=$(git rev-parse HEAD))" >&2
   exit 1
@@ -397,7 +398,7 @@ done
 | Field | Frozen value |
 |---|---|
 | Report point | A / four-way |
-| Code | **PENDING** — operator-supplied `POPOE_PIN=<frozen full sha>` (script refuses to run without it); the retired pin `twoline-rerank-fix-20260731` @ `509072e` predates the 2026-08-06 fix wave and identifies the voided runs only |
+| Code | **FROZEN** — tag `eighteen-run-freeze-20260807`; the operator supplies `POPOE_PIN=<its dereferenced full sha>` at run time (script refuses without it) and RUN_SPEC requires HEAD == PIN == tag^{commit}; the retired pin `twoline-rerank-fix-20260731` @ `509072e` predates the 2026-08-06 fix wave and identifies the voided runs only |
 | Datasets | LM-O + YCB-V; one full BOP test run each |
 | Detection inputs | CNOS + SAM6D (official 441) + NIDS + MUSE official JSONs under `data/detections/` — the four-source composition of the paper's rows-18/19 merged segmentation cell. The paper-style UNFILTERED union comes from `--min-mask-pixels 0` + `--mask-iou-dedupe 1.1` (cross-source masks are never deduped by design); `--merge none` separately disables the YCB-V clamp-pair label pooling (a no-op on LM-O) |
 | Scoring | Paper Eq.7 three-term form with `--use-s-coarse` and `--eq5-terms` (both feature terms in the Eq.5 formulation: target->query top-k pool, fixed \|P_T^sparse\| denominator); Eq.7 exponents are **pinned-by-us** to unit exponents |
@@ -417,11 +418,11 @@ PY="${PY:-python}"
 SEED=42
 
 cd "$POPOE"
-# Code identity is PENDING (post-fix-wave tag not cut): the operator supplies
-# the frozen full sha explicitly. The old hard pin here
-# (twoline-rerank-fix-20260731 @ 509072e) predates the 2026-08-06 fix wave —
-# executing it would force the PRE-fix code these tables no longer describe.
-: "${POPOE_PIN:?Code identity PENDING — set POPOE_PIN=<frozen full sha> once the 18-run tables are re-marked FROZEN}"
+# Code identity: tag eighteen-run-freeze-20260807. The operator supplies its
+# dereferenced full sha explicitly — never a bare tag name (stale-tag guard,
+# RUN_SPEC). The old pin (twoline-rerank-fix-20260731 @ 509072e) predates the
+# 2026-08-06 fix wave and identifies the voided runs only.
+: "${POPOE_PIN:?set POPOE_PIN=<dereferenced full sha of tag eighteen-run-freeze-20260807>}"
 if [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
   echo "wrong popoe checkout; need POPOE_PIN=$POPOE_PIN (got HEAD=$(git rev-parse HEAD))" >&2
   exit 1
@@ -504,7 +505,7 @@ done
 | Field | Frozen value |
 |---|---|
 | Report point | B / single-source |
-| Code | **PENDING** — operator-supplied `POPOE_PIN=<frozen full sha>` (script refuses to run without it); the retired pin `twoline-rerank-fix-20260731` @ `509072e` predates the 2026-08-06 fix wave and identifies the voided runs only |
+| Code | **FROZEN** — tag `eighteen-run-freeze-20260807`; the operator supplies `POPOE_PIN=<its dereferenced full sha>` at run time (script refuses without it) and RUN_SPEC requires HEAD == PIN == tag^{commit}; the retired pin `twoline-rerank-fix-20260731` @ `509072e` predates the 2026-08-06 fix wave and identifies the voided runs only |
 | Datasets | LM-O + YCB-V; one full BOP test run each |
 | Detection inputs | CNOS only: `data/detections/cnos/cnos-fastsam_lmo-test.json`, `data/detections/cnos/cnos-fastsam_ycbv-test.json` |
 | Scoring | Campaign2 tuned ChampionScorer: grid32, weights `1.0,0.7,0.5,0.3,0.2`; YCB-V uses `--merge ycbv --use-s-coarse`, LM-O uses `--merge none` and no `--use-s-coarse` |
@@ -524,11 +525,11 @@ PY="${PY:-python}"
 SEED=42
 
 cd "$POPOE"
-# Code identity is PENDING (post-fix-wave tag not cut): the operator supplies
-# the frozen full sha explicitly. The old hard pin here
-# (twoline-rerank-fix-20260731 @ 509072e) predates the 2026-08-06 fix wave —
-# executing it would force the PRE-fix code these tables no longer describe.
-: "${POPOE_PIN:?Code identity PENDING — set POPOE_PIN=<frozen full sha> once the 18-run tables are re-marked FROZEN}"
+# Code identity: tag eighteen-run-freeze-20260807. The operator supplies its
+# dereferenced full sha explicitly — never a bare tag name (stale-tag guard,
+# RUN_SPEC). The old pin (twoline-rerank-fix-20260731 @ 509072e) predates the
+# 2026-08-06 fix wave and identifies the voided runs only.
+: "${POPOE_PIN:?set POPOE_PIN=<dereferenced full sha of tag eighteen-run-freeze-20260807>}"
 if [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
   echo "wrong popoe checkout; need POPOE_PIN=$POPOE_PIN (got HEAD=$(git rev-parse HEAD))" >&2
   exit 1
@@ -595,7 +596,7 @@ done
 | Field | Frozen value |
 |---|---|
 | Report point | B / four-way |
-| Code | **PENDING** — operator-supplied `POPOE_PIN=<frozen full sha>` (script refuses to run without it); the retired pin `twoline-rerank-fix-20260731` @ `509072e` predates the 2026-08-06 fix wave and identifies the voided runs only |
+| Code | **FROZEN** — tag `eighteen-run-freeze-20260807`; the operator supplies `POPOE_PIN=<its dereferenced full sha>` at run time (script refuses without it) and RUN_SPEC requires HEAD == PIN == tag^{commit}; the retired pin `twoline-rerank-fix-20260731` @ `509072e` predates the 2026-08-06 fix wave and identifies the voided runs only |
 | Datasets | LM-O + YCB-V; one full BOP test run each |
 | Detection inputs | CNOS + SAM6D + NIDS + official MUSE JSONs under `data/detections/`; `muse` means downloaded official artefacts, not `muse-repro` |
 | Scoring | Campaign2 tuned ChampionScorer: grid32, weights `1.0,0.7,0.5,0.3,0.2`; YCB-V uses `--merge ycbv --use-s-coarse`, LM-O uses `--merge none` and no `--use-s-coarse` |
@@ -615,11 +616,11 @@ PY="${PY:-python}"
 SEED=42
 
 cd "$POPOE"
-# Code identity is PENDING (post-fix-wave tag not cut): the operator supplies
-# the frozen full sha explicitly. The old hard pin here
-# (twoline-rerank-fix-20260731 @ 509072e) predates the 2026-08-06 fix wave —
-# executing it would force the PRE-fix code these tables no longer describe.
-: "${POPOE_PIN:?Code identity PENDING — set POPOE_PIN=<frozen full sha> once the 18-run tables are re-marked FROZEN}"
+# Code identity: tag eighteen-run-freeze-20260807. The operator supplies its
+# dereferenced full sha explicitly — never a bare tag name (stale-tag guard,
+# RUN_SPEC). The old pin (twoline-rerank-fix-20260731 @ 509072e) predates the
+# 2026-08-06 fix wave and identifies the voided runs only.
+: "${POPOE_PIN:?set POPOE_PIN=<dereferenced full sha of tag eighteen-run-freeze-20260807>}"
 if [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
   echo "wrong popoe checkout; need POPOE_PIN=$POPOE_PIN (got HEAD=$(git rev-parse HEAD))" >&2
   exit 1
@@ -1247,9 +1248,11 @@ E-4way LM-O/YCB-V rows below, so no new detection pins are needed),
 SAM6D 441 seg batch 6965-6971, NIDS 8980-8986, MUSE 873 first batch) — SHA256
 pins in the tables below and in `data/detections/*/PROVENANCE.md`.
 
-**Code identity: PENDING** — latest code, tag to be pinned only after the
-known-issues triage completes. **Nothing runs before the tag lands and this
-section is re-marked FROZEN.** The method flags below (faithful pins, tuned
+**Code identity: FROZEN (2026-08-07)** — tag `eighteen-run-freeze-20260807`,
+cut on the commit that carries this very marking (triage 盘点完毕, A3 closed
+at the pin, decision-13 dev anchors in `TRIAGE_20260806.md` §F). **Runs may
+start; every run supplies the tag's dereferenced full sha as `POPOE_PIN` and
+records it in `RECIPE.md`.** The method flags below (faithful pins, tuned
 grid32/five-weights, YCB-V merge+s-coarse) carry over unchanged unless the
 triage says otherwise. Triage-driven addition to every arm: `--trans-nms 0.05`
 — paper §III-F translation NMS on refined poses; the paper names the mechanism
