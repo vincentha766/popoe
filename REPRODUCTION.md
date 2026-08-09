@@ -200,8 +200,13 @@ Required follow-up before claiming exact setup parity:
 > supplies `POPOE_PIN=<dereferenced full sha of that tag>`.
 > The retired tag `twoline-rerank-fix-20260731` @ `509072e` predates the
 > 2026-08-06 fix wave and identifies the voided runs only.
-> Run root default: `/workspace/results/twoline_20260731_rerankfix`
-> (void batch lived at `…/twoline_20260730` — do not write new poses there).
+> Run root: **no default — `RUN_ROOT` is required** and each script refuses to run
+> without it (2026-08-09; it previously defaulted to
+> `/workspace/results/twoline_20260731_rerankfix`, which was **voided on 2026-08-06**,
+> so forgetting to set it wrote straight into a voided batch — exactly what
+> `../gedi/specs/RUN_SPEC.md` Pre-Run Gates forbids). The current 18-run root is
+> `/workspace/results/run18_20260807`; the void batch also left products at
+> `…/twoline_20260730` — do not write new poses into either.
 > Orchestration / go-no-go: `../gedi/EXPERIMENT_PLAN.md`.
 >
 > > ⚠️ **The 2026-07-30 batch of eight runs is void.** It ran at
@@ -326,7 +331,7 @@ set -euo pipefail
 POPOE="${POPOE:-/workspace/popoe}"
 BOP="${BOP:-/workspace/bop_data}"
 DET="${DET:-$POPOE/data/detections}"
-RUN_ROOT="${RUN_ROOT:-/workspace/results/twoline_20260731_rerankfix}"
+: "${RUN_ROOT:?set RUN_ROOT=<fresh run root, e.g. /workspace/results/run18_20260807>}"
 RUN="$RUN_ROOT/faithful-cnos"
 PY="${PY:-python}"
 SEED=42
@@ -433,7 +438,7 @@ set -euo pipefail
 POPOE="${POPOE:-/workspace/popoe}"
 BOP="${BOP:-/workspace/bop_data}"
 DET="${DET:-$POPOE/data/detections}"
-RUN_ROOT="${RUN_ROOT:-/workspace/results/twoline_20260731_rerankfix}"
+: "${RUN_ROOT:?set RUN_ROOT=<fresh run root, e.g. /workspace/results/run18_20260807>}"
 RUN="$RUN_ROOT/faithful-4way"
 PY="${PY:-python}"
 SEED=42
@@ -540,7 +545,7 @@ set -euo pipefail
 POPOE="${POPOE:-/workspace/popoe}"
 BOP="${BOP:-/workspace/bop_data}"
 DET="${DET:-$POPOE/data/detections}"
-RUN_ROOT="${RUN_ROOT:-/workspace/results/twoline_20260731_rerankfix}"
+: "${RUN_ROOT:?set RUN_ROOT=<fresh run root, e.g. /workspace/results/run18_20260807>}"
 RUN="$RUN_ROOT/tuned-cnos"
 PY="${PY:-python}"
 SEED=42
@@ -631,7 +636,7 @@ set -euo pipefail
 POPOE="${POPOE:-/workspace/popoe}"
 BOP="${BOP:-/workspace/bop_data}"
 DET="${DET:-$POPOE/data/detections}"
-RUN_ROOT="${RUN_ROOT:-/workspace/results/twoline_20260731_rerankfix}"
+: "${RUN_ROOT:?set RUN_ROOT=<fresh run root, e.g. /workspace/results/run18_20260807>}"
 RUN="$RUN_ROOT/tuned-4way"
 PY="${PY:-python}"
 SEED=42
