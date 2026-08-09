@@ -126,10 +126,12 @@ class FreeZeTargetEncoder:
 
     def encode_target(self, scene: Scene, det: Detection,
                       obj: ObjectModel, frame: CanonFrame) -> PointFeatures:
+        from popoe import profiling
         self.ex._canon_scale = frame.scale          # convention from query side
-        pts, feats = self.ex.extract_target_features(
-            scene.rgb, scene.depth, det.mask, _intrinsics_dict(scene.K),
-        )
+        with profiling.stage("target_encode"):
+            pts, feats = self.ex.extract_target_features(
+                scene.rgb, scene.depth, det.mask, _intrinsics_dict(scene.K),
+            )
         if pts is None:
             reason = getattr(self.ex, "_last_target_skip_reason", None)
             return PointFeatures(pts=np.empty((0, 3), np.float32),

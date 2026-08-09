@@ -10,6 +10,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 from sklearn.decomposition import PCA
+from popoe import profiling
 from popoe.descriptors import describe
 from popoe.freeze.fusion import DinoGeDiFusion
 from popoe.interfaces import CanonFrame
@@ -679,12 +680,13 @@ class QueryFeatureExtractor:
         # role="query": a CAD model sampled all around. Role-blind backbones
         # (GeDi, dGeDi) ignore it; FPFH needs it to pick the normal convention,
         # which cannot be inferred from the points (see popoe.descriptors).
-        geo_feats = describe(
-            self.gedi,
-            torch.from_numpy(geo_input),
-            torch.from_numpy(geo_input),
-            role="query",
-        )  # (N, 32)
+        with profiling.stage("  qry_gedi"):
+            geo_feats = describe(
+                self.gedi,
+                torch.from_numpy(geo_input),
+                torch.from_numpy(geo_input),
+                role="query",
+            )  # (N, 32)
 
         # Visual features via DINOv2 on rendered views, aggregated per point
         transform = transforms.Compose([
@@ -943,11 +945,12 @@ class TargetFeatureExtractor:
         # DINOv2 feature (square crop resized to grid*14, so ViT patches and
         # the tiling coincide 1:1); legacy mode bilinearly samples the feature
         # map at arbitrary pixel locations.
-        if paper_grid:
-            feat_map = self._extract_dino_patch_grid(rgb, pg_box, grid_size)
-            vis_feats = feat_map[pg_rows, pg_cols].astype(np.float32)
-        else:
-            vis_feats = self._extract_dino_at_points(rgb, patch_u, patch_v)
+        with profiling.stage("  tgt_dino"):
+            if paper_grid:
+                feat_map = self._extract_dino_patch_grid(rgb, pg_box, grid_size)
+                vis_feats = feat_map[pg_rows, pg_cols].astype(np.float32)
+            else:
+                vis_feats = self._extract_dino_at_points(rgb, patch_u, patch_v)
 
         # Dense depth point cloud for GeDi neighbourhood
         d_all = depth[ys_all, xs_all]
@@ -969,12 +972,13 @@ class TargetFeatureExtractor:
 
         canon = getattr(self, '_canon_scale', 1.0)
         # role="target": a single-view depth cloud, camera at the origin.
-        geo_feats = describe(
-            self.gedi,
-            torch.from_numpy((pts_sparse * canon).astype(np.float32)),
-            torch.from_numpy((pcd_dense * canon).astype(np.float32)),
-            role="target",
-        )
+        with profiling.stage("  tgt_gedi"):
+            geo_feats = describe(
+                self.gedi,
+                torch.from_numpy((pts_sparse * canon).astype(np.float32)),
+                torch.from_numpy((pcd_dense * canon).astype(np.float32)),
+                role="target",
+            )
 
         if pca_vis is not None:
             self._pca_vis = pca_vis

@@ -21,6 +21,8 @@ from dataclasses import dataclass, field
 from typing import Optional, Protocol, Sequence, runtime_checkable
 import numpy as np
 
+from popoe import profiling
+
 
 # ════════════════════════════════════════════════════════════════════════
 # 0. The availability contract.
@@ -378,16 +380,25 @@ class Pipeline:
         qkey = (obj.obj_id, obj.mesh_path)
         q = self._query_cache.get(qkey)
         if q is None:
-            q = self._query_cache[qkey] = self.query_encoder.encode_query(obj)
+            # Timed only on a miss, which is the point: this cache is per-Pipeline
+            # and in-memory, so a service restart re-pays the whole query encode.
+            with profiling.stage("query_encode(miss)"):
+                q = self._query_cache[qkey] = self.query_encoder.encode_query(obj)
         # CanonFrame is produced by query encoding and reused on the target side.
         frame = q.meta.get("canon_frame") or CanonFrame.from_points(q.pts)
         cands: list[PoseHypothesis] = []
-        for det in self.segmentor.segment(scene, obj)[: self.topk]:
+        with profiling.stage("segment"):
+            dets = self.segmentor.segment(scene, obj)[: self.topk]
+        for det in dets:
             t = self.target_encoder.encode_target(scene, det, obj, frame)
-            for h in self.solver.solve(q, t, frame):
+            with profiling.stage("solve"):
+                hyps = list(self.solver.solve(q, t, frame))
+            for h in hyps:
                 for r in self.refiners:
-                    h = r.refine(h, scene, obj, q, t)     # geometry only
+                    with profiling.stage("refine"):
+                        h = r.refine(h, scene, obj, q, t)     # geometry only
                 if self.scorer is not None:
-                    h = self.scorer.score(h, q, t)        # final feature score
+                    with profiling.stage("score"):
+                        h = self.scorer.score(h, q, t)        # final feature score
                 cands.append(h)
         return self.selector.select(cands)
