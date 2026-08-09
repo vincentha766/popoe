@@ -212,3 +212,70 @@ def test_agrees_with_open3d_solver_within_tolerance():
     # both recover the same known pose -> agree with each other
     ang, terr = _err(gpu.R, gpu.t, o3d[0].R, o3d[0].t)
     assert ang < 2.0 and terr < 3e-3
+
+
+# --- Block 3: the paper's SECOND triplet-rejection condition (distance_check) --
+# Absent from this port since it was written; see the module docstring and gedi
+# decision 19. Open3D semantics: after the triplet's transform is estimated,
+# THAT triplet's own three residuals must all be under tau. It bites exactly
+# when a sampled triplet mixes wrong correspondences whose edge lengths happen
+# to stay consistent — Kabsch then least-squares-fits them and the residuals
+# blow up, while the edge test alone lets the hypothesis through.
+
+def test_distance_check_is_off_by_default():
+    """Zero-perturbation contract: every existing recipe must be unaffected."""
+    assert GPURansacSolver(device="cpu").distance_check is False
+    from popoe.freeze.recipes import _build_solver
+    for name in ("gpu", "gpu-feat"):
+        assert _build_solver(name, tau=0.03, n_ransac=100).distance_check is False
+    assert _build_solver("gpu-feat-dist", tau=0.03, n_ransac=100).distance_check is True
+    # and the arm keeps gpu-feat's ranking score — it isolates ONE variable
+    assert _build_solver("gpu-feat-dist", tau=0.03, n_ransac=100).fitness == "feature"
+
+
+def test_distance_check_is_noop_on_exact_correspondences():
+    """On a clean rigid fixture every sampled triplet of TRUE correspondences
+    fits exactly, so the extra condition rejects nothing that was winning and
+    the recovered pose is bit-identical.
+
+    Compared element-wise, NOT through `_err`. R comes back from float32, so it
+    is orthogonal only to ~1e-6; `_err` reads the angle as arccos((tr - 1)/2),
+    and arccos has an infinite derivative at 1 — arccos(1 - d) ~ sqrt(2d) turns
+    that 1e-6 into ~0.07 deg of pure metric artefact, for two matrices that are
+    equal to the last bit. The other tests here tolerate it because they compare
+    genuinely different solvers at `ang < 2.0`; an equality check cannot."""
+    q, t, R, tt = _matched_cloud(n=140, seed=11)
+    kw = dict(tau_inlier=0.01, iters=4000, fitness="feature", device="cpu", seed=3)
+    off = GPURansacSolver(**kw).solve(q, t, _frame())
+    on = GPURansacSolver(**kw, distance_check=True).solve(q, t, _frame())
+    assert off and on
+    assert np.array_equal(off[0].R, on[0].R)
+    assert np.array_equal(off[0].t, on[0].t)
+    assert off[0].breakdown["gpu_score"] == on[0].breakdown["gpu_score"]
+
+
+def test_distance_check_rejects_everything_at_zero_threshold():
+    """Negative control. Without it, a `valid` mask left accidentally all-True
+    would still pass every other test in this block — 'accepts no more' and
+    'is a no-op on clean data' are both satisfied by a condition that does
+    nothing at all."""
+    q, t, R, tt = _matched_cloud(n=100, seed=4)
+    kw = dict(tau_inlier=1e-12, iters=2000, fitness="feature", device="cpu", seed=4)
+    assert GPURansacSolver(**kw, distance_check=True).solve(q, t, _frame()) == []
+
+
+def test_distance_check_never_accepts_more_than_edge_alone():
+    """Invariant, by construction: the condition is ANDed onto the edge test, so
+    its survivor set is a subset. The best score can therefore only drop (or the
+    solver returns nothing). A test that merely asserted 'the score changes'
+    would pass on a sign error; this one pins the direction."""
+    for seed in (2, 7, 13):
+        q, t, R, tt = _matched_cloud(n=100, seed=seed, noise=0.004)
+        kw = dict(tau_inlier=0.006, iters=3000, fitness="feature",
+                  device="cpu", seed=seed)
+        off = GPURansacSolver(**kw).solve(q, t, _frame())
+        on = GPURansacSolver(**kw, distance_check=True).solve(q, t, _frame())
+        if not off:
+            continue
+        assert not on or (on[0].breakdown["gpu_score"]
+                          <= off[0].breakdown["gpu_score"] + 1e-9)

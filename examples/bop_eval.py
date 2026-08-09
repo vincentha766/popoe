@@ -591,11 +591,14 @@ def main():
                          "inst_count >= 2. --topk still floors the budget "
                          "either way. Fresh --out required.")
     ap.add_argument("--solver", default="o3d",
-                    choices=["o3d", "gpu", "gpu-feat", "teaser"],
+                    choices=["o3d", "gpu", "gpu-feat", "gpu-feat-dist", "teaser"],
                     help="pose solver: o3d (default, evaluated mainline — "
                          "unchanged) | gpu (ported batched RANSAC, geometric "
                          "fitness) | gpu-feat (gpu with the Eq.5 feature-aware "
-                         "fitness, the B layer) | teaser (TEASER++ certifiable "
+                         "fitness, the B layer) | gpu-feat-dist (gpu-feat plus the "
+                         "paper's second triplet-rejection condition, the "
+                         "matched-point distance test this port never had; "
+                         "isolation arm for gedi decision 19) | teaser (TEASER++ certifiable "
                          "registration). gpu* need torch; teaser needs "
                          "teaserpp_python (source build). A non-default "
                          "solver changes score/R/t, so use a FRESH --out and "

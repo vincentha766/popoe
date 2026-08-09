@@ -14,6 +14,15 @@ stay the existing stages (ICPRefiner / ChampionScorer), exactly as for
 Open3DFeatureRansacSolver — GPURansacSolver returns the same shape (a list of
 coarse `PoseHypothesis`, `score = s_coarse`, breakdown carrying `s_coarse`).
 
+`distance_check` (default OFF — the mainline is byte-unchanged):
+  adds the paper's SECOND triplet-rejection condition, absent from this port
+  since it was written. The v1 paper joins two conditions with `or` — matched-
+  point distances over a geometric threshold OR inconsistent relative edge
+  lengths — and only the edge test was implemented. ON reproduces Open3D's
+  `CorrespondenceCheckerBasedOnDistance`. Registered as the isolation arm for
+  gedi decision 19; until it has been priced, no part of the +5.36 pt
+  solver-substitution recovery may be attributed to this gap.
+
 `fitness`:
   * ``"geometric"`` (default) — rank hypotheses by inlier COUNT, a faithful port
     of a correspondence-RANSAC (verifiable against Open3D alone). Zero-perturbs
@@ -40,7 +49,7 @@ _EDGE_RATIO = 0.9          # Open3D CorrespondenceCheckerBasedOnEdgeLength(0.9)
 
 
 def _gpu_ransac(pts_q, feats_q, pts_t, feats_t, thr, iters, k, min_inliers,
-                fitness, mutual_filter, device, seed):
+                fitness, mutual_filter, device, seed, distance_check=False):
     """Batched RANSAC. Returns (R, t, fitness_value, n_inliers) as numpy/floats,
     or None if degenerate. `feats_*` are the (already chosen) w=1 features.
 
@@ -105,6 +114,24 @@ def _gpu_ransac(pts_q, feats_q, pts_t, feats_t, thr, iters, k, min_inliers,
     R = V @ D @ U.transpose(1, 2)                     # (B, 3, 3)
     t = tm.squeeze(1) - (R @ qm.transpose(1, 2)).squeeze(2)
 
+    if distance_check:
+        # The SECOND rejection condition of the paper's triplet pruning, and the
+        # one this port never had (gedi REPRODUCTION.md; gedi decision 19). The
+        # v1 paper joins two conditions with `or`: reject a triplet when the
+        # distances between matched points exceed a geometric threshold OR the
+        # relative edge lengths are inconsistent. Only the edge test is above.
+        #
+        # Semantics follow Open3D's CorrespondenceCheckerBasedOnDistance, which
+        # runs AFTER the triplet's transform is estimated and tests THAT
+        # triplet's own residuals — not the pool's. Note this is a different
+        # thing from the inlier counting below: this decides whether the
+        # hypothesis SURVIVES, the loop below decides what it SCORES. Doing it
+        # on the pool (as the loop does) does not imply it: a triplet whose own
+        # three correspondences land far apart can still collect inliers
+        # elsewhere and win.
+        res = (torch.einsum("bij,bkj->bki", R, Pq) + t[:, None, :] - Pt).norm(dim=2)
+        valid = valid & (res < thr).all(1)              # (B,)
+
     # Score every hypothesis over the FULL correspondence pool.
     src, dst = pq[c_q], pt[c_t]                       # (C, 3)
     best = torch.full((iters,), -1e9, device=device)
@@ -151,10 +178,12 @@ class GPURansacSolver:
     def __init__(self, tau_inlier: float = 0.03, iters: int = 10000,
                  k: int = 10, min_inliers: int = 6,
                  fitness: str = "geometric", mutual_filter: bool = False,
-                 device: str | None = None, seed: int = 42):
+                 device: str | None = None, seed: int = 42,
+                 distance_check: bool = False):
         if fitness not in ("geometric", "feature"):
             raise ValueError(
                 f"fitness must be 'geometric' or 'feature', got {fitness!r}")
+        self.distance_check = bool(distance_check)
         self.tau_inlier = tau_inlier
         self.iters = iters
         self.k = k
@@ -178,7 +207,8 @@ class GPURansacSolver:
         out = _gpu_ransac(query.pts, fq, target.pts, ft, thr=self.tau_inlier,
                           iters=self.iters, k=self.k, min_inliers=self.min_inliers,
                           fitness=self.fitness, mutual_filter=self.mutual_filter,
-                          device=dev, seed=self.seed)
+                          device=dev, seed=self.seed,
+                          distance_check=self.distance_check)
         if out is None:
             return []
         R, t, fit, n_in = out

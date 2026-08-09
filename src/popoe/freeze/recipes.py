@@ -186,7 +186,7 @@ def ycbv_lab_segmentor(detections_json: str | None = None, topk: int = 2,
     )
 
 
-SOLVERS = ("o3d", "gpu", "gpu-feat", "teaser")   # o3d is the evaluated mainline default
+SOLVERS = ("o3d", "gpu", "gpu-feat", "gpu-feat-dist", "teaser")   # o3d is the evaluated mainline default
 
 
 def _build_solver(name: str, tau: float, n_ransac: int, seed: int | None = None,
@@ -221,11 +221,18 @@ def _build_solver(name: str, tau: float, n_ransac: int, seed: int | None = None,
         # matching while its provenance claims k=10.
         raise ValueError(f"corr_topk is an o3d knob; solver {name!r} got "
                          f"corr_topk={corr_topk}")
-    if name in ("gpu", "gpu-feat"):
+    if name in ("gpu", "gpu-feat", "gpu-feat-dist"):
         from popoe.solvers import GPURansacSolver
         kw = {} if seed is None else {"seed": seed}   # else keep its own default
+        # gpu-feat-dist is gpu-feat plus the paper's second triplet-rejection
+        # condition (matched-point distance), which this port never had. It is a
+        # SEPARATE NAME rather than a flag on gpu-feat so the arm is identifiable
+        # in solver_provenance and in every run log — an isolation arm whose
+        # identity lives in a boolean the log does not print is not isolable.
+        # gedi decision 19.
         return GPURansacSolver(tau_inlier=tau, iters=n_ransac,
-                               fitness="feature" if name == "gpu-feat" else "geometric",
+                               fitness="geometric" if name == "gpu" else "feature",
+                               distance_check=(name == "gpu-feat-dist"),
                                **kw)
     if name == "teaser":
         from popoe.solvers import TeaserSolver
