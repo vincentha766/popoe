@@ -274,17 +274,38 @@ Required follow-up before claiming exact setup parity:
 > ADD(-S) via the gedi grasp script).
 
 Artifact convention for every dataset run follows `../gedi/specs/ARTIFACT_SPEC.md`
-(run directory contract):
+(run directory contract). The layout is **flat** — raw and derived artifacts live
+side by side in one directory and are distinguished by **filename**, not by
+`raw/` / `derived/` subdirectories:
 
 ```
-out_dir/
-  poses.csv        # main pose CSV
-  cand.csv         # candidate-level dump (--cand-csv; replay/ablation input)
-  RECIPE.md        # flags, detection sources, commit, seed, date
-  AR_SUMMARY.md    # local full AR + MSSD/MSPD/VSD self-check only
-  bop_server.md    # official BOP server score + submission id
-  grasp_summary.md # ADD(-S) computed from the same poses.csv
+$RUN_ROOT/{recipe}/{dataset}/
+  poses.csv        # RAW · main pose CSV (when sharded: the MERGED result)
+  cand.csv         # RAW · candidate-level dump (--cand-csv; replay/ablation input)
+  RECIPE.md        # RAW · flags, detection sources, commit, seed, date
+  *.log            # RAW · AR_FULL / AR_LOCAL / vsd run + self-check logs
+  submission.csv   # DERIVED · time-normalized CSV actually uploaded to BOP
+  AR_SUMMARY.md    # DERIVED · local full AR + MSSD/MSPD/VSD self-check only
+  bop_server.md    # DERIVED · official BOP server score + submission id
+  grasp_summary.md # DERIVED · ADD(-S); Phase D LM-O/YCB-V only (not Phase E)
+  replays/         # DERIVED · Ch5 replay outputs, when this run carries any
 ```
+
+Sharding: shard directories are **siblings** named `{dataset}_s{A,B,C}`; the merged
+result is written to the un-suffixed `{dataset}/`. Shard directories need only
+`poses.csv` / `cand.csv` / `RECIPE.md` / logs.
+
+Because there is no directory-level raw/derived split, the "raw is never
+overwritten" guarantee rests on filenames: **never rewrite `poses.csv` or
+`cand.csv` in place.** Time normalization writes `submission.csv`; merge writes the
+un-suffixed sibling directory; replays write `replays/`.
+
+> Verified against the GPU host on 2026-08-09
+> (`results/run18_20260807/{recipe}/{dataset}/`). Earlier revisions of
+> ARTIFACT_SPEC and of `EXPERIMENT_PLAN.md` §6 described two different
+> `raw/`+`derived/` layouts; neither matched the frozen commands, and both have
+> been corrected to the flat layout above rather than changing any output path
+> (changing output paths would change run identity).
 
 ### faithful-cnos
 
