@@ -9,9 +9,15 @@ Where the terms come from (all measured, see the reproduction study):
     features at **visual weight 1** (the canonical, weight-invariant space).
     Scoring in a weight-dependent space biases the arbitration across weights;
     the w=1 space fixes that. A 26-rule exponent grid over both spaces
-    (2026-08-04, frozen `tuned-cnos` dumps with the diagnostic ``s_feat_w``
-    column) has the canonical family ahead at **all 13 exponent pairs on both
-    datasets**: best-vs-best +0.74 pt on LM-O, +2.95 pt on YCB-V.
+    (pre-registered before the dumps ran; frozen `tuned-cnos` dumps with the
+    diagnostic ``s_feat_w`` column) has the canonical family ahead at **all 13
+    exponent pairs on both datasets**: best-vs-best +0.41 pt on LM-O, +3.75 pt
+    on YCB-V.
+
+    Those two figures are the 2026-08-10 run. An earlier note here quoted +0.74
+    / +2.95 from a 2026-08-04 batch; that batch was superseded and the numbers
+    do not match the current dumps. Quote the study's own results file, not this
+    docstring, if the exact values matter.
 
     The bias runs toward LOW weights, not high ones. Measured on the same
     dumps: under the matched-space rule 57% (LM-O) / 46% (YCB-V) of targets
