@@ -34,6 +34,64 @@ def _intrinsics_dict(K: np.ndarray) -> dict:
             "cx": float(K[0, 2]), "cy": float(K[1, 2])}
 
 
+def sample_query_surface(mesh_path: str, n_points: int, seed: int) -> np.ndarray:
+    """P_Q^raw — the query surface sample, in the mesh's own units (mm for BOP).
+
+    THE single live sampling site for the query cloud: `extract_query_features`
+    takes the cloud from its caller, so this is where P_Q^raw is decided.
+    (`feature_extractor._sample_query_pointcloud` has no callers and its
+    docstring claims a Poisson disk it does not implement — do not read it as
+    the query path.)
+
+    `POPOE_QUERY_SAMPLER` selects the sampler and IS a cache key
+    (popoe.cache.CONDITIONAL_ENC_KEYS), so switching it invalidates query
+    features instead of silently reusing them.
+
+    - ``even`` (default; every published number ran under it):
+      ``trimesh.sample.sample_surface_even`` — rejection-based, approximately
+      even. Measured 2026-08-10 on six YCB-V meshes at N=5000: returns the full
+      count, but minimum nearest-neighbour spacing is 22% below the poisson arm.
+    - ``poisson``: Open3D's Yuksel-2015 sample elimination (blue noise, minimum
+      inter-point distance). FreeZeV2 Sec. III-D cites Bridson 2007 [77], which
+      is a VOLUMETRIC dart-throwing algorithm — there is no unique way to *be*
+      it on a mesh surface, so this satisfies the property the paper states
+      rather than being the cited algorithm. Isolation arm D20 only; it is NOT
+      the mainline recipe and must not be described as "implementing [77]".
+    """
+    import os
+    sampler = os.environ.get("POPOE_QUERY_SAMPLER", "even")
+    if sampler == "even":
+        import trimesh
+        mesh = trimesh.load(mesh_path, force="mesh")
+        pts, _ = trimesh.sample.sample_surface_even(mesh, n_points, seed=seed)
+        return np.asarray(pts)
+    if sampler == "poisson":
+        import open3d as o3d
+        # Open3D's poisson sampler draws from a PROCESS-GLOBAL RNG: two calls
+        # without reseeding return different clouds (measured). trimesh takes a
+        # per-call seed; copying that shape here would leave a silently
+        # non-reproducible arm, so reseed immediately before each sample.
+        o3d.utility.random.seed(int(seed))
+        om = o3d.io.read_triangle_mesh(mesh_path)
+        pcd = om.sample_points_poisson_disk(number_of_points=n_points,
+                                            init_factor=5)
+        return np.asarray(pcd.points)
+    # Deliberately fatal: falling back to the default on a typo is exactly how a
+    # run ends up not being the run you think it is.
+    raise ValueError(
+        f"POPOE_QUERY_SAMPLER must be 'even' or 'poisson', got {sampler!r}")
+
+
+def query_sampler_provenance(n_points: int) -> str:
+    """One log line naming the sampler actually in force. An isolation arm whose
+    identity is not printed is not isolable (see recipes.solver_provenance and
+    the C9/C9b `--corr-topk` incident, 2026-08-08/09)."""
+    import os
+    sampler = os.environ.get("POPOE_QUERY_SAMPLER", "even")
+    return (f"query_sampler={sampler} n_points={n_points} "
+            f"(seed=per-object obj_id unless --seed overrides)")
+
+
 class FreeZeQueryEncoder:
     """Adapt QueryFeatureExtractor. Produces PointFeatures whose meta carries the
     CanonFrame (derived from the sampled points, per the live convention) so the
@@ -55,13 +113,11 @@ class FreeZeQueryEncoder:
         return self.ex.render_backend
 
     def encode_query(self, obj: ObjectModel) -> PointFeatures:
-        import trimesh, torch
+        import torch
         # Reset PCA per object so each fits its own (matches eval scripts).
         self.ex._pca_vis = None
-        mesh = trimesh.load(obj.mesh_path, force="mesh")
-        pts, _ = trimesh.sample.sample_surface_even(
-            mesh, self.n_points,
-            seed=self.seed if self.seed is not None else obj.obj_id)
+        seed = self.seed if self.seed is not None else obj.obj_id
+        pts = sample_query_surface(obj.mesh_path, self.n_points, seed)
         pts = (pts / 1000.0).astype(np.float32)          # BOP mm -> m
         feats, pts_q = self.ex.extract_query_features(obj.mesh_path, torch.from_numpy(pts))
         pts_q = pts_q.numpy() if hasattr(pts_q, "numpy") else np.asarray(pts_q)
