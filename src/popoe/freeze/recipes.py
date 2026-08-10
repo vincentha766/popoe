@@ -240,24 +240,50 @@ def _build_solver(name: str, tau: float, n_ransac: int, seed: int | None = None,
     raise ValueError(f"solver must be one of {SOLVERS}, got {name!r}")
 
 
-def solver_provenance(name: str, seed: int | None) -> str:
-    """One log line describing the run's solver determinism.
+def solver_provenance(name: str, seed: int | None,
+                      corr_topk: int = 0) -> str:
+    """One log line describing the run's solver identity + determinism.
 
-    Reads the EFFECTIVE seed off a throwaway solver rather than restating the
-    defaults, so the answer cannot drift from `_build_solver`. Construction is
-    dep-light (torch/open3d/teaserpp all import inside `.solve`).
+    Reads EFFECTIVE knobs off a throwaway solver rather than restating defaults,
+    so the answer cannot drift from `_build_solver`. Construction is dep-light
+    (torch/open3d/teaserpp all import inside `.solve`).
 
     Only o3d is genuinely unseeded by default; the gpu solvers carry their own
     deterministic default and teaser has no RNG at all. Saying "UNSEEDED" for
     all of them would put a false claim in the provenance of a cited run.
+
+    Isolation knobs that change results without changing the solver *name*
+    MUST appear on this line — otherwise two arms look byte-identical in the
+    log and post-hoc audit fails. That happened 2026-08-08/09: C9
+    (``--solver o3d``) and C9b (``--solver o3d --corr-topk 10``) both printed
+    ``solver=o3d seed=42 (seeded)``, so the missing flag stayed invisible for
+    a day. Likewise gpu-feat vs gpu-feat-dist is partly carried by the name,
+    but the effective ``distance_check`` bit is still printed so a renamed
+    default cannot silently drop the condition. gedi TODO ① / decision 19.
     """
     if name == "teaser":
         return f"solver={name} seed=n/a (deterministic — TEASER++ has no RNG)"
-    effective = getattr(_build_solver(name, tau=1.0, n_ransac=1, seed=seed),
-                        "seed", None)
+    # o3d alone accepts corr_topk; other solvers refuse it at _build_solver.
+    if name == "o3d":
+        solver = _build_solver(name, tau=1.0, n_ransac=1, seed=seed,
+                               corr_topk=corr_topk)
+    else:
+        solver = _build_solver(name, tau=1.0, n_ransac=1, seed=seed)
+    effective = getattr(solver, "seed", None)
+
+    # Extra fields that distinguish isolation arms with the same solver name
+    # (or pin the effective boolean when the name already encodes it).
+    extras: list[str] = []
+    if name == "o3d":
+        extras.append(f"corr_topk={int(getattr(solver, 'corr_topk', 0))}")
+    if name in ("gpu", "gpu-feat", "gpu-feat-dist"):
+        extras.append(
+            f"distance_check={int(bool(getattr(solver, 'distance_check', False)))}")
+    extra = ((" " + " ".join(extras)) if extras else "")
+
     if effective is None:
         return (f"solver={name} seed=None (UNSEEDED — Open3D's global RNG is "
-                f"never seeded, so poses vary run-to-run)")
+                f"never seeded, so poses vary run-to-run){extra}")
     # "seeded", not "deterministic". Measured 2026-07-28 on o3d: the same
     # commit, the same seed and the same config, re-run, still moved 94/1445
     # LM-O rows and 262/4123 YCB-V rows (Open3D's parallel reduction order is
@@ -278,7 +304,7 @@ def solver_provenance(name: str, seed: int | None) -> str:
     # licenses treating a 0.0x pt difference between two runs as signal, and
     # this project has already spent a pod run re-deriving a noise floor that
     # such a claim would have hidden.
-    return f"solver={name} seed={effective} (seeded)"
+    return f"solver={name} seed={effective} (seeded){extra}"
 
 
 class _RefinerChain:

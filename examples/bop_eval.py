@@ -887,7 +887,10 @@ def main():
     # Built by recipes so it reports the EFFECTIVE seed per solver family — the
     # gpu solvers are deterministic by default and teaser has no RNG, so a flat
     # "UNSEEDED" would be a false claim in a cited run's log.
-    print(solver_provenance(args.solver, args.seed), flush=True)
+    # Also prints corr_topk (o3d) / distance_check (gpu*) so isolation arms that
+    # share a solver name remain distinguishable after the fact (C9 vs C9b).
+    print(solver_provenance(args.solver, args.seed,
+                            corr_topk=args.corr_topk), flush=True)
     if args.probe_corr:
         q_enc = t_enc = None    # guards ran at arg-validation time
     else:

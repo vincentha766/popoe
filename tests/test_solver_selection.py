@@ -77,7 +77,7 @@ def test_provenance_reports_the_effective_seed_per_solver():
     # between-run difference can be read as signal.
     assert "deterministic" not in solver_provenance("o3d", 7)
 
-    for gpu in ("gpu", "gpu-feat"):
+    for gpu in ("gpu", "gpu-feat", "gpu-feat-dist"):
         line = solver_provenance(gpu, None)
         assert "UNSEEDED" not in line, line
         assert "seed=42 (seeded)" in line, line
@@ -86,6 +86,37 @@ def test_provenance_reports_the_effective_seed_per_solver():
     for seed in (None, 7):
         line = solver_provenance("teaser", seed)
         assert "no RNG" in line and "UNSEEDED" not in line, line
+
+
+def test_provenance_prints_corr_topk_so_c9_and_c9b_differ():
+    """2026-08-09 postmortem: C9 (o3d) and C9b (o3d + corr_topk=10) printed the
+    same provenance line, so the missing flag was invisible in the run log.
+    The line must carry the effective corr_topk for every o3d arm."""
+    from popoe.freeze.recipes import solver_provenance
+
+    bare = solver_provenance("o3d", 42, corr_topk=0)
+    topk = solver_provenance("o3d", 42, corr_topk=10)
+    assert "corr_topk=0" in bare, bare
+    assert "corr_topk=10" in topk, topk
+    assert bare != topk
+    # unseeded path too — isolation arms can still be unseeded
+    assert "corr_topk=0" in solver_provenance("o3d", None, corr_topk=0)
+    assert "corr_topk=10" in solver_provenance("o3d", None, corr_topk=10)
+
+
+def test_provenance_prints_distance_check_for_gpu_solvers():
+    """gpu-feat vs gpu-feat-dist must be distinguishable from the log line alone
+    even if a future rename drops the suffix; the effective bit is what matters."""
+    from popoe.freeze.recipes import solver_provenance
+
+    for name in ("gpu", "gpu-feat"):
+        line = solver_provenance(name, 42)
+        assert "distance_check=0" in line, line
+    dist = solver_provenance("gpu-feat-dist", 42)
+    assert "distance_check=1" in dist, dist
+    # teaser has neither knob
+    assert "corr_topk" not in solver_provenance("teaser", 42)
+    assert "distance_check" not in solver_provenance("teaser", 42)
 
 
 def test_unknown_solver_raises():
