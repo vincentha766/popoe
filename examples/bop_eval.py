@@ -891,6 +891,12 @@ def main():
     # share a solver name remain distinguishable after the fact (C9 vs C9b).
     print(solver_provenance(args.solver, args.seed,
                             corr_topk=args.corr_topk), flush=True)
+    # Same rule one stage upstream: the query sampler changes every number and
+    # shares its CLI surface with the default arm, so it has to be on the line
+    # too. gedi D20.
+    from popoe.freeze.adapters import query_sampler_provenance
+    print(query_sampler_provenance(
+        int(os.environ.get("POPOE_QUERY_POINTS", "3000"))), flush=True)
     if args.probe_corr:
         q_enc = t_enc = None    # guards ran at arg-validation time
     else:
@@ -1001,6 +1007,10 @@ def main():
         shade_parts = mesh_shading_key_parts(obj.mesh_path)
         qkey = (fingerprint("query", enc_cfg, file_fingerprint(obj.mesh_path),
                             obj_id, *shade_parts) if cache else None)
+        # Printed so an arm that was supposed to change the query features can be
+        # CHECKED to have changed them: identical qkeys across two arms means the
+        # knob never reached enc_cfg, and the run would look entirely normal.
+        print(f"qkey obj={obj_id} {qkey}", flush=True)
         # Both files or nothing; an incomplete entry is fatal (the dependent
         # target entries share this qkey and may hold a target-fitted basis).
         entry = load_cached_query(cache, qkey)

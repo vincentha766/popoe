@@ -52,6 +52,10 @@ CONDITIONAL_ENC_KEYS = {
     "query_views": ("POPOE_QUERY_VIEWS", "spiral"),
     "target_dense": ("POPOE_TARGET_DENSE", "0"),
     "target_paper_grid": ("POPOE_TARGET_PAPER_GRID", "0"),
+    # P_Q^raw's sampler (freeze/adapters.sample_query_surface). enc_cfg already
+    # carried n_points but not WHICH sampler drew them, so swapping samplers
+    # would have hit the same key and served the old cloud's features. gedi D20.
+    "query_sampler": ("POPOE_QUERY_SAMPLER", "even"),
 }
 
 

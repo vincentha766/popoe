@@ -111,7 +111,8 @@ def test_conditional_enc_entries_single_authority(monkeypatch):
                                          "target_paper_grid": "1"}
     assert set(CONDITIONAL_ENC_KEYS) == {
         "query_canon", "query_fill", "query_fill_mode", "query_min_views",
-        "canon_basis", "query_views", "target_dense", "target_paper_grid"}
+        "canon_basis", "query_views", "target_dense", "target_paper_grid",
+        "query_sampler"}
 
 
 def test_effective_fill_upper_bound_refused():
