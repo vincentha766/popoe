@@ -56,6 +56,7 @@ from popoe.adapters import (BestScoreSelector, resolve_resume,
 from popoe.cache import (StageCache, conditional_enc_entries, file_fingerprint,
                          fingerprint)
 from popoe.datasets.bop import bop_layout, default_targets_path
+from popoe import profiling
 from popoe.interfaces import ObjectModel, PointFeatures, PoseHypothesis, Scene
 from popoe.confusable_select import dual_assign_hyps, partner_id
 from popoe.freeze.feature_extractor import mesh_shading_key_parts
@@ -1242,9 +1243,10 @@ def main():
                 # detections (see adapters.select_top_instances).
                 hyps_by_det: dict = {}
                 try:
-                    dets = segmentor.segment(
-                        scene, obj,
-                        topk=floored_topk(args.topk, inst_count, args.mask_m))
+                    with profiling.stage("segment"):
+                        dets = segmentor.segment(
+                            scene, obj,
+                            topk=floored_topk(args.topk, inst_count, args.mask_m))
                 except Exception as e:
                     note_failure("segment",
                                  f"scene{scene_id}/im{im_id}/obj{obj_id}", e)
@@ -1297,9 +1299,13 @@ def main():
                         qw = q if w == 1.0 else _reweighted(q, w, vis_split)
                         tw = tgt if w == 1.0 else _reweighted(tgt, w, vis_split)
                         try:
-                            for h in solver.solve(qw, tw, frame):
-                                h = refiner.refine(h, scene, obj, qw, tw)
-                                h = scorer.score(h, qw, tw)
+                            with profiling.stage("solve"):
+                                hyps = list(solver.solve(qw, tw, frame))
+                            for h in hyps:
+                                with profiling.stage("refine"):
+                                    h = refiner.refine(h, scene, obj, qw, tw)
+                                with profiling.stage("score"):
+                                    h = scorer.score(h, qw, tw)
                                 hyps_by_det.setdefault(ci, []).append(h)
                                 if cand_f is not None:
                                     cand_wr.writerow(cand_csv_row(
