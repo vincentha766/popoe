@@ -8,7 +8,7 @@ not a footnote. The authors' *masks*, unlike their method, are obtainable —
 their BOP submissions are public (see MUSE.md, Upstream Status) — so ``muse``
 names real downloaded files, never anything this module writes.
 
-Naming (same discipline as CNOS's ``cnos`` / ``cnos-lab`` / ``cnos-live`` split):
+Naming (same discipline as CNOS's ``cnos`` / ``cnos-lab`` split):
 
 ============  ==============================================================
 ``muse``      RESERVED for official MUSE artefacts. Nothing here writes it.
@@ -993,15 +993,8 @@ class MuseDetectionsSegmentor(BOPDetectionsSegmentor):
 
     source = MUSE_SOURCE
 
-    def __init__(self, detections_json: str, topk: int = 2,
-                 merge_labels: Optional[dict] = None,
-                 iou_dedupe: float = 0.9,
-                 min_pixels: int = 100,
-                 source: str = MUSE_SOURCE):
-        super().__init__(
-            detections_json, topk=topk, merge_labels=merge_labels,
-            iou_dedupe=iou_dedupe, min_pixels=min_pixels,
-            source=_check_source(source))
+    def __init__(self, *args, source: str = MUSE_SOURCE, **kwargs):
+        super().__init__(*args, source=_check_source(source), **kwargs)
 
 
 # ── CLI ─────────────────────────────────────────────────────────────────

@@ -281,7 +281,7 @@ class QueryFeatureExtractor:
         self.gedi = gedi if gedi is not None else load_geometric_descriptor(device)
         # Fusion is a swappable component (popoe/freeze/fusion.py). It owns the
         # per-object visual PCA; `_pca_vis` below proxies it so external callers
-        # (e.g. pose_estimator sharing query PCA -> target) keep working.
+        # (e.g. a caller sharing query PCA -> target) keep working.
         self.fusion = DinoGeDiFusion()
         self._render_backend_pref = render_backend
         self._nvd_ctx = None
@@ -303,35 +303,12 @@ class QueryFeatureExtractor:
 
     @property
     def canon_frame(self) -> CanonFrame:
-        """Single named home for the canonicalisation convention (see #2 in
-        ARCHITECTURE.md). Surfaces the existing `_canon_scale` (set during
+        """Single named home for the canonicalisation convention (see
+        ARCHITECTURE.md, Canonicalisation). Surfaces the existing `_canon_scale` (set during
         extract_query_features); center=0 because the code scales without
         centring. Additive/read-only — does not change existing behaviour."""
         return CanonFrame(center=np.zeros(3, np.float32),
                           scale=float(getattr(self, "_canon_scale", 1.0)))
-
-    def _sample_query_pointcloud(self, mesh_path, n_raw=50000, n_views=18, min_views=1):
-        """Poisson disk sample surface points, render from multiple views, keep visible."""
-        import trimesh
-        import open3d as o3d
-
-        mesh = trimesh.load(mesh_path, force='mesh')
-        # Normalise to fit ~50% of 480x480 image
-        scale = 0.45 * 480 / max(mesh.extents)
-        mesh.apply_scale(scale)
-        pts, _ = trimesh.sample.sample_surface_even(mesh, n_raw)
-
-        pcd_o3d = o3d.geometry.PointCloud()
-        pcd_o3d.points = o3d.utility.Vector3dVector(pts)
-
-        # Simple visibility: keep points visible from at least min_views of 6 canonical views
-        canonical_dirs = np.array([
-            [1,0,0], [-1,0,0], [0,1,0], [0,-1,0], [0,0,1], [0,0,-1]
-        ], dtype=np.float32)
-        normals = np.asarray(pcd_o3d.normals) if pcd_o3d.has_normals() else None
-
-        pts_tensor = torch.from_numpy(pts.astype(np.float32))
-        return pts_tensor
 
     def _init_nvdiffrast(self):
         """True if the GPU rasteriser will be used. Honours render_backend:

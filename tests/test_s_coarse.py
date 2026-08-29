@@ -6,7 +6,7 @@ ICPRefiner test needs open3d.
 import numpy as np
 import pytest
 
-# ChampionScorer.score() -> feature_aware_score -> pose_estimator, which hard-
+# ChampionScorer.score() -> feature_aware_score -> registration, which hard-
 # imports open3d at module load (reference extra). Skip cleanly without it.
 pytest.importorskip("open3d")
 

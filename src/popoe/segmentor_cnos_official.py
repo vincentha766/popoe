@@ -12,11 +12,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
 from pathlib import Path
 from typing import Mapping, Optional, Sequence
 
-from popoe.external_cmd import ExternalCommand
+from popoe.external_cmd import ExternalCommand, run_external_command
 from popoe.segmentor_detections import BOPDetectionsSegmentor, load_detections
 
 
@@ -133,12 +132,6 @@ def build_cnos_custom_infer_command(rgb_path: str,
         str(float(stability_score_thresh)),
     ]
     return ExternalCommand(tuple(argv), cwd=str(resolve_cnos_root(cnos_root)))
-
-
-def run_external_command(command: ExternalCommand, **kwargs) -> subprocess.CompletedProcess:
-    popen_kwargs = command.as_subprocess_kwargs()
-    popen_kwargs.update(kwargs)
-    return subprocess.run(**popen_kwargs)
 
 
 def _records_from_payload(payload):
@@ -276,20 +269,6 @@ class CNOSDetectionsSegmentor(BOPDetectionsSegmentor):
     """File-backed Segmentor for official CNOS/CNOS-FastSAM predictions."""
 
     source = CNOS_SOURCE
-
-    def __init__(self, detections_json: str, topk: int = 2,
-                 merge_labels: Optional[dict] = None,
-                 iou_dedupe: float = 0.9,
-                 min_pixels: int = 100,
-                 source: str = CNOS_SOURCE):
-        super().__init__(
-            detections_json,
-            topk=topk,
-            merge_labels=merge_labels,
-            iou_dedupe=iou_dedupe,
-            min_pixels=min_pixels,
-            source=source,
-        )
 
 
 def _add_root_args(p):

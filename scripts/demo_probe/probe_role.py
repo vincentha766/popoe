@@ -2,6 +2,10 @@
 
 usage: probe_role.py <role> <rgb_png> <hold_seconds>
 roles: muse | cnos_amg | pose | sam6d_ism
+
+The cnos_amg / sam6d_ism descriptor-pass fix below is WRITTEN BUT UNRUN — the
+freezev2 volume was deleted 2026-08-03, so the tables in DEMO_SINGLE_GPU.md
+still carry the proposal-only figures. Re-run before updating them.
 """
 import os, sys, time, json, glob
 import numpy as np
@@ -38,7 +42,7 @@ if ROLE == "muse":
     from dataclasses import dataclass
     from popoe.segmentor_muse import (GroundingDinoBoxProposer, SAM2BoxMaskRefiner,
                                       DinoV2ClsGemEmbedder)
-    from popoe.segmentor_cnos_v3 import square_crop
+    from popoe.segmentor_cnos_lab import square_crop
     @dataclass
     class S: rgb: np.ndarray; depth: np.ndarray = None
     p = GroundingDinoBoxProposer(device="cuda"); p._load()
@@ -54,15 +58,26 @@ if ROLE == "muse":
         return len(b)
 
 elif ROLE == "cnos_amg":
-    from popoe.segmentor_cnos_v3 import DinoV2ForegroundPatchExtractor as DinoV2PatchExtractor
+    from popoe.segmentor_cnos_lab import (
+        DinoV2ForegroundPatchExtractor as DinoV2PatchExtractor, square_crop)
     from popoe.segmentor import build_sam2_model, AMG_PARAMS
     from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
     sam = build_sam2_model("large", "cuda", "/workspace/sam2_ckpt")
     gen = SAM2AutomaticMaskGenerator(sam, **AMG_PARAMS)
-    d = DinoV2PatchExtractor(device="cuda"); _ = d.model if hasattr(d, "model") else None
+    d = DinoV2PatchExtractor(device="cuda"); _ = d.model
     report("models loaded")
     def work():
-        return len(gen.generate(rgb))
+        # DEFECT FIX: this used to return after `generate` alone, so DINOv2 was
+        # loaded (and counted in VRAM) but never run — the row measured
+        # proposals only, while its Models column promised a full route.
+        masks = [p["segmentation"].astype(bool) for p in gen.generate(rgb)]
+        n_desc = 0
+        for m in masks:
+            c, cm = square_crop(rgb, m)
+            if c is not None:
+                d.fg_patches(c, cm); n_desc += 1
+        assert n_desc > 0, "descriptor model was never invoked"
+        return len(masks)
 
 elif ROLE == "pose":
     from popoe.freeze.feature_extractor import TargetFeatureExtractor
@@ -106,8 +121,24 @@ elif ROLE == "sam6d_ism":
     dino = torch.hub.load("facebookresearch/dinov2", "dinov2_vitl14",
                           pretrained=True).cuda().eval()
     report("models loaded")
+    from popoe.segmentor_cnos_lab import square_crop
     def work():
-        return len(gen.generate(rgb))
+        # DEFECT FIX: see cnos_amg. For the OFFICIAL SAM-6D ISM route (its own
+        # descriptor head, template matching and NMS) use port_sam6d.py instead.
+        masks = [p["segmentation"].astype(bool) for p in gen.generate(rgb)]
+        n_desc = 0
+        for m in masks:
+            c, cm = square_crop(rgb, m)
+            if c is None:
+                continue
+            x = torch.from_numpy(c.copy()).float().permute(2, 0, 1)[None].cuda() / 255.0
+            x = (x - torch.tensor([0.485, 0.456, 0.406], device="cuda").view(1, 3, 1, 1)) \
+                / torch.tensor([0.229, 0.224, 0.225], device="cuda").view(1, 3, 1, 1)
+            with torch.no_grad():
+                dino.forward_features(x)
+            n_desc += 1
+        assert n_desc > 0, "descriptor model was never invoked"
+        return len(masks)
 
 else:
     raise SystemExit(f"unknown role {ROLE}")

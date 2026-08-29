@@ -5,6 +5,10 @@ a `typing.Protocol` in [src/popoe/interfaces.py](src/popoe/interfaces.py). An
 implementation only needs matching method signatures — no base class, no
 registration — so stages stay decoupled and any one can be re-implemented alone.
 
+Measured claims, run artefacts, and withdrawn tables live in
+[REPRODUCTION.md](REPRODUCTION.md). Incident write-ups that taught a rule live
+in [ISSUES.md](ISSUES.md). This file is the seams and the invariants.
+
 ## Stages
 
 ```
@@ -15,12 +19,12 @@ Scene (RGB-D, K) ──┴──────────────────
 
 | Stage | Protocol | Reference implementation |
 |-------|----------|--------------------------|
-| Segmentation | `Segmentor` | `segmentor_detections.BOPDetectionsSegmentor` (evaluated) — 12 more in [§Segmentation backends](#segmentation-backends) |
+| Segmentation | `Segmentor` | `segmentor_detections.BOPDetectionsSegmentor` (evaluated) — more in [§Segmentation backends](#segmentation-backends) |
 | Query features | `QueryEncoder` | `freeze.adapters.FreeZeQueryEncoder` (DINOv2 visual + `PointDescriptor` geometric branch) |
 | Target features | `TargetEncoder` | `freeze.adapters.FreeZeTargetEncoder` |
 | Geometric descriptors | `PointDescriptor` | `freeze.feature_extractor.load_geometric_descriptor` dispatches on `POPOE_GEOM_BACKBONE`: `load_gedi` (default); `descriptors.FPFHDescriptor`; dGeDi via `POPOE_GEOM_BACKBONE` |
 | Fusion | `FeatureFusion` | `freeze.fusion.DinoGeDiFusion` |
-| Pose solve | `PoseSolver` | `solvers.Open3DFeatureRansacSolver` (default) — 3 more in [§Pluggability proven](#pluggability-proven--the-posesolver-stage) |
+| Pose solve | `PoseSolver` | `solvers.Open3DFeatureRansacSolver` (default) — 3 more in [§Pluggability](#pluggability-proven--the-posesolver-stage) |
 | External coarse pose | `CoarseEstimator` | `segmentor_sam6d.SAM6DPemResultsCoarseEstimator` over already-written PEM results |
 | Refine | `PoseRefiner` | `adapters.ICPRefiner` |
 | Score | `PoseScorer` | `freeze.adapters.FreeZeScorer`; `scoring.ChampionScorer` (evaluated) |
@@ -68,38 +72,19 @@ boundary:
   evidence combines. The combination rule belongs to the implementation, not to
   the pipeline — `FreeZeScorer` reproduces the paper's `s_coarse·s_fine·s_icp`,
   while the evaluated `ChampionScorer` uses `s_icp · s_feat_1 · metric_fit`, with
-  `s_coarse` an opt-in per-dataset factor (helps YCB-V, hurts LM-O).
-  `ICPRefiner` only moves geometry and reports `s_icp`. So a new solver or
-  refiner never re-implements the scoring rule. (Note: the RANSAC-internal
-  inlier score stays inside the solver — that's hypothesis ranking, not final
-  scoring.)
-- **A solver only PROPOSES; the scorer DISPOSES.** See below.
+  `s_coarse` an opt-in per-dataset factor. `ICPRefiner` only moves geometry and
+  reports `s_icp`. So a new solver or refiner never re-implements the scoring
+  rule. (The RANSAC-internal inlier score stays inside the solver — that is
+  hypothesis ranking, not final scoring.)
+- **A solver only PROPOSES; the scorer DISPOSES.** See
+  [§Pluggability](#pluggability-proven--the-posesolver-stage).
 - **No stage hides a fallback.** A stage whose backend is missing raises
   `interfaces.BackendUnavailable` — it never quietly substitutes a weaker method.
-  See below.
+  See [§Availability](#the-availability-contract-no-hidden-fallbacks).
 
 ## The availability contract (no hidden fallbacks)
 
-Two different methods behind one name is a bug, not a convenience. It used to be
-the norm here: `CNOSSegmentor.segment` caught a SAM2 load failure and silently
-ran a sliding-window variant, which silently swapped its own mask generator, and
-then topped the list up with depth blobs whose "score" was a mask **area
-fraction** mixed in among DINO **cosine similarities** — a blob covering 40% of
-the frame outranked a real template match at 0.35. `SAMSegmentor` and
-`get_renderer` did the same thing more quietly.
-
-That costs two things:
-
-1. **The result becomes unattributable.** A run on a box without the SAM2
-   checkpoint produced depth-blob masks while every log line and config still
-   said "CNOS".
-2. **It poisons the config-addressed cache** (see below), whose key fingerprints
-   the config you *asked* for — not the method that silently ran instead. The
-   renderer was the live case: nvdiffrast and the trimesh CPU ray-caster produce
-   different CAD views, hence different query features, and `render_backend` was
-   absent from the key, so a cache built without a GPU was reused on one with it.
-
-So:
+Two different methods behind one name is a bug, not a convenience.
 
 - an implementation raises `BackendUnavailable` (`SegmentorUnavailable`,
   `RendererUnavailable`) when a package / checkpoint / device is missing;
@@ -111,92 +96,50 @@ So:
 - anything that selects a method (`render_backend`, the segmentor's `source`)
   is part of the stage config and belongs **in the cache key**.
 
+A silent substitution makes results unattributable (logs still name the method
+you asked for) and poisons the config-addressed cache (the key fingerprints the
+config, not the method that actually ran). The incidents that taught this —
+CNOS swapping to a sliding window then depth blobs, the renderer reusing a
+CPU-built cache on GPU — are in [ISSUES.md](ISSUES.md).
+
 ## Pluggability proven — the PoseSolver stage
 
 Four `PoseSolver` implementations run through the identical
-encoders→refiner→scorer→selector chain, each selected by changing one line. The
-original proof was a pair:
+encoders→refiner→scorer→selector chain. A solver may return several hypotheses
+and leave the choice to the scorer and selector, so "geometry proposes, features
+dispose" is reachable as pure composition, with no new scoring code.
 
 - `adapters.RansacSolver` — hand-rolled feature-aware RANSAC.
-- `solvers.Open3DFeatureRansacSolver` — Open3D's C++ correspondence RANSAC, added
-  as one new file, zero changes elsewhere.
+- `solvers.Open3DFeatureRansacSolver` — Open3D's C++ correspondence RANSAC.
+  `n_restarts>1` emits several geometrically-ranked hypotheses; the feature-aware
+  scorer re-ranks the survivors (the A layer).
+- `solvers.GPURansacSolver` — batched RANSAC (vectorised triplet sampling +
+  batched Kabsch/SVD; CPU or CUDA) with a selectable `fitness`, so feature
+  agreement can sit **inside** hypothesis selection (the B layer), not only after
+  it. `"geometric"` ranks by inlier count. `"feature"` uses the paper's Eq.5
+  `Σ_inlier cos(f_q,f_t) / |P_T|`: the denominator is the **fixed** sparse-target
+  count, never the inlier count (mean cosine lets a few high-similarity spurious
+  correspondences beat many true ones). Features are the **w=1** canonical space.
+- `solvers.TeaserSolver` — TEASER++ (Yang, Shi & Carlone, T-RO 2021). Prunes the
+  correspondence pool with a pairwise TIM max-clique and solves rotation by
+  GNC-TLS; deterministic, no RNG. Correspondences come from the same Eq.3
+  per-target top-k cosine NN pool as `GPURansacSolver` (w=1 features);
+  `tau_inlier` doubles as TEASER's noise bound. The import is deferred to
+  `.solve`, so construction is dep-light.
 
-The A/B ships as [examples/solver_swap_demo.py](examples/solver_swap_demo.py):
-three solvers, one chain, one line changed.
-`Open3DFeatureRansacSolver(n_restarts=8)` exercises the seam on purpose — a
-solver may return SEVERAL hypotheses and leave the choice to the scorer and
-selector, so "geometry proposes, features dispose" is reachable as pure
-composition, with no new scoring code.
-
-**Measured 2026-07-26**, ranked by MSSD (bop_toolkit's symmetry-aware surface
-distance), seeded, over 140 of obj 5's 150 instances — a pod died at 140, the
-missing 10 are all scene 52. Logs: `outputs/solver_swap_20260726/`.
-
-| solver | median MSSD | recall @0.2d | @0.5d |
-|--------|------------|--------------|-------|
-| `RansacSolver` (freeze_ransac) | **42.9 mm** (0.218 d) | **0.371** | **0.600** |
-| `open3d` 1-shot | 111.2 mm (0.566 d) | 0.271 | 0.457 |
-| `open3d` `n_restarts=8` | 62.7 mm (0.319 d) | 0.343 | 0.521 |
-
-Handing several hypotheses to the scorer **does** work: 1-shot's median MSSD
-nearly halves (111.2 → 62.7 mm), and rerank wins head-to-head on 72 instances
-against 33 (35 tied). The ordering is the same at every threshold. What it does
-**not** do is reach `freeze_ransac` — it closes roughly two thirds of the gap.
-An earlier version of this section claimed parity, from a 5-instance run scored
-on raw rotation angle; that number was withdrawn (ISSUES.md, 2026-07-26) and
-this replaces it.
-
-Read the absolute values with care: **recall@0.1d is 0.000 for all three**, so
-none of these configurations is BOP-usable on this object. `solver_swap_demo` is
-not the evaluated pipeline — it runs `FreeZeScorer` on GT masks with fixed
-thresholds — and obj 5 is one of the thin/near-symmetric shapes where
-registration is known to be the weak stage. The table ranks solvers against each
-other; it is not a performance claim for popoe.
-
-A robust backend (TEASER++, MAC) slots in the same way — TEASER++ since has, two
-headings below.
-
-### A third solver — feature-aware fitness INSIDE selection (the B layer)
-
-Open3D's C++ RANSAC ranks hypotheses by geometric inlier count and cannot take a
-custom fitness, so feature agreement can only re-rank the survivors (that is the
-A layer — `PoseScorer`). To put feature agreement INSIDE hypothesis selection —
-changing which hypotheses survive — `solvers.GPURansacSolver` ports gedi's
-batched RANSAC (vectorised triplet sampling + batched Kabsch/SVD; runs on CPU or
-CUDA) with a selectable `fitness`:
-
-- `"geometric"` (default) — rank by inlier count; a faithful port whose
-  behaviour is verifiable against Open3D alone.
-- `"feature"` — the paper's Eq.5 score `Σ_inlier cos(f_q,f_t) / |P_T|`. The
-  denominator is the **fixed** sparse-target count `|P_T|`, never the inlier
-  count: normalise-by-inlier (mean cosine) lets a few high-similarity spurious
-  correspondences beat many true ones (a −31 pt regression in the study). The
-  features are the **w=1** canonical space (the same lesson the A-layer S_coarse
-  learned).
-
-### A fourth solver — TEASER++ certifiable registration
-
-`solvers.TeaserSolver` wraps TEASER++ (Yang, Shi & Carlone, T-RO 2021) — the
-robust backend the Open3D A/B above anticipated. Instead of sampling
-minimal triplets, it prunes the correspondence pool with a pairwise
-translation-invariant-measurement max-clique and solves rotation by GNC-TLS:
-robust to >90% outlier correspondences, deterministic (no RNG, no seed), with
-optimality certificates. Correspondences come from the same Eq.3 per-target
-top-k cosine NN pool as `GPURansacSolver` (w=1 features); `tau_inlier` doubles
-as TEASER's noise bound. Needs `teaserpp_python`, built from source
-([MIT-SPARK/TEASER-plusplus](https://github.com/MIT-SPARK/TEASER-plusplus) —
-no PyPI wheel); the import is deferred to `.solve`, so construction is
-dep-light.
-
-Select with `freeze.recipes.stages_for_object(solver=...)` or `bop_eval --solver
-o3d|gpu|gpu-feat|teaser`. The default stays `o3d`, so the evaluated mainline is
-unperturbed; the non-default solvers are reported as independent configurations.
+The A/B that ranks the first three against each other is
+[examples/solver_swap_demo.py](examples/solver_swap_demo.py); the numbers live
+only in [REPRODUCTION.md](REPRODUCTION.md#solver-ab-ledger-2026-07-26) and are
+not a performance claim for popoe. Default solver stays `o3d`, so the evaluated
+mainline is unperturbed; the others are independent configurations.
 
 ## Segmentation backends
 
 Every entry satisfies the same `Segmentor` protocol and stamps its origin into
 `Detection.source`. **File** backends replay an artefact another process wrote;
-**live** backends run the models themselves.
+**live** backends run the models themselves. How-to, producer pins, and naming
+politics for each source live in [CNOS.md](CNOS.md), [MUSE.md](MUSE.md),
+[NIDS_NET.md](NIDS_NET.md), [SAM6D.md](SAM6D.md).
 
 | Implementation | `source` | Kind |
 |----------------|----------|------|
@@ -207,80 +150,29 @@ Every entry satisfies the same `Segmentor` protocol and stamps its origin into
 | `segmentor_muse.MuseDetectionsSegmentor` | `muse-repro` | file — replay of dumped MUSE masks |
 | `segmentor_muse.MuseSegmentor` | `muse-repro` | live — GroundingDINO→SAM2→DINOv2; also its own producer |
 | `segmentor_cnos_lab.CNOSLabSegmentor` | `cnos-lab` | live — depth-size-gated foreground-patch CNOS (formerly `cnos-v3`) |
-| `segmentor_cnos.CNOSSegmentor` | `cnos-live` | live — SAM2 AMG proposes, DINOv2 matches |
-| `segmentor_cnos.DinoWindowSegmentor` | `dino-window` | live — DINOv2 multi-scale sliding-window matching |
 | `segmentor.SAMSegmentor` | `sam2-amg` | live — SAM2.1 automatic mask generator, class-agnostic |
 | `segmentor.DepthSegmentor` | `depth-cc` | live — depth connected components; no model, no GPU |
 | `segmentor.FirstAvailableSegmentor` | delegates | explicit fallback chain — see the availability contract |
-| `adapters.PrecomputedSegmentor` | as supplied | inject fixed masks (tests, ablations) |
-
-### File backends (CNOS / SAM-6D / NIDS)
 
 CNOS-FastSAM, SAM-6D ISM and NIDS-Net all publish the same artefact — a
 detections JSON — so they are not separate pose-backend code paths, only
-different named producers. Official CNOS, NIDS-Net and SAM-6D are pinned under
-`external/` for source provenance but still run in separate
-environments/services; `segmentor_cnos_official.CNOSDetectionsSegmentor`,
-`segmentor_nids.NIDSNetDetectionsSegmentor`,
-`segmentor_nids.adapt_nidsnet_json`, and
-`segmentor_sam6d.SAM6DIsmDetectionsSegmentor` are the popoe-side adapters.
-Underneath,
-`segmentor_detections.DetectionSource` `(name, path)` is the config handle:
-select a backend BY NAME and compose several into one `BOPDetectionsSegmentor`
-to reproduce FreeZe-style multi-source segmentation.
+different named producers. Official checkouts are pinned under `external/` for
+source provenance but still run in separate environments; popoe-side adapters
+consume the files. `segmentor_detections.DetectionSource` `(name, path)` is the
+config handle: select a backend by name and compose several into one
+`BOPDetectionsSegmentor`.
 
-```python
-from popoe.segmentor_detections import BOPDetectionsSegmentor
+`topk` is per `(source, label)`, so a top-M union keeps M candidates **per
+source**. The union across sources is **unfiltered** (FreeZe's "top-M union
+without filtering"): `iou_dedupe` is scoped per source, two backends proposing
+the same region both survive, and the feature-aware scorer disposes. Official
+source names (`cnos`, `muse`) are reserved for official artefacts; lab /
+reimplementation outputs use `cnos-lab` / `muse-repro`.
 
-seg = BOPDetectionsSegmentor(sources={           # or [("nids", p), ...] / "name=path"
-    "cnos":  "…/cnos_ycbv.json",
-    "sam6d": "…/sam6d_ycbv.json",
-    "nids":  "…/nids_wa_sappe_ycbv.json",
-}, topk=2)
-dets = seg.segment(scene, obj)
-dets[0].source        # -> 'cnos' | 'sam6d' | 'nids' — which backend produced it
-```
-
-The three CNOS source names (`cnos`, `cnos-lab`, `cnos-live` — see the inventory
-above) are **reserved**: only the official producer's artefacts may be filed
-under `cnos`, for the same reason `muse` is reserved below.
-
-`topk` is applied per `(source, label)` bucket, so a top-M union keeps M
-candidates **per source** (no source crowds out another before scoring), and
-every mask carries its origin in `Detection.source` — the same provenance
-discipline as the fallback chain. The union across sources is **unfiltered**
-(FreeZe's "top-M union without filtering"): `iou_dedupe` is scoped per source,
-so two backends proposing the same region both survive and the feature-aware
-scorer disposes with every source's evidence intact — a single backend still
-drops its own near-duplicates. The single-file form
-`BOPDetectionsSegmentor(path)` is unchanged (its masks keep the historical
-`bop-detections` tag). The loader (`load_bop_detections`) coerces the
-fully-stringified NIDS WA_Sappe variant and decodes both compressed and
-uncompressed RLE — see the module docstring.
-
-### MUSE — the backend that has to be both (`segmentor_muse`)
-
-MUSE is the fourth mask source in FreeZeV2's ensemble and the only one with **no
-public code**, so there is no producer to adapt (its masks, unlike its method,
-*are* obtainable — the authors' BOP submissions are public and sit under
-`data/detections/muse/`). What popoe carries is a reimplementation from the
-paper (arXiv 2510.17866), and it
-occupies both forms at once: `MuseSegmentor` computes masks from pixels like
-`CNOSLabSegmentor`, while `muse_records` / `write_muse_detections` dump those same
-masks to a detections JSON, after which `MuseDetectionsSegmentor` replays them as
-an ordinary named source — GPU-free, unionable, archivable. See [MUSE.md](MUSE.md).
-
-| Source | Meaning |
-|--------|---------|
-| `muse` | the authors' official artefacts only; nothing here writes it — those files were downloaded |
-| `muse-repro` | this reimplementation |
-
-The naming rule is the CNOS rule with more at stake: the study cites MUSE as
-evidence that an ensemble member is externally unreproducible, so our own
-reimplementation must never wear the official name.
-
-Two design points follow from MUSE scoring classes *jointly* rather than
-independently, and neither is optional:
+MUSE occupies both forms at once (`MuseSegmentor` live, `MuseDetectionsSegmentor`
+file replay) because there is no public producer to adapt. Two design points
+follow from scoring classes *jointly* rather than independently, and neither is
+optional:
 
 - **Classes are registered up front.** `Segmentor.segment` is a per-object
   contract, but MUSE's relative score is a softmax across all candidate classes.
@@ -291,24 +183,20 @@ independently, and neither is optional:
   explicitly (`allow_single_class=True`).
 - **Proposals are per-frame.** Grounding DINO + SAM2 would otherwise re-run for
   every object in one image. Results are memoised by frame CONTENT, never by
-  `scene_id`/`im_id` (real captures leave those at -1) — the same content-addressing
-  invariant the cache follows.
+  `scene_id`/`im_id` (real captures leave those at -1) — the same
+  content-addressing invariant the cache follows.
 
-### SAM-6D PEM is not one of these
-
-SAM-6D's ISM half is a detections producer like the others above. Its PEM half
-is an external **full pose** producer, so it is not a `Segmentor` at all:
-`segmentor_sam6d.SAM6DPemResultsCoarseEstimator` adapts PEM's BOP CSV or custom
-JSON outputs to `PoseHypothesis` through the separate `CoarseEstimator`
-contract, keeping it out of the FreeZe feature-solver contract.
+SAM-6D's ISM half is a detections producer like the others. Its PEM half is an
+external **full pose** producer, so it is not a `Segmentor` at all:
+`segmentor_sam6d.SAM6DPemResultsCoarseEstimator` adapts PEM outputs to
+`PoseHypothesis` through the separate `CoarseEstimator` contract.
 
 ## Assembly: sharing the heavy models (`popoe.assembly`)
 
-Three components load their own DINOv2 ViT-g (~4.3 GB VRAM each) — MUSE's crop
-embedder, CNOS-lab's patch extractor, the pose encoders — and SAM2 is loaded
-independently by the MUSE refiner and the AMG proposers. Composed as separate
-processes the live ensemble plus pose does not fit a 24 GB card, and the
-overrun is entirely duplicate weights (measured: DEMO_SINGLE_GPU.md).
+Three components load their own DINOv2 ViT-g, and SAM2 is loaded independently
+by the MUSE refiner and the AMG proposers. Composed as separate processes the
+live ensemble plus pose duplicates those weights. Measured footprint:
+[DEMO_SINGLE_GPU.md](DEMO_SINGLE_GPU.md).
 
 `assembly.ModelPool` holds one lazily-loaded copy of each shared model; every
 model-owning component grew a matching injection parameter (`model=` on the
@@ -318,34 +206,12 @@ one pool. Two scoped departures from the usual rules: pool wiring loads the
 *pooled* models at build time, not first use (a resident service wants startup
 failures at startup — though unpooled components like MUSE's Grounding DINO
 still lazy-load on the first frame); and component `config()` identity still
-describes models by name —
-truthful because the pool is the single place a name resolves to weights.
+describes models by name — truthful because the pool is the single place a name
+resolves to weights.
 
 The service shell that would sit on top (HTTP, cameras, supervision) stays
 outside popoe (AGENTS.md boundary); this module only guarantees the library
 composes into one process without duplicate weights.
-
-## BOP runner invariants
-
-`examples/bop_eval.py` is a composition runner, not a new stage, but several
-of its rules are load-bearing for reproducible benchmark runs:
-
-- **One query encode per object.** Queries and fitted visual PCA are cached up
-  front. The target cache key includes the query key because target visual
-  features live in the query PCA basis.
-- **Feature extraction is pinned at w=1.** The visual-weight sweep reweights
-  cached `[vis|geo]` features at selection time, and `ChampionScorer`'s
-  `s_feat_1` really is a w=1 re-score.
-- **Completed targets emit exactly `inst_count` rows.** Champions are written
-  first and zero rows pad any missing instances. Resume is therefore a row-count
-  invariant: fewer rows means a partial target and those stale rows are dropped
-  before re-run.
-- **Candidate dumps are the offline interface.** `--cand-csv` records every
-  mask x visual-weight hypothesis with its score breakdown and solver name, so
-  selection rules can be replayed without re-running DINO/GeDi/FPFH.
-- **Confusable-object arbitration is explicit.** YCB-V clamp label pooling is
-  the formal path; `--size-select` and `--dual-assign` are score-affecting lab
-  paths and require fresh output files.
 
 ## Verification
 
@@ -356,17 +222,16 @@ of its rules are load-bearing for reproducible benchmark runs:
 - **Fusion byte-identity & Protocol wiring** — [tests/](tests/), GPU-free
   (numpy + scikit-learn), run with `pytest`.
 
+Runner-level BOP invariants (one query encode per object, w=1 extraction,
+`inst_count` row-count resume, `--cand-csv`, confusable-object arbitration)
+live on `examples/bop_eval.py`, not here.
+
 ## Stage caching (config-addressed)
 
 Because stages are separable, their outputs are cacheable — `popoe.cache`
 keys every stage output by a fingerprint of (stage config, input CONTENT,
 and the keys of any upstream fits it depends on). Same configuration →
 automatic reuse; changing a knob invalidates exactly the entries it should.
-
-Measured payoff (reproduction study): reruns skip GeDi+DINO entirely
-(registration-only iterations), selection rules are swappable with zero GPU
-via the candidate dump, and whole diagnostic investigations run offline
-against cached features.
 
 Three invariants, all learned from real incidents (see ISSUES.md):
 

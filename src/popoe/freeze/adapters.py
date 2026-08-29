@@ -6,8 +6,8 @@ satisfy the stage Protocols in popoe.interfaces, without changing their logic.
 bitwise-identical to the inline `FreeZeV2.estimate_pose` body
 (`examples/freezev2_monolith.py`).
 
-The method-agnostic adapters (RansacSolver, ICPRefiner, BestScoreSelector,
-PrecomputedSegmentor, ...) stay in popoe.adapters.
+The method-agnostic adapters (RansacSolver, ICPRefiner, BestScoreSelector)
+stay in popoe.adapters.
 
 One design point worth knowing: the target encoder needs the query side's
 fitted visual PCA. Because fusion is an injectable component
@@ -39,9 +39,6 @@ def sample_query_surface(mesh_path: str, n_points: int, seed: int) -> np.ndarray
 
     THE single live sampling site for the query cloud: `extract_query_features`
     takes the cloud from its caller, so this is where P_Q^raw is decided.
-    (`feature_extractor._sample_query_pointcloud` has no callers and its
-    docstring claims a Poisson disk it does not implement — do not read it as
-    the query path.)
 
     `POPOE_QUERY_SAMPLER` selects the sampler and IS a cache key
     (popoe.cache.CONDITIONAL_ENC_KEYS), so switching it invalidates query

@@ -5,8 +5,7 @@ Protocols in popoe.interfaces, so they compose in `interfaces.Pipeline`.
 Everything here is pure numpy+open3d and unit-testable offline.
 
 The FreeZe-specific stages (encoders, FreeZeScorer, make_freeze_encoders)
-live in popoe.freeze.adapters; they are re-exported at the bottom for
-backwards compatibility.
+live in popoe.freeze.adapters.
 
 One design point worth knowing: `ICPRefiner` moves geometry only; the final
 feature scoring lives in the separate scorer stage (see interfaces.PoseScorer,
@@ -20,22 +19,8 @@ import math
 import numpy as np
 
 from popoe.interfaces import (
-    Scene, ObjectModel, Detection, CanonFrame, PointFeatures, PoseHypothesis,
+    Scene, ObjectModel, CanonFrame, PointFeatures, PoseHypothesis,
 )
-
-
-# ── Segmentation ────────────────────────────────────────────────────────
-
-class PrecomputedSegmentor:
-    """Wrap an already-computed list of (mask, score) as a Segmentor. Covers the
-    GT-mask and public-CNOS-detection modes, where masks come from disk rather
-    than being generated here. `provider(scene, obj) -> list[Detection]`."""
-
-    def __init__(self, provider):
-        self._provider = provider
-
-    def segment(self, scene: Scene, obj: ObjectModel) -> list[Detection]:
-        return self._provider(scene, obj)
 
 
 # ── Pose solve / refine / select ────────────────────────────────────────
@@ -251,11 +236,3 @@ def select_top_instances(hyps_by_det: dict, selector, k: int,
                 kept.append(c)
         champs = kept
     return champs[:k]
-
-
-# ── Backwards compatibility ─────────────────────────────────────────────
-# The FreeZe-specific adapters moved to popoe.freeze.adapters; old import
-# paths keep working.
-from popoe.freeze.adapters import (  # noqa: E402,F401
-    FreeZeQueryEncoder, FreeZeTargetEncoder, FreeZeScorer, make_freeze_encoders,
-)

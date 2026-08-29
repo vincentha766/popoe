@@ -30,5 +30,15 @@ class ExternalCommand:
         argv = " ".join(shlex.quote(a) for a in self.argv)
         return f"cd {shlex.quote(self.cwd)} && {env_prefix}{argv}"
 
+    def run(self, **kwargs):
+        import subprocess
+        popen_kwargs = self.as_subprocess_kwargs()
+        popen_kwargs.update(kwargs)
+        return subprocess.run(**popen_kwargs)
 
-__all__ = ["ExternalCommand"]
+
+def run_external_command(command: ExternalCommand, **kwargs):
+    return command.run(**kwargs)
+
+
+__all__ = ["ExternalCommand", "run_external_command"]

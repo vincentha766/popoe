@@ -17,14 +17,13 @@ import argparse
 import csv
 import json
 import os
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Sequence
 
 import numpy as np
 
-from popoe.external_cmd import ExternalCommand
+from popoe.external_cmd import ExternalCommand, run_external_command
 from popoe.interfaces import Detection, ObjectModel, PoseHypothesis, Scene
 from popoe.segmentor_detections import BOPDetectionsSegmentor
 
@@ -133,36 +132,10 @@ def build_pem_bop_command(dataset: str,
     return ExternalCommand(tuple(argv), cwd=str(_pem_dir(sam6d_root)))
 
 
-def run_external_command(command: ExternalCommand, **kwargs) -> subprocess.CompletedProcess:
-    """Run an `ExternalCommand`.
-
-    This helper is intentionally thin; production orchestration can still use
-    the command's `argv/cwd/env` directly in another process manager or service.
-    """
-
-    popen_kwargs = command.as_subprocess_kwargs()
-    popen_kwargs.update(kwargs)
-    return subprocess.run(**popen_kwargs)
-
-
 class SAM6DIsmDetectionsSegmentor(BOPDetectionsSegmentor):
     """File-backed Segmentor for SAM-6D ISM detections."""
 
     source = SAM6D_SOURCE
-
-    def __init__(self, detections_json: str, topk: int = 2,
-                 merge_labels: Optional[dict] = None,
-                 iou_dedupe: float = 0.9,
-                 min_pixels: int = 100,
-                 source: str = SAM6D_SOURCE):
-        super().__init__(
-            detections_json,
-            topk=topk,
-            merge_labels=merge_labels,
-            iou_dedupe=iou_dedupe,
-            min_pixels=min_pixels,
-            source=source,
-        )
 
 
 @dataclass(frozen=True)

@@ -25,7 +25,7 @@ entrypoints, under the dual-disclosure discipline of `../gedi/EXPERIMENTS.md`
 ## FreeZeV2 §IV-A experimental-setup conformance audit (2026-08-06)
 
 Source: the Experimental Setup section (**§IV-A**, under "IV. Results") of
-`2506.09784.pdf` = `papers/2506.09784v1.pdf` in the gedi archive. That single
+`../gedi/papers/2506.09784v1.pdf`. That single
 tech report is the source for **both** FreeZeV2 (Table II Row 18) and
 FreeZeV2-Accurate (Row 19); Row 19 is the BOP Challenge 2024 winner and is
 identified by the paper itself as "entry **FreeZeV2.1** in the leaderboard"
@@ -139,6 +139,31 @@ availability limit when the formal recipe froze on 2026-07-30, and
 `muse-repro` is *not* required to cover them. Two claims are withdrawn:
 "no downloadable masks" (gedi `notes.md`) and "authors only published these
 two sets / 不可能" (gedi `TODO.md`) — both were wrong.
+
+**Vintage caveat vs FreeZeV2.1(905) — added 2026-08-24.** The files above are
+the 2025-08-26 batch, and that batch is MUSE's *earliest* BOP submission.
+FreeZeV2.1's own leaderboard submissions are dated **2024-11-29/30**
+(`method_info/905`) — nine months earlier. Whatever MUSE masks 905 consumed,
+they are therefore **not** the artefacts we use. Composition still matches
+(both sides are CNOS + SAM-6D + NIDS + MUSE combined as an unfiltered union),
+but **"the same four sources" must never be read as "the same four files"**.
+The same distinction applies to SAM-6D, where BOP carries several variants
+spanning 5.3 pt of mean segmentation AP and the paper names only "SAM-6D": we
+pin 441, they do not say.
+
+Direction and size of the resulting bias:
+
+- **Direction is unknown but plausibly against us.** If MUSE improved over those
+  nine months, our detection input is the stronger one, which would make the
+  pose-stage residual we report a lower bound rather than an upper one.
+- **Size is bounded from outside by the leaderboard itself.** FreeZeV2 (756,
+  three sources, submitted 2024-09) to FreeZeV2.1 (905, four sources *plus* SAR
+  and the other v2.1 deltas) is +0.7 pt on LM-O and +0.9 pt on YCB-V **in
+  total**, so MUSE's marginal contribution on their side is at most that —
+  small next to the residual either comparator row carries.
+- **Our own leave-MUSE-out margin has never been measured.** A four-way minus
+  MUSE arm would bound this from our side instead of theirs; until it exists,
+  this caveat rests on their numbers, not ours.
 
 Two traps if these files are re-fetched:
 
@@ -430,7 +455,7 @@ done
 | Datasets | LM-O + YCB-V; one full BOP test run each |
 | Detection inputs | CNOS + SAM6D (official 441) + NIDS + MUSE official JSONs under `data/detections/` — the four-source composition of the paper's rows-18/19 merged segmentation cell. The paper-style UNFILTERED union comes from `--min-mask-pixels 0` + `--mask-iou-dedupe 1.1` (cross-source masks are never deduped by design); `--merge none` separately disables the YCB-V clamp-pair label pooling (a no-op on LM-O) |
 | Scoring | Paper Eq.7 three-term form with `--use-s-coarse` and `--eq5-terms` (both feature terms in the Eq.5 formulation: target->query top-k pool, fixed \|P_T^sparse\| denominator); Eq.7 exponents are **pinned-by-us** to unit exponents |
-| Leaderboard comparator | A / four-way -> FreeZeV2.1(905) LM-O/YCB-V = 0.771 / 0.915 — **detection-matched** (same four sources); label the SAR + `M=2N` + render-scoring confounds. Paper Row 18 (75.9 / 91.3, four-way no SAR, self-reported, no leaderboard row) is auxiliary reference only |
+| Leaderboard comparator | A / four-way -> FreeZeV2.1(905) LM-O/YCB-V = 0.771 / 0.915 — **detection-matched** (same four sources; same *composition*, NOT the same files — see the MUSE vintage caveat in the §IV-A setup section); label the SAR + `M=2N` + render-scoring confounds. Paper Row 18 (75.9 / 91.3, four-way no SAR, self-reported, no leaderboard row) is auxiliary reference only |
 | Artifacts | `$RUN/{lmo,ycbv}/` each contains `poses.csv`, `cand.csv`, `RECIPE.md`, `AR_SUMMARY.md`, `bop_server.md`, `grasp_summary.md` |
 | Cautions | **Rerank + render score + M=2N carried (decision 13)**: the faithful arms align to v2.1 (Row 19), which carries SAR, M=2N and render scoring — popoe's `--render-rerank --render-score --mask-m 2n` are pinned-by-us approximations of those three (see the v2.1-only deltas table), disclosed as such, never as the official components. Dense resampling uses `rng(0)` where invoked and is independent of `--seed`. Encoding degradation is explicit in logs as `DEGRADE`. These runs are not bit/row comparable to historical anchors because seed and implementation fixes are new variables; the pre-decision-13 dev anchors (faithful 0.7314 / tuned 0.8174) are void — superseded by the 2026-08-07 re-anchor @ `efe97ab`: faithful-4way v4 **0.7369** / tuned-4way r3 **0.8243** AR(2/3) (LM-O obj-1 smoke, official-441 four-way; `TRIAGE_20260806.md` §F). |
 
@@ -628,7 +653,7 @@ done
 | Datasets | LM-O + YCB-V; one full BOP test run each |
 | Detection inputs | CNOS + SAM6D + NIDS + official MUSE JSONs under `data/detections/`; `muse` means downloaded official artefacts, not `muse-repro` |
 | Scoring | Campaign2 tuned ChampionScorer: grid32, weights `1.0,0.7,0.5,0.3,0.2`; YCB-V uses `--merge ycbv --use-s-coarse`, LM-O uses `--merge none` and no `--use-s-coarse` |
-| Leaderboard comparator | B / four-way -> FreeZeV2.1(905) LM-O/YCB-V = 0.771 / 0.915 — detection-matched (same four sources); label the SAR + `M=2N` + render-scoring confounds. A/four-way -> B/four-way is the clean improvement-package column (identical detection inputs) |
+| Leaderboard comparator | B / four-way -> FreeZeV2.1(905) LM-O/YCB-V = 0.771 / 0.915 — detection-matched (same four sources; same *composition*, NOT the same files — see the MUSE vintage caveat in the §IV-A setup section); label the SAR + `M=2N` + render-scoring confounds. A/four-way -> B/four-way is the clean improvement-package column (identical detection inputs) |
 | Artifacts | `$RUN/{lmo,ycbv}/` each contains `poses.csv`, `cand.csv`, `RECIPE.md`, `AR_SUMMARY.md`, `bop_server.md`, `grasp_summary.md` |
 | Cautions | Rerank scope differs from official SAR: popoe only reorders PCA flip variants. Dense resampling uses `rng(0)` where invoked and is independent of `--seed`. Encoding degradation is explicit in logs as `DEGRADE`. These runs are not bit/row comparable to historical anchors because seed, rerank and implementation fixes are new variables. |
 
@@ -1196,7 +1221,7 @@ sensitivity — see `LEADERBOARD_ALIGNMENT.md` ignore sweep).
 |---|---|
 | `cnos` / `sam6d` / `nids` / `muse` | Official or precomputed JSON. **Nothing in popoe writes `muse`.** |
 | `muse-repro` | `popoe.segmentor_muse` / `popoe-bop-muse` reimplementation |
-| `cnos-lab` / `cnos-live` | Self-built CNOS tracks (lab / live; `cnos-lab` formerly `cnos-v3`) — not paper headline |
+| `cnos-lab` | Self-built CNOS lab track (formerly `cnos-v3`) — not paper headline |
 
 ### Remaining follow-up
 
@@ -1224,15 +1249,14 @@ Produces per-source `*_overlay.png` / `*_mask.png` / `*_crop.png` plus
 
 ## Solver A/B ledger (2026-07-26)
 
-**Not a parity row and not a performance claim.** ARCHITECTURE.md's
-Pluggability section quotes these to rank three `PoseSolver` implementations
-against *each other* through one identical chain; it states outright that the
-table "is not a performance claim for popoe". `solver_swap_demo` is not the
-evaluated pipeline (it runs `FreeZeScorer` on GT masks at fixed thresholds) and
-obj 5 is a known-weak registration case — `recall@0.1d` is 0.000 for all three.
-Ledgered here because the previous version of this table was withdrawn for
-being unverifiable (ISSUES.md 2026-07-26), so its replacement should be
-reachable from the ledger rather than from prose alone.
+**Not a parity row and not a performance claim.** This is the sole home of the
+solver-swap ranking: three `PoseSolver` implementations against *each other*
+through one identical chain. [ARCHITECTURE.md](ARCHITECTURE.md#pluggability-proven--the-posesolver-stage)
+describes the seam; it does not quote these numbers. `solver_swap_demo` is not
+the evaluated pipeline (it runs `FreeZeScorer` on GT masks at fixed thresholds)
+and obj 5 is a known-weak registration case — `recall@0.1d` is 0.000 for all
+three. Ledgered here because the previous version of this table was withdrawn
+for being unverifiable (ISSUES.md 2026-07-26).
 
 Metric: MSSD via bop_toolkit `pose_error.mssd`, symmetries expanded from
 `models_eval/models_info.json` (obj 5 -> 1 transform, identity: BOP declares the

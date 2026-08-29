@@ -151,27 +151,11 @@ def adapt_nidsnet_json(input_json: str,
 class NIDSNetDetectionsSegmentor(BOPDetectionsSegmentor):
     """File-backed Segmentor for NIDS-Net predictions.
 
-    This is a provenance-specific wrapper over the generic detections segmentor.
-    It deliberately does not import or run NIDS-Net; run NIDS in its own
-    environment/service, adapt the output JSON if needed, then point this class
-    at the file.
+    Provenance wrapper over the generic detections segmentor. Does not import
+    or run NIDS-Net; point this at an adapted detections JSON.
     """
 
     source = "nids"
-
-    def __init__(self, detections_json: str, topk: int = 2,
-                 merge_labels: Optional[dict] = None,
-                 iou_dedupe: float = 0.9,
-                 min_pixels: int = 100,
-                 source: str = "nids"):
-        super().__init__(
-            detections_json,
-            topk=topk,
-            merge_labels=merge_labels,
-            iou_dedupe=iou_dedupe,
-            min_pixels=min_pixels,
-            source=source,
-        )
 
 
 def _main(argv: Optional[Sequence[str]] = None) -> int:

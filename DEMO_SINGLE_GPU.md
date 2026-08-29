@@ -176,8 +176,9 @@ no linter flags them — which is how this survived.
   has only ever been consumed as pre-generated detections JSON. Its stack
   (GroundingDINO + SAM + DINOv2) is MUSE-shaped, so it is estimated at ~7.9 GB.
   The ~37 GB four-way total carries that one estimate.
-- The CNOS row is popoe's **live SAM2-AMG surrogate** (`cnos-live`), not the
-  official CNOS/FastSAM producer. Official FastSAM is lighter than SAM2-L, so
+- The CNOS row was popoe's **live SAM2-AMG surrogate** (`cnos-live`), not the
+  official CNOS/FastSAM producer. That live path was removed; SAM2 AMG now
+  lives only as `SAMSegmentor`. Official FastSAM is lighter than SAM2-L, so
   that row is likely pessimistic by 1–2 GB.
 - Latencies are one YCB-V frame (640×480) on one scene; proposal counts and
   therefore DINOv2 embedding time vary with clutter.

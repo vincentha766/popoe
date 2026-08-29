@@ -12,7 +12,7 @@ selection — otherwise the diagnostic dump would not describe the frozen runs.
 import numpy as np
 import pytest
 
-pytest.importorskip("open3d")            # feature_aware_score -> pose_estimator
+pytest.importorskip("open3d")            # feature_aware_score -> registration
 
 from popoe.interfaces import PointFeatures, PoseHypothesis
 from popoe.scoring import ChampionScorer

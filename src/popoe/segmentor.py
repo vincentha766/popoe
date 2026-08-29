@@ -9,30 +9,26 @@ Why no fallback inside an implementation
 ----------------------------------------
 It used to be inside: `SAMSegmentor.segment` silently dropped to depth
 connected-components on load failure, on generate() exception, AND on an empty
-result; `CNOSSegmentor` silently dropped to a sliding-window variant. Two
-things that costs you:
+result. Two things that costs you:
 
   * **You cannot tell what actually ran.** A run on a box without the SAM2
     checkpoint produced depth-blob masks while every log line, config and
-    cache key still said "CNOS". `Detection.source` + `FirstAvailableSegmentor
-    .last_used` now make the answer explicit and machine-readable.
+    cache key still said the method you asked for. `Detection.source` +
+    `FirstAvailableSegmentor.last_used` now make the answer explicit.
   * **Scores stop being comparable.** `score` means a different thing per
-    method (cosine similarity / SAM predicted-IoU / area fraction). The old
-    CNOS fallback appended depth-blob AREA FRACTIONS into a list of DINO
-    COSINE SIMILARITIES and sorted the two together — a blob covering 40% of
-    the frame (0.40) outranked a genuine template match (0.35). Splitting the
-    methods keeps one score semantics per list; the chain returns one
-    segmentor's output, never a blend.
+    method (SAM predicted-IoU / area fraction). Merging them ranked a large
+    depth blob above a genuine mask. The chain returns one segmentor's
+    output, never a blend.
 
 Fallback is a CALLER's policy, so the caller composes it and can see the
 outcome:
 
     seg = FirstAvailableSegmentor([
-        CNOSSegmentor(renderer),      # SAM2 + DINOv2 templates
+        SAMSegmentor(),               # SAM2 AMG, source=sam2-amg
         DepthSegmentor(),             # no deps; always available
     ])
     dets = seg.segment(scene, obj)
-    print(seg.last_used)              # -> "cnos-live" or "depth-cc"
+    print(seg.last_used)              # -> "sam2-amg" or "depth-cc"
 
 Only `SegmentorUnavailable` (missing package / missing checkpoint) advances the
 chain. A runtime failure — CUDA OOM, a corrupt image — propagates: masking real
@@ -59,7 +55,6 @@ from popoe.interfaces import BackendUnavailable, Detection, ObjectModel, Scene
 torch_cudnn_disabled = False  # set on first heavy import; see _disable_cudnn()
 
 # SAM2.1 configs (official sam-2 >= 1.0) and matching checkpoints (092824 release).
-# Single source of truth — segmentor_cnos.py imports these rather than re-listing.
 SAM2_CONFIGS = {
     'tiny':  ('configs/sam2.1/sam2.1_hiera_t.yaml',  'sam2.1_hiera_tiny.pt'),
     'small': ('configs/sam2.1/sam2.1_hiera_s.yaml',  'sam2.1_hiera_small.pt'),
@@ -178,8 +173,8 @@ class SAMSegmentor:
     scene contains, ranked by SAM's predicted IoU, with NO regard for `obj`.
 
     `score` is SAM's predicted_iou (mask quality), NOT a match confidence —
-    use CNOSSegmentor if you need candidates ranked by resemblance to the CAD
-    model."""
+    use a template-matching segmentor (CNOS-lab, MUSE) if you need candidates
+    ranked by resemblance to the CAD model."""
 
     source = 'sam2-amg'
 
@@ -269,13 +264,3 @@ class DepthSegmentor:
                                       source=self.source))
         dets.sort(key=lambda d: -d.score)
         return dets[: self.n_masks]
-
-
-def get_dense_target_pcd(depth, mask, intrinsics):
-    """Build dense point cloud from depth map within mask."""
-    fx, fy, cx, cy = intrinsics['fx'], intrinsics['fy'], intrinsics['cx'], intrinsics['cy']
-    ys, xs = np.where(mask & (depth > 0))
-    d = depth[ys, xs]
-    X = (xs - cx) * d / fx
-    Y = (ys - cy) * d / fy
-    return np.stack([X, Y, d], axis=1).astype(np.float32)

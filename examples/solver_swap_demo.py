@@ -13,7 +13,7 @@ Ranking is by **MSSD** (bop_toolkit's surface distance, symmetries expanded from
 An earlier A/B here ranked on raw geodesic rotation and was withdrawn: under that
 metric ~half of all instances sit in a 180°-flipped mode for EVERY solver, so the
 median lands on a bimodal boundary where 3 points of flip rate swing it 125°
-(ARCHITECTURE.md, Pluggability; ISSUES.md 2026-07-26). Those flips are real
+(REPRODUCTION.md Solver A/B ledger; ISSUES.md 2026-07-26). Those flips are real
 failures — BOP declares obj 5 NOT symmetric
 (`get_symmetry_transformations` -> 1, identity), so a flip is worth ~0.5 d under
 MSSD. Rotation and translation are still printed, for continuity only; do not
@@ -42,8 +42,8 @@ from popoe.datasets.bop import find_instances, load_inputs, load_gt
 
 
 # MSSD recall thresholds, as fractions of object diameter. 0.2d and 0.5d are
-# the two ARCHITECTURE.md's Pluggability table quotes; 0.05d/0.1d bound the
-# strict end (all three solvers score 0.000 at 0.1d on obj 5).
+# the two columns the REPRODUCTION.md Solver A/B ledger quotes; 0.05d/0.1d
+# bound the strict end (all three solvers score 0.000 at 0.1d on obj 5).
 RECALL_FRACS = (0.05, 0.10, 0.20, 0.50)
 
 
@@ -152,8 +152,8 @@ def main():
         if not errs:
             continue
         m = np.array([e[0] for e in errs])
-        # 0.2d and 0.5d are the columns ARCHITECTURE.md's table quotes, so the
-        # summary must print them: they were previously recoverable only by
+        # 0.2d and 0.5d are the columns the REPRODUCTION.md ledger quotes, so
+        # the summary must print them: they were previously recoverable only by
         # re-deriving them from the per-instance rows above. Built from one
         # tuple so the labels cannot drift from the thresholds.
         rec = "  ".join(f"@{f:g}d {(m < f * diameter).mean():.3f}"

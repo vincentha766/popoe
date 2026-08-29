@@ -24,8 +24,8 @@ and ships multiple `PoseSolver` implementations to demonstrate pluggability.
 
 > Status: research code, `v0.1`. The framework layer (contracts + fusion) is
 > covered by tests; the reference implementation runs on a CUDA GPU with the
-> external models below. See [ARCHITECTURE.md](ARCHITECTURE.md) for the design
-> and the verification story.
+> external models below. See [ARCHITECTURE.md](ARCHITECTURE.md) for the design.
+> Measured claims live in [REPRODUCTION.md](REPRODUCTION.md).
 
 ## Install
 
@@ -117,18 +117,15 @@ weaker method under the same name. Substitution is the caller's call, and the
 caller can see what ran:
 
 ```python
-from popoe.segmentor import DepthSegmentor, FirstAvailableSegmentor
-from popoe.segmentor_cnos import CNOSSegmentor, DepthBoxMasker, DinoWindowSegmentor
+from popoe.segmentor import DepthSegmentor, FirstAvailableSegmentor, SAMSegmentor
 
 seg = FirstAvailableSegmentor([
-    CNOSSegmentor(renderer),                                   # SAM2 + DINOv2, source=cnos-live
-    DinoWindowSegmentor(renderer, masker=DepthBoxMasker()),    # no SAM2 needed
-    DepthSegmentor(),                                          # no deps at all
+    SAMSegmentor(),       # SAM2 AMG, source=sam2-amg
+    DepthSegmentor(),     # no deps at all
 ])
 dets = seg.segment(scene, obj)
-seg.last_used      # -> 'cnos-live' | 'dino-window' | 'depth-cc'
-dets[0].source     # per detection; the window segmentor appends its masker,
-                   # e.g. 'dino-window+depth-box' — survives into the CSV
+seg.last_used      # -> 'sam2-amg' | 'depth-cc'
+dets[0].source     # per detection — survives into the CSV
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md#the-availability-contract-no-hidden-fallbacks)
@@ -138,10 +135,11 @@ poisons the config-addressed cache).
 A solver only has to *propose* candidates; the feature-aware `PoseScorer` +
 `Selector` *dispose*. So a geometry-only RANSAC can emit several hypotheses
 (`Open3DFeatureRansacSolver(n_restarts=8)`) and let the existing scorer choose,
-with no new scoring code. Measured on MSSD over YCB-V obj 5, that roughly halves
-the 1-shot median error — though it does not catch the hand-rolled feature-aware
-solver. See
-[ARCHITECTURE.md](ARCHITECTURE.md#pluggability-proven--the-posesolver-stage).
+with no new scoring code. See
+[ARCHITECTURE.md](ARCHITECTURE.md#pluggability-proven--the-posesolver-stage)
+for the seam, and
+[REPRODUCTION.md](REPRODUCTION.md#solver-ab-ledger-2026-07-26)
+for the measured ranking (not a performance claim for popoe).
 
 ## Detections (segmentation sources)
 
@@ -187,7 +185,6 @@ CNOS naming is deliberately split:
 |--------|---------|
 | `cnos` | Official CNOS/CNOS-FastSAM predictions, public BOP files, or `external/cnos` output |
 | `cnos-lab` | Local lab recipe (formerly `cnos-v3`): proposal masks -> depth size gate -> DINOv2 foreground-patch rank |
-| `cnos-live` | Existing simplified live CNOS-style segmentor (`CNOSSegmentor`), not an official result |
 
 The ensemble's fourth member, **MUSE**, publishes **no code**, so it has no
 external producer to adapt — but its **masks are public for all seven
@@ -305,7 +302,7 @@ src/popoe/               # method-agnostic pipeline
   registration.py        # RANSAC / ICP / feature-aware scoring primitives
   adapters.py            # generic stage adapters (RansacSolver/ICPRefiner/selector)
   scoring.py             # ChampionScorer (evaluated scorer)
-  renderer.py  segmentor.py  segmentor_cnos.py  visualizer.py
+  renderer.py  segmentor.py  segmentor_cnos_lab.py  segmentor_cnos_official.py
   solvers/open3d_ransac.py  solvers/gpu_ransac.py  solvers/teaser.py
   metrics/vsd.py  metrics/ar.py
   datasets/bop.py

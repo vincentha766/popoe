@@ -131,11 +131,9 @@ def test_an_oom_during_model_load_is_not_treated_as_unavailability(monkeypatch):
 
     monkeypatch.setattr(torch.hub, "load", _oom)
 
-    from popoe.segmentor_cnos import DinoV2Backbone
     from popoe.segmentor_cnos_lab import DinoV2ForegroundPatchExtractor
 
-    for loader in (lambda: DinoV2Backbone(device="cpu").model,
-                   lambda: DinoV2ForegroundPatchExtractor(device="cpu").model):
+    for loader in (lambda: DinoV2ForegroundPatchExtractor(device="cpu").model,):
         with pytest.raises(RuntimeError) as excinfo:
             loader()
         assert not isinstance(excinfo.value, SegmentorUnavailable)
@@ -152,10 +150,10 @@ def test_a_missing_hub_cache_is_still_unavailability(monkeypatch):
 
     monkeypatch.setattr(torch.hub, "load", _no_network)
 
-    from popoe.segmentor_cnos import DinoV2Backbone
+    from popoe.segmentor_cnos_lab import DinoV2ForegroundPatchExtractor
 
     with pytest.raises(SegmentorUnavailable):
-        DinoV2Backbone(device="cpu").model
+        DinoV2ForegroundPatchExtractor(device="cpu").model
 
 
 def test_cuda_availability_errors_stay_routable():
@@ -213,13 +211,13 @@ def test_an_arch_mismatch_still_routes_to_the_next_segmentor(monkeypatch):
 
     monkeypatch.setattr(torch.hub, "load", _wrong_arch)
 
-    from popoe.segmentor_cnos import DinoV2Backbone
+    from popoe.segmentor_cnos_lab import DinoV2ForegroundPatchExtractor
 
     class _DinoLoadGuardSegmentor:
         source = "dinov2-load"
 
         def __init__(self):
-            self.backbone = DinoV2Backbone(device="cpu")
+            self.backbone = DinoV2ForegroundPatchExtractor(device="cpu")
 
         def segment(self, scene, obj):
             self.backbone.model

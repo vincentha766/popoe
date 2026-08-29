@@ -14,7 +14,7 @@ mark("00 cuda context only")
 
 from popoe.segmentor_muse import (GroundingDinoBoxProposer, SAM2BoxMaskRefiner,
                                   DinoV2ClsGemEmbedder)
-from popoe.segmentor_cnos_v3 import square_crop
+from popoe.segmentor_cnos_lab import square_crop
 
 @dataclass
 class FakeScene:

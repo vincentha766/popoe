@@ -7,10 +7,9 @@ building blocks the solver / refiner / scorer stages wrap; they carry no
 FreeZe-specific state (encoders, fusion, PCA) and depend only on
 numpy / scikit-learn (open3d is imported lazily, inside icp_refinement only).
 
-Historically these lived in `popoe.pose_estimator` next to the inline FreeZeV2
-monolith; they were extracted so that generic stages (solvers/, scoring,
-adapters) no longer import a FreeZe-named module. `popoe.pose_estimator`
-remains as a deprecated re-export shim.
+Historically these lived next to the inline FreeZeV2 monolith; they were
+extracted so that generic stages (solvers/, scoring, adapters) no longer
+import a FreeZe-named module.
 """
 
 import numpy as np

@@ -7,9 +7,8 @@ This is the lab/real-scene track, deliberately separate from official CNOS:
   -> DINOv2 foreground-patch ranking.
 
 Formerly named ``cnos-v3``: the "v3" was the iteration count of gedi's
-``cnos_match3.py`` lab script, not an official CNOS release — renamed because
-outside readers had no way to know that. ``popoe.segmentor_cnos_v3`` remains as
-an import shim; old artifacts carrying ``source="cnos-v3"`` mean this recipe.
+``cnos_match3.py`` lab script, not an official CNOS release. Old artifacts
+carrying ``source="cnos-v3"`` mean this recipe.
 
 The core gate and patch scoring are numpy-only and unit-testable. Heavy
 components (SAM2 proposals, DINOv2 patch extraction, template image loading)
@@ -65,7 +64,7 @@ def square_crop(img: np.ndarray, mask: np.ndarray,
     # Clamping each side independently returned a NON-square window for any
     # object near an image border, and the .resize((size, size)) below then
     # squashed the object's aspect ratio against a square-rendered template
-    # bank. Same defect as _masked_square_crop in segmentor_cnos.py.
+    # bank. Same defect as a crop that resized RGB without the mask.
     win = min(2 * half, h_img, w_img)
     Y0 = int(np.clip(cy - win // 2, 0, h_img - win))
     X0 = int(np.clip(cx - win // 2, 0, w_img - win))

@@ -26,10 +26,6 @@ from popoe.segmentor import (                                         # noqa: E4
     DepthSegmentor, FirstAvailableSegmentor, SAMSegmentor,
     SegmentorUnavailable,
 )
-from popoe.segmentor_cnos import (                                    # noqa: E402
-    CNOSSegmentor, CNOSTemplateBank, DepthBoxMasker, DinoV2Backbone,
-    DinoWindowSegmentor, SAM2BoxMasker,
-)
 
 PASS, FAIL = [], []
 
@@ -125,94 +121,40 @@ def main():
     check("nvdiffrast and trimesh renders DIFFER (justifies the cache key)",
           renders_differ)
 
-    # ── DINOv2 backbone ─────────────────────────────────────────────────
-    print("\n[dino]", flush=True)
-    dino = DinoV2Backbone(device="cuda")
-    check("DinoV2Backbone.cls_token -> (D,)",
-          lambda: dino.cls_token(scene.rgb, side=224).shape == (768,)
-          or (_ for _ in ()).throw(AssertionError(dino.cls_token(scene.rgb).shape)))
-    check("DinoV2Backbone.patch_tokens -> (n_ph, n_pw, D)",
-          lambda: dino.patch_tokens(scene.rgb).shape == (16, 16, 768)
-          or (_ for _ in ()).throw(AssertionError(dino.patch_tokens(scene.rgb).shape)))
-
-    # ── template bank ───────────────────────────────────────────────────
-    print("\n[templates]", flush=True)
-    bank = CNOSTemplateBank(nvd, dino, n_templates=12)
-
-    def bank_ok():
-        feats = bank.feats_for(obj)
-        assert feats.ndim == 2 and feats.shape[0] >= 8, f"only {feats.shape} templates"
-        norms = np.linalg.norm(feats, axis=1)
-        assert np.allclose(norms, 1.0, atol=1e-4), f"not L2-normed: {norms[:3]}"
-    check("CNOSTemplateBank renders + embeds, feats are L2-normed", bank_ok)
-    check("template bank is cached per obj_id (2nd call is free)",
-          lambda: bank.feats_for(obj) is bank.feats_for(obj)
-          or (_ for _ in ()).throw(AssertionError("re-rendered")))
-
     # ── SAM2 availability decides which segmentors can run ──────────────
     ckpt_dir = os.environ.get("POPOE_SAM2_CKPT", "/workspace/sam2_checkpoints")
     have_sam2 = os.path.exists(os.path.join(ckpt_dir, "sam2.1_hiera_small.pt"))
     print(f"\n[sam2] checkpoint present: {have_sam2} ({ckpt_dir})", flush=True)
 
-    # ── DinoWindowSegmentor with the SAM2-free masker ───────────────────
-    print("\n[dino-window + depth masker]  (no SAM2 needed)", flush=True)
-    win = DinoWindowSegmentor(nvd, masker=DepthBoxMasker(), dino=dino, bank=bank,
-                              conf_threshold=-1.0, n_masks=3)
-
-    def window_ok():
-        dets = win.segment(scene, obj)
-        assert dets, "no detections"
-        assert dets[0].source == "dino-window+depth-box", dets[0].source
-        assert -1.0 <= dets[0].score <= 1.0, f"score {dets[0].score} not a cosine"
-        assert dets[0].mask.sum() > 100, "mask too small"
-        assert dets == sorted(dets, key=lambda d: -d.score), "not sorted by score"
-        print(f"          {len(dets)} dets, best cos={dets[0].score:.3f}, "
-              f"{dets[0].mask.sum()} px, source={dets[0].source}", flush=True)
-    check("DinoWindowSegmentor(DepthBoxMasker) segments + stamps source", window_ok)
-
-    # ── the chain: a REAL missing backend must be routed around, and said ──
-    # This is the property the whole refactor exists for. Point CNOS at an empty
-    # checkpoint dir: it must REFUSE, not quietly produce worse masks.
-    print("\n[chain] CNOS with an empty checkpoint dir -> must be UNAVAILABLE", flush=True)
+    # A REAL missing backend must be routed around, and said. Point SAM at an
+    # empty checkpoint dir: it must REFUSE, not quietly produce worse masks.
+    print("\n[chain] SAM with an empty checkpoint dir -> must be UNAVAILABLE", flush=True)
     empty_dir = os.path.join(tmp, "no_checkpoints_here")
     os.makedirs(empty_dir, exist_ok=True)
 
     def chain_routes_and_records():
-        broken = CNOSSegmentor(nvd, dino=dino, bank=bank, sam_ckpt_dir=empty_dir)
+        broken = SAMSegmentor(sam_ckpt_dir=empty_dir)
         raised = False
         try:
             broken.segment(scene, obj)
         except SegmentorUnavailable as e:
             raised = True
-            print(f"          CNOS correctly refused: {str(e).splitlines()[0]}", flush=True)
-        assert raised, "CNOS silently degraded instead of raising — the whole bug"
+            print(f"          SAM correctly refused: {str(e).splitlines()[0]}", flush=True)
+        assert raised, "SAM silently degraded instead of raising — the whole bug"
 
-        chain = FirstAvailableSegmentor([broken, win, DepthSegmentor()])
+        chain = FirstAvailableSegmentor([broken, DepthSegmentor()])
         dets = chain.segment(scene, obj)
         assert dets, "chain produced nothing"
-        assert chain.last_used == "dino-window", f"last_used={chain.last_used}"
-        assert all(d.source.startswith("dino-window") for d in dets), \
+        assert chain.last_used == "depth-cc", f"last_used={chain.last_used}"
+        assert all(d.source == "depth-cc" for d in dets), \
             f"provenance lost: {[d.source for d in dets]}"
         print(f"          chain.last_used={chain.last_used!r}  "
               f"sources={sorted({d.source for d in dets})}", flush=True)
-    check("missing SAM2 ckpt -> CNOS raises, chain falls through, provenance recorded",
+    check("missing SAM2 ckpt -> SAM raises, chain falls through, provenance recorded",
           chain_routes_and_records)
 
-    # ── the real CNOS path (needs the checkpoint) ───────────────────────
     if have_sam2:
-        print("\n[cnos] SAM2 AMG proposals -> DINOv2 rerank", flush=True)
-        cnos = CNOSSegmentor(nvd, dino=dino, bank=bank, conf_threshold=-1.0, n_masks=5)
-
-        def cnos_ok():
-            dets = cnos.segment(scene, obj)
-            assert dets, "no detections"
-            assert dets[0].source == "cnos-live", dets[0].source
-            assert -1.0 <= dets[0].score <= 1.0, f"score {dets[0].score} not a cosine"
-            assert dets[0].descriptor is not None and dets[0].descriptor.shape == (768,)
-            assert dets == sorted(dets, key=lambda d: -d.score), "not sorted"
-            print(f"          {len(dets)} dets, best cos={dets[0].score:.3f}, "
-                  f"{dets[0].mask.sum()} px", flush=True)
-        check("CNOSSegmentor end-to-end (AMG -> rerank)", cnos_ok)
+        print("\n[sam]", flush=True)
 
         def sam_ok():
             dets = SAMSegmentor(n_masks=3).segment(scene, obj)
@@ -220,21 +162,14 @@ def main():
             assert 0.0 <= dets[0].score <= 1.0, "predicted_iou out of range"
         check("SAMSegmentor end-to-end", sam_ok)
 
-        def sam_box_ok():
-            w2 = DinoWindowSegmentor(nvd, masker=SAM2BoxMasker(), dino=dino,
-                                     bank=bank, conf_threshold=-1.0, n_masks=3)
-            dets = w2.segment(scene, obj)
-            assert dets and dets[0].source == "dino-window+sam2-box", dets[0].source
-        check("DinoWindowSegmentor(SAM2BoxMasker) — masker is injectable", sam_box_ok)
-
-        def chain_prefers_cnos():
-            chain = FirstAvailableSegmentor([cnos, win, DepthSegmentor()])
+        def chain_prefers_sam():
+            chain = FirstAvailableSegmentor([SAMSegmentor(n_masks=3), DepthSegmentor()])
             dets = chain.segment(scene, obj)
-            assert chain.last_used == "cnos-live", chain.last_used
-            assert all(d.source == "cnos-live" for d in dets)
-        check("chain prefers CNOS when SAM2 IS available", chain_prefers_cnos)
+            assert chain.last_used == "sam2-amg", chain.last_used
+            assert all(d.source == "sam2-amg" for d in dets)
+        check("chain prefers SAM when SAM2 IS available", chain_prefers_sam)
     else:
-        print("  SKIP  CNOS / SAM paths — no SAM2 checkpoint", flush=True)
+        print("  SKIP  SAM paths — no SAM2 checkpoint", flush=True)
 
     # ── depth segmentor on a real depth map ─────────────────────────────
     print("\n[depth]", flush=True)
