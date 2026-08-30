@@ -112,11 +112,11 @@ Then consume it:
 
 ```python
 from popoe.datasets.frames import load_frame_manifest, load_scene_from_manifest
-from popoe.segmentor_nids import NIDSNetDetectionsSegmentor
+from popoe.segmentor_detections import BOPDetectionsSegmentor
 
 frame = load_frame_manifest("captures/frame_000042.json")
 scene = load_scene_from_manifest(frame)
-seg = NIDSNetDetectionsSegmentor(frame.detections_path, topk=2)
+seg = BOPDetectionsSegmentor(frame.detections_path, source="nids", topk=2)
 dets = seg.segment(scene, obj)
 ```
 

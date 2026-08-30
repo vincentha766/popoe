@@ -27,7 +27,7 @@ reference = ["torch", "torchvision", "open3d", "opencv-python", "trimesh", "Pill
 # The MUSE reimplementation (segmentor_muse): Grounding DINO comes from
 # transformers, which nothing else here needs. SAM2 is external — see above.
 muse = ["torch", "transformers", "Pillow", "pycocotools"]
-dev = ["pytest", "pandas"]   # pandas: examples/rule_replay.py offline rule sweep
+dev = ["pytest"]
 
 [project.urls]
 Documentation = "https://github.com/vincentha766/popoe/blob/main/ARCHITECTURE.md"

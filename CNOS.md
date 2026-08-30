@@ -56,10 +56,11 @@ For source-pinned local development, the default path is `external/cnos`.
 Prefer public BOP/CNOS detections when available:
 
 ```python
-from popoe.segmentor_cnos_official import CNOSDetectionsSegmentor
+from popoe.segmentor_detections import BOPDetectionsSegmentor
 
-seg = CNOSDetectionsSegmentor(
+seg = BOPDetectionsSegmentor(
     "data/detections/cnos/cnos-fastsam_lmo-test.json",
+    source="cnos",
     topk=2,
 )
 ```
@@ -134,7 +135,7 @@ scene_id=0, image_id=0, category_id=1
 ```
 
 Stamp it to the frame/object you are going to evaluate before using
-`CNOSDetectionsSegmentor` (single-CAD path — preferred):
+`BOPDetectionsSegmentor(..., source="cnos")` (single-CAD path — preferred):
 
 ```bash
 popoe-cnos adapt-custom \
@@ -159,7 +160,7 @@ popoe-cnos adapt-custom \
 ```
 
 The adapted JSON keeps `source="cnos"` and can be consumed by
-`CNOSDetectionsSegmentor`. If you run the local lab recipe, write it under a
+`BOPDetectionsSegmentor`. If you run the local lab recipe, write it under a
 separate path such as `data/detections/cnos_lab/` and keep
 `source="cnos-lab"`.
 

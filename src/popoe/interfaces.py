@@ -1,19 +1,10 @@
 """
 popoe.interfaces — the stage contracts.
 
-This file is the *specification* layer: the data objects that flow between
-stages, and the Protocol each swappable stage must satisfy. Nothing here does
-heavy work; the reference implementations live in popoe.adapters,
-popoe.freeze.feature_extractor, popoe.registration, popoe.solvers, ... and are wired
-by `Pipeline` (see ARCHITECTURE.md).
-
-Design goal: every stage below can be re-implemented independently (a new
-segmentor, a new pose solver like TEASER++/MAC, a new fusion rule) without
-touching the others, as long as it honours the input/output contract.
-
-The Protocols use `typing.Protocol` (structural typing): an implementation does
-NOT need to import or subclass anything here — it just needs matching method
-signatures. This keeps implementations decoupled from the spec.
+Data objects that flow between stages, and the Protocol each swappable stage
+must satisfy. Implementations live in popoe.adapters, popoe.freeze,
+popoe.registration, popoe.solvers. `Pipeline` is the reference composition;
+the evaluated BOP loop is examples/bop_eval.py.
 """
 
 from __future__ import annotations
@@ -38,8 +29,7 @@ class BackendUnavailable(RuntimeError):
     poisons the config-addressed cache, whose key fingerprints the config you
     ASKED for, not the method that silently ran instead (see cache.py).
 
-    Substitution is a CALLER's policy: the caller composes an explicit chain
-    (segmentor.FirstAvailableSegmentor) and can read back what ran.
+    Substitution is a CALLER's policy, not a silent fallback inside the stage.
 
     This is an *availability* signal, not an error channel. A runtime failure —
     CUDA OOM, a corrupt mesh — must propagate: "the fallback handled it" is how
@@ -167,31 +157,18 @@ class ObjectModel:
 
 @dataclass(frozen=True)
 class CanonFrame:
-    """Canonicalisation convention shared by query & target so both live in the
-    same registration space: pts_canon = (pts - center) * scale.
+    """Query/target registration scale: pts_canon = pts * scale.
 
-    IMPORTANT — this must match the live convention in
-    popoe/freeze/feature_extractor.py exactly, or GeDi sees a different scale and
-    poses change:
-      * center = 0  (the current code does NOT centre — it applies pure scaling
-        `pts * scale`; centring is kept in the contract for generality but is
-        zero today).
-      * scale  = 1 / max_extent, where max_extent is the largest side of the
-        QUERY sampled point cloud's bounding box in metres
-        (`np.ptp(pts, axis=0).max()`), NOT the BOP diameter. GeDi's r_lrf=0.5 m
-        was trained on ~1 m scenes, so the object is rescaled to ~1 m extent.
-
-    The scale is therefore computed by the query encoder from its sampled points
-    and then REUSED on the target side (the `_canon_scale` side-channel today).
+    scale = 1 / max_extent of the QUERY sampled cloud (metres), NOT the BOP
+    diameter. GeDi's r_lrf=0.5 m was trained on ~1 m scenes. Produced by query
+    encoding and reused on the target side.
     """
-    center: np.ndarray                  # (3,)
     scale: float
 
     @classmethod
     def from_points(cls, pts: np.ndarray) -> "CanonFrame":
-        """Reproduce the live convention from a query point cloud (metres)."""
         extent_m = float(np.ptp(pts, axis=0).max())
-        return cls(center=np.zeros(3, np.float32), scale=1.0 / max(extent_m, 1e-6))
+        return cls(scale=1.0 / max(extent_m, 1e-6))
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -217,7 +194,7 @@ class Detection:
 @dataclass
 class PointFeatures:
     """Query AND target features share ONE schema so matching is symmetric.
-    `feats` is already fused and L2-normed (see FeatureFusion)."""
+    `feats` is already fused and L2-normed."""
     pts: np.ndarray                     # (N, 3) points, metres, camera or model frame
     feats: np.ndarray                   # (N, D) fused per-point descriptors
     pts_dense: Optional[np.ndarray] = None   # (M, 3) dense cloud for ICP
@@ -235,170 +212,132 @@ class PoseHypothesis:
 
 
 # ════════════════════════════════════════════════════════════════════════
-# 3. The swappable stages. Implement any one to extend the pipeline.
+# 3. Swappable stages. Implement any one to extend the pipeline.
 # ════════════════════════════════════════════════════════════════════════
 
 @runtime_checkable
 class Segmentor(Protocol):
-    """Stage 0. GT-mask / CNOS / SAM / multi-mask top-K all fit here."""
+    """Stage 0. File detections / CNOS / SAM / MUSE all fit here."""
     def segment(self, scene: Scene, obj: ObjectModel) -> list[Detection]: ...
 
 
 @runtime_checkable
 class PointDescriptor(Protocol):
-    """Per-point 3D geometric descriptor — the encoders' geometric branch.
+    """Per-point 3D geometric descriptor (GeDi / FPFH).
 
-    GeDi is the FreeZe default (`popoe.freeze.feature_extractor.load_gedi`, dispatched by `load_geometric_descriptor`);
-    FPFH (`popoe.descriptors.FPFHDescriptor`) is the hand-crafted control and
-    dGeDi the fast learned one. Both encoders call this and nothing else, so a
-    backbone swap is one env var (POPOE_GEOM_BACKBONE).
-
-    Contract:
-        pts:  (N, 3) keypoints to describe. Torch tensor or numpy array.
-        pcd:  (M, 3) support cloud the neighbourhoods are drawn from. At both
-              live call sites pts is a subset of pcd.
-        Both arrive already scaled by the CanonFrame (largest object extent
-        ~= 1.0), so every radius parameter is in canonical units — that is
-        what makes GeDi's r_lrf and FPFH's radii directly comparable, and it
-        is the invariant a new backbone must respect to be measured fairly.
-        returns: (N, D) float32. Rows that could not be described are NaN, the
-              invalid convention FeatureFusion.fuse expects. D may differ per
-              backbone (GeDi 64, FPFH 66): fusion matches the visual PCA dim
-              to it, so nothing downstream should hard-code a value.
-
-    An implementation MAY additionally accept a `role` keyword ("query" = CAD
-    model sampled all around, "target" = single-view depth cloud) when the two
-    sides need different treatment — FPFH does, because a normal's sign is
-    part of its descriptor. Call through `popoe.descriptors.describe()`, which
-    passes the role only to backbones whose signature accepts it, so
-    role-blind ones (GeDi, dGeDi) keep the two-argument form.
+    pts, pcd already scaled by CanonFrame (object extent ~= 1.0). Returns
+    (N, D) float32; undescribed rows are NaN. `role` is "query" (CAD, all
+    around) or "target" (single-view depth); role-blind backbones ignore it.
     """
-    def compute(self, pts, pcd) -> np.ndarray: ...
+    def compute(self, pts, pcd, role=None) -> np.ndarray: ...
 
 
 @runtime_checkable
 class FeatureFusion(Protocol):
-    """Combine per-point visual and geometric features into one descriptor.
-    Reference impl: popoe.freeze.fusion.DinoGeDiFusion. Swap for concat-only,
-    learned fusion, single-modality ablations, etc."""
+    """Combine per-point visual and geometric features into one descriptor."""
     def fuse(self, vis_feats: np.ndarray, geo_feats: np.ndarray,
              apply_skip_vis: bool = False) -> np.ndarray: ...
 
 
 @runtime_checkable
 class QueryEncoder(Protocol):
-    """Stage 1a. CAD -> sparse fused features (offline, cached per object).
-
-    The CanonFrame is an OUTPUT here, not an input: its scale is derived from
-    the sampled query points (see CanonFrame). Return it in
-    PointFeatures.meta['canon_frame'] so the target side can reuse it."""
+    """Stage 1a. CAD -> sparse fused features. CanonFrame is an OUTPUT in
+    PointFeatures.meta['canon_frame']."""
     def encode_query(self, obj: ObjectModel) -> PointFeatures: ...
 
 
 @runtime_checkable
 class TargetEncoder(Protocol):
-    """Stage 1b. Masked RGB-D -> sparse fused features (online, per detection)."""
+    """Stage 1b. Masked RGB-D -> sparse fused features."""
     def encode_target(self, scene: Scene, det: Detection,
                       obj: ObjectModel, frame: CanonFrame) -> PointFeatures: ...
 
 
 @runtime_checkable
 class PoseSolver(Protocol):
-    """Stage 2. Feature matching -> coarse pose(s). RANSAC today; TEASER++ / MAC /
-    consistency-graph are drop-in alternatives (the identified accuracy gap)."""
+    """Stage 2. Feature matching -> coarse pose(s). `frame` is unused by
+    current solvers (scale is already applied in the features); kept so a
+    solver that works in canonical space can read it."""
     def solve(self, query: PointFeatures, target: PointFeatures,
-              frame: CanonFrame) -> list[PoseHypothesis]: ...
+              frame: CanonFrame | None = None) -> list[PoseHypothesis]: ...
 
 
 @runtime_checkable
 class CoarseEstimator(Protocol):
-    """External/direct coarse pose producer.
-
-    This is for methods such as SAM-6D PEM or MegaPose-style services that
-    consume an RGB-D scene, a CAD object, and optionally a 2D detection, then
-    directly emit pose hypotheses. It intentionally sits next to `PoseSolver`
-    rather than replacing it: the FreeZe pipeline still solves from encoded
-    query/target features, while external full-pipeline producers can be
-    adapted without pretending they share that internal feature contract.
-    """
+    """External/direct coarse pose producer (SAM-6D PEM, MegaPose, …)."""
     def estimate(self, scene: Scene, obj: ObjectModel,
                  det: Optional[Detection] = None) -> list[PoseHypothesis]: ...
 
 
 @runtime_checkable
 class PoseRefiner(Protocol):
-    """Stage 3. Move a hypothesis' geometry (and report a geometric fitness in
-    breakdown), NOTHING about feature scoring. ICP and symmetry-refine are both
-    Refiners and can be chained. `query` is here because ICP aligns the query
-    point cloud to the target (query GEOMETRY), and sym-refine ignores it — a
-    refiner uses whatever it needs. Final feature scoring is a separate PoseScorer
-    stage (coupling point #3), so a new refiner never re-implements final_score."""
+    """Stage 3. Move geometry (and report fitness). Scoring is PoseScorer."""
     def refine(self, pose: PoseHypothesis, scene: Scene, obj: ObjectModel,
                query: PointFeatures, target: PointFeatures) -> PoseHypothesis: ...
 
 
 @runtime_checkable
 class PoseScorer(Protocol):
-    """Stage 3b. Assign the final score to a (refined) hypothesis. Owns the whole
-    feature-scoring concern that used to be split across solver and refiner:
-    fine re-score + the s_coarse/s_fine/s_icp combination. Swap to change the
-    scoring rule (e.g. drop s_fine, reweight) without touching solve/refine."""
+    """Stage 3b. Final feature score on a (refined) hypothesis."""
     def score(self, pose: PoseHypothesis,
               query: PointFeatures, target: PointFeatures) -> PoseHypothesis: ...
 
 
 @runtime_checkable
 class Selector(Protocol):
-    """Choose the winning hypothesis across candidate masks / poses. The
-    multi-mask top-K selection and adaptive-weight post-processing live here."""
+    """Pick the winning hypothesis across candidate masks / poses."""
     def select(self, candidates: list[PoseHypothesis]) -> Optional[PoseHypothesis]: ...
 
 
-@runtime_checkable
-class Metric(Protocol):
-    """Stage 4. VSD / MSSD / MSPD / ADD(-S) / grasp. Returns named scores."""
-    def compute(self, est: PoseHypothesis, gt: PoseHypothesis,
-                obj: ObjectModel, scene: Scene) -> dict: ...
-
-
-# Reference wiring — the control flow examples/ drive (see ARCHITECTURE.md).
 @dataclass
 class Pipeline:
+    """Reference composition of the stage contracts.
+
+    The evaluated BOP runner (`examples/bop_eval.py`) does extra work this
+    class does not (weight sweep, disk cache, multi-instance, resume). This
+    is the library wiring: segment → encode → solve → refine → score → select.
+    """
     segmentor: Segmentor
     query_encoder: QueryEncoder
     target_encoder: TargetEncoder
     solver: PoseSolver
     refiners: Sequence[PoseRefiner]
     selector: Selector
-    scorer: Optional[PoseScorer] = None   # None -> keep the score the solver/refiner set
+    scorer: Optional[PoseScorer] = None
     topk: int = 2
     _query_cache: dict = field(default_factory=dict)
 
     def run(self, scene: Scene, obj: ObjectModel) -> Optional[PoseHypothesis]:
-        # Keyed by (obj_id, mesh_path): BOP object ids are only unique within
-        # one dataset, and a Pipeline instance may be reused across two.
         qkey = (obj.obj_id, obj.mesh_path)
         q = self._query_cache.get(qkey)
         if q is None:
-            # Timed only on a miss, which is the point: this cache is per-Pipeline
-            # and in-memory, so a service restart re-pays the whole query encode.
             with profiling.stage("query_encode(miss)"):
                 q = self._query_cache[qkey] = self.query_encoder.encode_query(obj)
-        # CanonFrame is produced by query encoding and reused on the target side.
         frame = q.meta.get("canon_frame") or CanonFrame.from_points(q.pts)
+        install = getattr(self.target_encoder, "install_pca", None)
         cands: list[PoseHypothesis] = []
         with profiling.stage("segment"):
             dets = self.segmentor.segment(scene, obj)[: self.topk]
         for det in dets:
+            if install is not None:
+                if "pca_vis" not in q.meta:
+                    raise ValueError(
+                        f"target encoder {type(self.target_encoder).__name__} "
+                        f"exposes install_pca(), so it shares a per-object visual "
+                        f"PCA with the query side — but the query features for "
+                        f"obj_id={obj.obj_id} carry no 'pca_vis' snapshot to "
+                        f"re-install. Re-encode the query through an encoder "
+                        f"that snapshots its PCA.")
+                install(q.meta["pca_vis"])
             t = self.target_encoder.encode_target(scene, det, obj, frame)
             with profiling.stage("solve"):
                 hyps = list(self.solver.solve(q, t, frame))
             for h in hyps:
                 for r in self.refiners:
                     with profiling.stage("refine"):
-                        h = r.refine(h, scene, obj, q, t)     # geometry only
+                        h = r.refine(h, scene, obj, q, t)
                 if self.scorer is not None:
                     with profiling.stage("score"):
-                        h = self.scorer.score(h, q, t)        # final feature score
+                        h = self.scorer.score(h, q, t)
                 cands.append(h)
         return self.selector.select(cands)

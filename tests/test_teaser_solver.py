@@ -11,12 +11,8 @@ import pytest
 
 pytest.importorskip("teaserpp_python")
 
-from popoe.interfaces import CanonFrame, PointFeatures
+from popoe.interfaces import PointFeatures
 from popoe.solvers.teaser import TeaserSolver
-
-
-def _frame():
-    return CanonFrame(center=np.zeros(3), scale=1.0)
 
 
 def _rigid(seed=0):
@@ -51,14 +47,14 @@ def _err(Ra, ta, Rb, tb):
 
 def test_recovers_known_pose():
     q, t, R, tt = _matched_cloud(n=150, seed=2)
-    hyps = TeaserSolver(tau_inlier=0.003).solve(q, t, _frame())
+    hyps = TeaserSolver(tau_inlier=0.003).solve(q, t)
     assert len(hyps) == 1
     ang, terr = _err(R, tt, hyps[0].R, hyps[0].t)
     assert ang < 1.0 and terr < 2e-3            # clean data: near-exact
 
 def test_returns_shared_hypothesis_shape():
     q, t, *_ = _matched_cloud(seed=3)
-    h = TeaserSolver().solve(q, t, _frame())[0]
+    h = TeaserSolver().solve(q, t)[0]
     assert h.R.shape == (3, 3) and h.t.shape == (3,)
     # same breakdown key the other solvers / downstream stages rely on
     assert "s_coarse" in h.breakdown and h.score == h.breakdown["s_coarse"]
@@ -79,7 +75,7 @@ def test_uses_w1_features_not_dot_feats():
                       meta={"feats_w1": q.meta["feats_w1"]})
     t = PointFeatures(pts=t.pts, feats=rng.standard_normal(t.feats.shape),
                       meta={"feats_w1": t.meta["feats_w1"]})
-    h = TeaserSolver(tau_inlier=0.003).solve(q, t, _frame())
+    h = TeaserSolver(tau_inlier=0.003).solve(q, t)
     assert h, "should recover using feats_w1"
     ang, terr = _err(R, tt, h[0].R, h[0].t)
     assert ang < 1.0 and terr < 2e-3
@@ -88,8 +84,8 @@ def test_uses_w1_features_not_dot_feats():
 def test_deterministic():
     """TEASER++ has no RNG — two runs must agree exactly."""
     q, t, *_ = _matched_cloud(seed=4)
-    a = TeaserSolver().solve(q, t, _frame())[0]
-    b = TeaserSolver().solve(q, t, _frame())[0]
+    a = TeaserSolver().solve(q, t)[0]
+    b = TeaserSolver().solve(q, t)[0]
     assert np.array_equal(a.R, b.R) and np.array_equal(a.t, b.t)
 
 
@@ -104,7 +100,7 @@ def test_robust_to_majority_outlier_correspondences():
     bad = rng.choice(n, size=100, replace=False)
     ft[bad] = ft[rng.permutation(bad)]           # wrong-but-plausible matches
     t = PointFeatures(pts=t.pts, feats=ft, meta={"feats_w1": ft})
-    h = TeaserSolver(tau_inlier=0.003).solve(q, t, _frame())
+    h = TeaserSolver(tau_inlier=0.003).solve(q, t)
     assert h, "should survive 67% outlier correspondences"
     ang, terr = _err(R, tt, h[0].R, h[0].t)
     assert ang < 2.0 and terr < 3e-3
@@ -112,7 +108,7 @@ def test_robust_to_majority_outlier_correspondences():
 
 def test_noise_tolerance():
     q, t, R, tt = _matched_cloud(n=150, seed=6, noise=0.002)
-    h = TeaserSolver(tau_inlier=0.01).solve(q, t, _frame())
+    h = TeaserSolver(tau_inlier=0.01).solve(q, t)
     assert h
     ang, terr = _err(R, tt, h[0].R, h[0].t)
     assert ang < 5.0 and terr < 1e-2
@@ -132,18 +128,18 @@ def test_aborted_solve_returns_empty_not_garbage():
     feats = rng.standard_normal((n, 16))
     q = PointFeatures(pts=pts_q, feats=feats, meta={"feats_w1": feats})
     t = PointFeatures(pts=pts_t, feats=feats.copy(), meta={"feats_w1": feats.copy()})
-    assert TeaserSolver(tau_inlier=0.003).solve(q, t, _frame()) == []
+    assert TeaserSolver(tau_inlier=0.003).solve(q, t) == []
 
 
 def test_degenerate_returns_empty():
     q = PointFeatures(pts=np.zeros((2, 3)), feats=np.zeros((2, 16)),
                       meta={"feats_w1": np.zeros((2, 16))})
-    assert TeaserSolver().solve(q, q, _frame()) == []
+    assert TeaserSolver().solve(q, q) == []
 
 
 def test_max_corr_caps_pool():
     q, t, R, tt = _matched_cloud(n=150, seed=9)
-    h = TeaserSolver(tau_inlier=0.003, max_corr=80).solve(q, t, _frame())
+    h = TeaserSolver(tau_inlier=0.003, max_corr=80).solve(q, t)
     assert h and h[0].breakdown["n_corr"] <= 80
     ang, terr = _err(R, tt, h[0].R, h[0].t)  # still recovers from the capped pool
     assert ang < 1.0 and terr < 2e-3
@@ -153,8 +149,8 @@ def test_agrees_with_open3d_solver_within_tolerance():
     pytest.importorskip("open3d")
     from popoe.solvers.open3d_ransac import Open3DFeatureRansacSolver
     q, t, R, tt = _matched_cloud(n=140, seed=6)
-    teaser = TeaserSolver(tau_inlier=0.01).solve(q, t, _frame())[0]
-    o3d = Open3DFeatureRansacSolver(tau_inlier=0.01, max_iteration=5000).solve(q, t, _frame())
+    teaser = TeaserSolver(tau_inlier=0.01).solve(q, t)[0]
+    o3d = Open3DFeatureRansacSolver(tau_inlier=0.01, max_iteration=5000).solve(q, t)
     assert o3d, "open3d solver should return a hypothesis"
     # both recover the same known pose -> agree with each other
     ang, terr = _err(teaser.R, teaser.t, o3d[0].R, o3d[0].t)

@@ -101,10 +101,12 @@ class NvdiffrastRenderer:
 
     def render(self, vertices: np.ndarray, faces: np.ndarray,
                cam_pos: np.ndarray, fov_deg: float = 60.0,
-               normals: Optional[np.ndarray] = None) -> Tuple[np.ndarray, np.ndarray]:
+               normals: Optional[np.ndarray] = None,
+               albedo: Optional[np.ndarray] = None) -> Tuple[np.ndarray, np.ndarray]:
         """
         Render mesh from cam_pos.
         vertices: (V, 3)  faces: (F, 3)
+        albedo: (V, 3) in [0,1] from load_mesh_albedo, or None for flat beige.
         Returns: rgb (H, W, 3) uint8, depth (H, W) float32
         """
         import nvdiffrast.torch as dr
@@ -140,11 +142,22 @@ class NvdiffrastRenderer:
                                  dtype=torch.float32, device=self.device)
         nrm_n = torch.nn.functional.normalize(nrm_interp[0], dim=-1)
         shading = torch.clamp((nrm_n * light_dir).sum(dim=-1, keepdim=True), 0.1, 1.0)
-        base_color = torch.tensor([0.7, 0.62, 0.55], device=self.device)
+        if albedo is None:
+            base_color = torch.tensor([0.7, 0.62, 0.55], device=self.device)
+        else:
+            alb_t = torch.from_numpy(np.ascontiguousarray(albedo, dtype=np.float32)
+                                     ).unsqueeze(0).to(self.device)
+            base_color, _ = dr.interpolate(alb_t, rast, tri)   # (1,H,W,3)
+            base_color = base_color[0]
         color = (shading * base_color).clamp(0, 1)  # (H,W,3)
 
         # Mask (where rast[...,3] > 0 means hit)
         hit_mask = rast[0, :, :, 3] > 0  # (H,W)
+        # NOTE: white, while TrimeshRenderer fills grey 200. A backbone that
+        # sees the whole frame (DINOv2's CLS token) reads that difference as
+        # signal, so the two backends disagree by more than rasterisation
+        # alone. Kept because changing it moves every score this renderer has
+        # produced — same rule as the other deviations here.
         color[~hit_mask] = 1.0  # white background
 
         rgb_np = (color.cpu().numpy() * 255).astype(np.uint8)
@@ -186,7 +199,8 @@ class TrimeshRenderer:
 
     def render(self, vertices: np.ndarray, faces: np.ndarray,
                cam_pos: np.ndarray, fov_deg: float = 60.0,
-               normals: Optional[np.ndarray] = None) -> Tuple[np.ndarray, np.ndarray]:
+               normals: Optional[np.ndarray] = None,
+               albedo: Optional[np.ndarray] = None) -> Tuple[np.ndarray, np.ndarray]:
         import trimesh
         H, W = self.H, self.W
 
@@ -217,8 +231,15 @@ class TrimeshRenderer:
         if len(locs) > 0:
             fn = mesh.face_normals[idx_tri]
             shading = np.clip((-fn * forward).sum(axis=1), 0.1, 1.0)
-            base = np.array([178, 158, 140], dtype=np.float32)
-            rgb[idx_ray] = (base * shading[:, None]).astype(np.uint8)
+            if albedo is None:
+                base = np.array([178, 158, 140], dtype=np.float32)
+            else:
+                # No barycentrics from the ray caster, so a hit takes the mean
+                # albedo of its triangle. Coarser than the GPU path's true
+                # interpolation — one more way the two backends differ.
+                base = np.asarray(albedo, dtype=np.float32)[
+                    faces[idx_tri]].mean(axis=1) * 255.0
+            rgb[idx_ray] = (base * shading[:, None]).clip(0, 255).astype(np.uint8)
             # Camera-axis z, not Euclidean ray length — same convention as
             # NvdiffrastRenderer, so the two depths backproject identically.
             depth_map[idx_ray] = (locs - cam_pos) @ forward
@@ -265,7 +286,12 @@ def get_renderer(H: int = 480, W: int = 480, device: str = 'cuda',
 
 
 def load_mesh_for_rendering(mesh_path: str, target_diameter: float = 0.1):
-    """Load mesh, normalise to target diameter, return vertices/faces/normals."""
+    """Load mesh, normalise to target diameter, return vertices/faces/normals.
+
+    Geometry only — this drops the mesh's colour. Pair it with
+    `load_mesh_albedo` and pass the result to `render(albedo=...)` when the
+    render feeds an appearance model; see that function on why it matters.
+    """
     import trimesh
     mesh = trimesh.load(mesh_path, force='mesh')
     mesh.fix_normals()
@@ -278,3 +304,61 @@ def load_mesh_for_rendering(mesh_path: str, target_diameter: float = 0.1):
     F = np.array(mesh.faces, dtype=np.int32)
     N = NvdiffrastRenderer._compute_vertex_normals(V, F)
     return V, F, N, scale, center
+
+
+def load_mesh_albedo(mesh_path: str, vertices: np.ndarray, faces: np.ndarray):
+    """Per-vertex albedo in [0,1] for a mesh, or None if it carries no colour.
+
+    Pass the result to `render(albedo=...)` whenever the render feeds an
+    appearance model. Rendering a coloured mesh beige instead is not a cosmetic
+    difference: template-to-photo matching degrades to roughly chance.
+
+    Colour source is resolved by popoe.freeze.feature_extractor's
+    resolve_mesh_shading, so this agrees with the query-feature path about what
+    a given mesh carries (UV atlas, per-vertex, per-face, or nothing).
+
+    A UV atlas is baked down to per-vertex colour, because the renderers here
+    interpolate vertex attributes and have no texture unit. Detail finer than
+    the mesh's own vertex spacing — small print, barcodes — does not survive
+    that, so these renders are an approximation of a properly textured one, not
+    a substitute for it. If you need the real thing, feature_extractor has a
+    per-pixel textured renderer.
+
+    Returns (V, 3) float32, aligned to `vertices` as returned by
+    load_mesh_for_rendering (which re-derives them from the same trimesh load).
+    """
+    import trimesh
+    from popoe.freeze.feature_extractor import (
+        resolve_mesh_shading, SHADING_UV, SHADING_VERTEX_COLOR,
+        SHADING_FACE_COLOR)
+
+    mesh = trimesh.load(mesh_path, force='mesh')
+    mode = resolve_mesh_shading(mesh)
+
+    if mode == SHADING_UV:
+        uv = np.asarray(mesh.visual.uv, dtype=np.float32)
+        tex = np.asarray(mesh.visual.material.image.convert('RGB'),
+                         dtype=np.float32) / 255.0
+        th, tw = tex.shape[:2]
+        # v is flipped because PLY/OBJ put v=0 at the BOTTOM row while an image
+        # array puts row 0 at the top. Without it the atlas comes out mirrored.
+        u = np.clip((uv[:, 0] % 1.0) * (tw - 1), 0, tw - 1).astype(np.int32)
+        v = np.clip((1.0 - uv[:, 1] % 1.0) * (th - 1), 0, th - 1).astype(np.int32)
+        return tex[v, u].astype(np.float32)
+
+    if mode == SHADING_VERTEX_COLOR:
+        return (np.asarray(mesh.visual.vertex_colors,
+                           dtype=np.float32)[:, :3] / 255.0)
+
+    if mode == SHADING_FACE_COLOR:
+        # Scatter face colours onto vertices; a vertex on a colour boundary
+        # averages its faces, which is what the rasteriser would interpolate.
+        fc = np.asarray(mesh.visual.face_colors, dtype=np.float32)[:, :3] / 255.0
+        acc = np.zeros((len(vertices), 3), dtype=np.float64)
+        cnt = np.zeros((len(vertices), 1), dtype=np.float64)
+        for i in range(3):
+            np.add.at(acc, faces[:, i], fc)
+            np.add.at(cnt, faces[:, i], 1.0)
+        return (acc / np.maximum(cnt, 1.0)).astype(np.float32)
+
+    return None

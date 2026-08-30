@@ -95,7 +95,7 @@ elif ROLE == "pose":
     masks = sorted(glob.glob(f"{SCENE}/mask_visib/{IMID}_*.png"))
     q = np.load(sorted(glob.glob("/workspace/popoe_cache_ycbv_v5/query_*.npz"))[0])
     query = PointFeatures(pts=q["pts"].astype(np.float64), feats=q["feats"].astype(np.float64))
-    frame = CanonFrame(center=np.zeros(3), scale=1.0)
+    frame = CanonFrame(scale=1.0)
     def work():
         n = 0
         for mp in masks:
@@ -103,7 +103,7 @@ elif ROLE == "pose":
             pts, feats = tfe.extract_target_features(rgb, depth, m, intr)
             if pts is None: continue
             solver.solve(query, PointFeatures(pts=pts.astype(np.float64),
-                                              feats=feats.astype(np.float64)), frame)
+                                              feats=feats.astype(np.float64)))
             n += 1
         return n
 

@@ -87,7 +87,7 @@ echo "=== VSD render ($DS/$VAR) ==="
   2>&1 | tail -3
 
 echo "=== flat AR ($DS/$VAR) ==="
-"$PY" scripts/ar_flat.py "$BASE.csv" "$BOP/$BOP_DS" "$DS/$VAR"
+BOP_PATH="$BOP/$BOP_DS" "$PY" -m popoe.metrics.ar "$BASE.csv"
 
 touch "$OUT/DONE_${DS}_${VAR}"
 echo "=== fidelity_ab $DS/$VAR DONE $(date -u +%FT%TZ) ==="

@@ -23,7 +23,7 @@ from popoe.renderer import (                                          # noqa: E4
     load_mesh_for_rendering,
 )
 from popoe.segmentor import (                                         # noqa: E402
-    DepthSegmentor, FirstAvailableSegmentor, SAMSegmentor,
+    DepthSegmentor, SAMSegmentor,
     SegmentorUnavailable,
 )
 
@@ -142,15 +142,12 @@ def main():
             print(f"          SAM correctly refused: {str(e).splitlines()[0]}", flush=True)
         assert raised, "SAM silently degraded instead of raising — the whole bug"
 
-        chain = FirstAvailableSegmentor([broken, DepthSegmentor()])
-        dets = chain.segment(scene, obj)
-        assert dets, "chain produced nothing"
-        assert chain.last_used == "depth-cc", f"last_used={chain.last_used}"
+        dets = DepthSegmentor().segment(scene, obj)
+        assert dets, "depth segmentor produced nothing"
         assert all(d.source == "depth-cc" for d in dets), \
             f"provenance lost: {[d.source for d in dets]}"
-        print(f"          chain.last_used={chain.last_used!r}  "
-              f"sources={sorted({d.source for d in dets})}", flush=True)
-    check("missing SAM2 ckpt -> SAM raises, chain falls through, provenance recorded",
+        print(f"          depth sources={sorted({d.source for d in dets})}", flush=True)
+    check("missing SAM2 ckpt -> SAM raises; DepthSegmentor still works",
           chain_routes_and_records)
 
     if have_sam2:
@@ -162,12 +159,10 @@ def main():
             assert 0.0 <= dets[0].score <= 1.0, "predicted_iou out of range"
         check("SAMSegmentor end-to-end", sam_ok)
 
-        def chain_prefers_sam():
-            chain = FirstAvailableSegmentor([SAMSegmentor(n_masks=3), DepthSegmentor()])
-            dets = chain.segment(scene, obj)
-            assert chain.last_used == "sam2-amg", chain.last_used
-            assert all(d.source == "sam2-amg" for d in dets)
-        check("chain prefers SAM when SAM2 IS available", chain_prefers_sam)
+        def sam_stamps_source():
+            dets = SAMSegmentor(n_masks=3).segment(scene, obj)
+            assert dets and all(d.source == "sam2-amg" for d in dets)
+        check("SAMSegmentor stamps source=sam2-amg", sam_stamps_source)
     else:
         print("  SKIP  SAM paths — no SAM2 checkpoint", flush=True)
 

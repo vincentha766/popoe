@@ -92,7 +92,7 @@ def test_empty_mask_degrades_with_reason():
     det = Detection(mask=np.zeros((8, 8), dtype=bool), score=1.0)
 
     got = _target_encoder().encode_target(
-        _scene(depth), det, _obj(), CanonFrame(np.zeros(3), 1.0))
+        _scene(depth), det, _obj(), CanonFrame(1.0))
 
     assert got.pts.shape == (0, 3)
     assert got.meta["skip_reason"] == "empty mask"
@@ -106,7 +106,7 @@ def test_duplicate_grid_points_do_not_hide_tiny_depth_support():
     det = Detection(mask=mask, score=1.0)
 
     got = _target_encoder().encode_target(
-        _scene(depth), det, _obj(), CanonFrame(np.zeros(3), 1.0))
+        _scene(depth), det, _obj(), CanonFrame(1.0))
 
     assert got.pts.shape == (0, 3)
     assert got.meta["skip_reason"] == "only 1 valid depth pixel(s) in mask"
@@ -120,7 +120,7 @@ def test_grid_depth_holes_resample_from_valid_mask_pixels(monkeypatch):
     det = Detection(mask=mask, score=1.0)
 
     got = _target_encoder().encode_target(
-        _scene(depth), det, _obj(), CanonFrame(np.zeros(3), 1.0))
+        _scene(depth), det, _obj(), CanonFrame(1.0))
 
     assert got.pts.shape == (4, 3)
     assert "skip_reason" not in got.meta
@@ -134,7 +134,7 @@ def test_healthy_target_still_encodes(monkeypatch):
     det = Detection(mask=mask, score=1.0)
 
     got = _target_encoder().encode_target(
-        _scene(depth), det, _obj(), CanonFrame(np.zeros(3), 1.0))
+        _scene(depth), det, _obj(), CanonFrame(1.0))
 
     assert got.pts.shape == (16, 3)
     assert got.feats.shape == (16, 4)

@@ -5,8 +5,9 @@ import numpy as np
 import pytest
 
 from popoe.interfaces import ObjectModel, Scene
+from popoe.segmentor_detections import BOPDetectionsSegmentor
 from popoe.segmentor_sam6d import (
-    SAM6DIsmDetectionsSegmentor,
+    SAM6D_SOURCE,
     SAM6DPemResultsCoarseEstimator,
     build_ism_bop_command,
     build_pem_bop_command,
@@ -39,7 +40,7 @@ def test_sam6d_ism_segmentor_reads_detection_file(tmp_path):
         "mask_path": "mask.npy",
     }]))
 
-    seg = SAM6DIsmDetectionsSegmentor(str(det_path), topk=1, min_pixels=1)
+    seg = BOPDetectionsSegmentor(str(det_path), source=SAM6D_SOURCE, topk=1, min_pixels=1)
     dets = seg.segment(_scene(), _obj())
 
     assert len(dets) == 1

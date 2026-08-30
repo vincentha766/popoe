@@ -124,6 +124,6 @@ env | grep '^POPOE_' | sort
 echo "=== VSD render ($DS) ==="
 "$PY" -m popoe.metrics.vsd "$BASE.csv" "$BOP/$BOP_DS" 2>&1 | tail -3
 echo "=== flat AR ($DS) ==="
-"$PY" scripts/ar_flat.py "$BASE.csv" "$BOP/$BOP_DS" "faithful/$DS"
+BOP_PATH="$BOP/$BOP_DS" "$PY" -m popoe.metrics.ar "$BASE.csv"
 touch "$OUT/DONE_${DS}"
 echo "=== faithful $DS DONE $(date -u +%FT%TZ) ==="

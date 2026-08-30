@@ -1,16 +1,11 @@
 """
 popoe.adapters — method-agnostic stage adapters. Thin wrappers that make the
 generic registration primitives (popoe.registration) satisfy the stage
-Protocols in popoe.interfaces, so they compose in `interfaces.Pipeline`.
-Everything here is pure numpy+open3d and unit-testable offline.
+Protocols in popoe.interfaces. Pure numpy+open3d, unit-testable offline.
 
-The FreeZe-specific stages (encoders, FreeZeScorer, make_freeze_encoders)
-live in popoe.freeze.adapters.
-
-One design point worth knowing: `ICPRefiner` moves geometry only; the final
-feature scoring lives in the separate scorer stage (see interfaces.PoseScorer,
-e.g. freeze.FreeZeScorer / scoring.ChampionScorer). `refine` still takes
-`query` because ICP aligns the query point cloud (geometry), not for scoring.
+`ICPRefiner` moves geometry only; scoring is PoseScorer
+(FreeZeScorer / ChampionScorer). RansacSolver + BestScoreSelector compose
+with them in `interfaces.Pipeline`.
 """
 
 from __future__ import annotations
@@ -23,8 +18,6 @@ from popoe.interfaces import (
 )
 
 
-# ── Pose solve / refine / select ────────────────────────────────────────
-
 class RansacSolver:
     """Adapt ransac_pose_estimation -> one coarse PoseHypothesis (s_coarse)."""
 
@@ -34,7 +27,7 @@ class RansacSolver:
         self.k = k
 
     def solve(self, query: PointFeatures, target: PointFeatures,
-              frame: CanonFrame) -> list[PoseHypothesis]:
+              frame: CanonFrame | None = None) -> list[PoseHypothesis]:
         from popoe.registration import ransac_pose_estimation
         if len(target.pts) < 4:
             return []
@@ -48,8 +41,8 @@ class RansacSolver:
 class ICPRefiner:
     """Adapt icp_refinement — GEOMETRY ONLY (coupling point #3). ICP aligns the
     query cloud to the dense target and records its fitness as s_icp; it does NOT
-    compute the feature score (that is FreeZeScorer's job). The provisional score
-    (s_coarse) is carried through untouched for FreeZeScorer to finalise.
+    compute the feature score (that is ChampionScorer's job). The provisional score
+    (s_coarse) is carried through untouched for ChampionScorer to finalise.
 
     `keep_coarse=True` stashes the PRE-ICP pose in the breakdown
     (``R_coarse`` / ``t_coarse``) so a scorer can evaluate the paper's S_coarse
@@ -67,7 +60,7 @@ class ICPRefiner:
         R_f, t_f, s_icp = icp_refinement(query.pts, dense, pose.R, pose.t, self.tau_icp)
         extra = {"R_coarse": pose.R, "t_coarse": pose.t} if self.keep_coarse else {}
         return PoseHypothesis(
-            R=R_f, t=t_f, score=pose.score,     # provisional; FreeZeScorer sets final
+            R=R_f, t=t_f, score=pose.score,     # provisional; ChampionScorer sets final
             breakdown={**pose.breakdown, "s_icp": s_icp, "fitness": s_icp,
                        # Absolute, in the clouds' units (metres). A later stage
                        # that re-runs ICP must reuse THIS tau or its fitness is
@@ -78,12 +71,16 @@ class ICPRefiner:
         )
 
 
+def best_hyp(candidates):
+    cands = [c for c in candidates if c is not None]
+    return max(cands, key=lambda h: h.score) if cands else None
+
+
 class BestScoreSelector:
     """Pick the highest-scoring hypothesis (the multi-mask top-K choice)."""
 
     def select(self, candidates: list[PoseHypothesis]):
-        cands = [c for c in candidates if c is not None]
-        return max(cands, key=lambda h: h.score) if cands else None
+        return best_hyp(candidates)
 
 
 def resolve_resume(row_stats: dict, target_counts: dict) -> tuple:
@@ -198,16 +195,15 @@ def paper_grid_centers(y0: int, y1: int, x0: int, x1: int, grid_size: int):
     return rows, cols, u, v, (bx0, by0, side)
 
 
-def select_top_instances(hyps_by_det: dict, selector, k: int,
+def select_top_instances(hyps_by_det: dict, k: int,
                          nms_dist: float = 0.0) -> list:
     """BOP multi-instance selection: one champion per detection, translation
     NMS across champions, then the top-k.
 
     A detection is one candidate INSTANCE, so hypotheses within a detection are
-    alternatives (pick one champion via `selector`), while champions of
-    different detections are candidate distinct instances (keep up to k, best
-    first — k comes from the BOP target's ``inst_count``). With k=1 this is
-    exactly the old global argmax: max over per-detection maxima.
+    alternatives (pick one champion), while champions of different detections
+    are candidate distinct instances (keep up to k, best first — k comes from
+    the BOP target's ``inst_count``). With k=1 this is the old global argmax.
 
     ``nms_dist`` (metres, 0 = off) is FreeZeV2 §III-F's duplicate removal.
     A multi-source union deliberately keeps every segmentor's mask, so one
@@ -221,7 +217,7 @@ def select_top_instances(hyps_by_det: dict, selector, k: int,
     (the paper retains "only distinct object instance poses"). The paper
     names the mechanism but no radius — callers derive one from the object
     diameter (see examples/bop_eval.py --trans-nms)."""
-    champs = [selector.select(hs) for hs in hyps_by_det.values()]
+    champs = [best_hyp(hs) for hs in hyps_by_det.values()]
     champs = [c for c in champs if c is not None]
     champs.sort(key=lambda c: -c.score)
     if nms_dist > 0.0:

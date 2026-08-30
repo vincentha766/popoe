@@ -82,8 +82,9 @@ def main():
     qx.fusion.vis_weight = 1.0
     # The ADAPTER owns install_pca/encode_target; the raw extractor does not
     # (first launch died on exactly this).
-    from popoe.freeze.adapters import make_freeze_encoders
-    _, t_enc = make_freeze_encoders(qx, tx, n_points=args.n_points)
+    from popoe.freeze.adapters import FreeZeTargetEncoder
+    tx.fusion = qx.fusion
+    t_enc = FreeZeTargetEncoder(tx)
 
     # ---- query side: the extract_query_features view loop, per-view kept ----
     # (copied from feature_extractor.extract_query_features; keep in step)

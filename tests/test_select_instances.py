@@ -8,7 +8,7 @@ Pure numpy; no GPU. The invariants that matter:
 
 import numpy as np
 
-from popoe.adapters import BestScoreSelector, select_top_instances
+from popoe.adapters import select_top_instances
 from popoe.interfaces import PoseHypothesis
 
 
@@ -17,14 +17,11 @@ def _h(score, tag):
                           breakdown={"tag": tag})
 
 
-SEL = BestScoreSelector()
-
-
 def test_k1_equals_global_argmax():
     by_det = {0: [_h(0.3, "a"), _h(0.9, "b")],
               1: [_h(0.7, "c")],
               2: [_h(0.1, "d")]}
-    got = select_top_instances(by_det, SEL, 1)
+    got = select_top_instances(by_det, 1)
     assert [c.breakdown["tag"] for c in got] == ["b"]   # max over all hyps
 
 
@@ -34,25 +31,25 @@ def test_k2_takes_champions_of_distinct_detections():
     by_det = {0: [_h(0.95, "a1"), _h(0.90, "a2")],
               1: [_h(0.60, "b")],
               2: [_h(0.70, "c")]}
-    got = select_top_instances(by_det, SEL, 2)
+    got = select_top_instances(by_det, 2)
     assert [c.breakdown["tag"] for c in got] == ["a1", "c"]
 
 
 def test_fewer_detections_than_k_returns_what_exists():
     by_det = {0: [_h(0.5, "a")]}
-    got = select_top_instances(by_det, SEL, 3)
+    got = select_top_instances(by_det, 3)
     assert len(got) == 1 and got[0].breakdown["tag"] == "a"
 
 
 def test_empty_inputs():
-    assert select_top_instances({}, SEL, 2) == []
+    assert select_top_instances({}, 2) == []
     # a detection whose hypotheses all failed contributes nothing
-    assert select_top_instances({0: []}, SEL, 2) == []
+    assert select_top_instances({0: []}, 2) == []
 
 
 def test_champions_sorted_best_first():
     by_det = {0: [_h(0.2, "a")], 1: [_h(0.8, "b")], 2: [_h(0.5, "c")]}
-    got = select_top_instances(by_det, SEL, 3)
+    got = select_top_instances(by_det, 3)
     assert [c.breakdown["tag"] for c in got] == ["b", "c", "a"]
 
 
@@ -70,9 +67,9 @@ def test_nms_suppressed_duplicate_frees_the_slot():
     by_det = {0: [_ht(0.90, "a", [0, 0, 0])],
               1: [_ht(0.85, "dup", [0.002, 0, 0])],
               2: [_ht(0.60, "c", [0.2, 0, 0])]}
-    got = select_top_instances(by_det, SEL, 2, nms_dist=0.02)
+    got = select_top_instances(by_det, 2, nms_dist=0.02)
     assert [c.breakdown["tag"] for c in got] == ["a", "c"]
-    got = select_top_instances(by_det, SEL, 2)          # off by default
+    got = select_top_instances(by_det, 2)          # off by default
     assert [c.breakdown["tag"] for c in got] == ["a", "dup"]
 
 
@@ -81,21 +78,21 @@ def test_nms_does_not_pad_below_k():
     # suppressed duplicates when survivors fall short of k.
     by_det = {0: [_ht(0.9, "a", [0, 0, 0])],
               1: [_ht(0.8, "dup", [0.001, 0, 0])]}
-    got = select_top_instances(by_det, SEL, 2, nms_dist=0.02)
+    got = select_top_instances(by_det, 2, nms_dist=0.02)
     assert [c.breakdown["tag"] for c in got] == ["a"]
 
 
 def test_nms_boundary_distance_is_kept():
     by_det = {0: [_ht(0.9, "a", [0, 0, 0])],
               1: [_ht(0.8, "b", [0.02, 0, 0])]}
-    got = select_top_instances(by_det, SEL, 2, nms_dist=0.02)
+    got = select_top_instances(by_det, 2, nms_dist=0.02)
     assert [c.breakdown["tag"] for c in got] == ["a", "b"]
 
 
 def test_nms_keeps_the_higher_scored_of_a_duplicate_pair():
     by_det = {0: [_ht(0.7, "low", [0, 0, 0])],
               1: [_ht(0.9, "high", [0.001, 0, 0])]}
-    got = select_top_instances(by_det, SEL, 1, nms_dist=0.02)
+    got = select_top_instances(by_det, 1, nms_dist=0.02)
     assert [c.breakdown["tag"] for c in got] == ["high"]
 
 
@@ -106,7 +103,7 @@ def test_nms_is_greedy_against_kept_not_transitive():
     by_det = {0: [_ht(0.9, "a", [0.0, 0, 0])],
               1: [_ht(0.8, "b", [0.015, 0, 0])],
               2: [_ht(0.7, "c", [0.03, 0, 0])]}
-    got = select_top_instances(by_det, SEL, 3, nms_dist=0.02)
+    got = select_top_instances(by_det, 3, nms_dist=0.02)
     assert [c.breakdown["tag"] for c in got] == ["a", "c"]
 
 
@@ -117,7 +114,7 @@ def test_nms_drops_nonfinite_translations_instead_of_letting_them_suppress():
     by_det = {0: [_ht(0.9, "bad", [float("nan"), 0, 0])],
               1: [_ht(0.8, "a", [1.0, 0, 0])],
               2: [_ht(0.7, "b", [2.0, 0, 0])]}
-    got = select_top_instances(by_det, SEL, 3, nms_dist=0.02)
+    got = select_top_instances(by_det, 3, nms_dist=0.02)
     assert [c.breakdown["tag"] for c in got] == ["a", "b"]
-    got = select_top_instances(by_det, SEL, 3)
+    got = select_top_instances(by_det, 3)
     assert [c.breakdown["tag"] for c in got] == ["bad", "a", "b"]

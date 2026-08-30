@@ -1068,7 +1068,7 @@ uv run python examples/bop_eval.py \
   --objs 19,20 --merge ycbv --size-select nearest --topk 2 --grid 32 \
   --render-backend nvdiffrast \
   --out "$OUT/ab_clamp_size_select.csv" --cache "$OUT/cache_clamp"
-# equivalent library helper: popoe.freeze.recipes.ycbv_lab_segmentor(...)
+# equivalent: best_segmentor(..., merge_labels=YCBV_MERGE_LABELS, size_select="nearest", confusable_diameters=YCBV_CLAMP_DIAMETERS_M)
 ```
 
 - **Est. GPU**: ~1–2 h (300 targets × 2 configs) on 4090; +1 h for size-select lab run.

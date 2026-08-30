@@ -20,19 +20,20 @@ Scene (RGB-D, K) ──┴──────────────────
 | Stage | Protocol | Reference implementation |
 |-------|----------|--------------------------|
 | Segmentation | `Segmentor` | `segmentor_detections.BOPDetectionsSegmentor` (evaluated) — more in [§Segmentation backends](#segmentation-backends) |
-| Query features | `QueryEncoder` | `freeze.adapters.FreeZeQueryEncoder` (DINOv2 visual + `PointDescriptor` geometric branch) |
-| Target features | `TargetEncoder` | `freeze.adapters.FreeZeTargetEncoder` |
-| Geometric descriptors | `PointDescriptor` | `freeze.feature_extractor.load_geometric_descriptor` dispatches on `POPOE_GEOM_BACKBONE`: `load_gedi` (default); `descriptors.FPFHDescriptor`; dGeDi via `POPOE_GEOM_BACKBONE` |
-| Fusion | `FeatureFusion` | `freeze.fusion.DinoGeDiFusion` |
-| Pose solve | `PoseSolver` | `solvers.Open3DFeatureRansacSolver` (default) — 3 more in [§Pluggability](#pluggability-proven--the-posesolver-stage) |
-| External coarse pose | `CoarseEstimator` | `segmentor_sam6d.SAM6DPemResultsCoarseEstimator` over already-written PEM results |
+| Query features | `FreeZeQueryEncoder` | `freeze.adapters.FreeZeQueryEncoder` (DINOv2 visual + `PointDescriptor` geometric branch) |
+| Target features | `FreeZeTargetEncoder` | `freeze.adapters.FreeZeTargetEncoder` |
+| Geometric descriptors | `PointDescriptor` | `freeze.feature_extractor.load_geometric_descriptor` dispatches on `POPOE_GEOM_BACKBONE`: `load_gedi` (default); `descriptors.FPFHDescriptor` |
+| Fusion | class | `freeze.fusion.DinoGeDiFusion` |
+| Pose solve | `PoseSolver` | `solvers.Open3DFeatureRansacSolver` (default) — also GPU RANSAC and TEASER++ |
+| External coarse pose | class | `segmentor_sam6d.SAM6DPemResultsCoarseEstimator` over already-written PEM results |
 | Refine | `PoseRefiner` | `adapters.ICPRefiner` |
-| Score | `PoseScorer` | `freeze.adapters.FreeZeScorer`; `scoring.ChampionScorer` (evaluated) |
+| Score | class | `scoring.ChampionScorer` |
 | Render re-rank (opt.) | `PoseRefiner` chain | `render_rerank.RenderAppearanceReranker` (knife-4 SAR-style; `--render-rerank`) |
-| Select | `Selector` | `adapters.BestScoreSelector` |
-| Metrics | `Metric` | `metrics.vsd`, `metrics.ar` |
+| Select | function | `adapters.best_hyp` / `select_top_instances` |
+| Metrics | scripts | `metrics.vsd`, `metrics.ar` |
 
-The reference control flow is `interfaces.Pipeline.run`.
+The library composition is `interfaces.Pipeline.run`. The evaluated BOP
+loop is `examples/bop_eval.py` (cache, weight sweep, multi-instance, resume).
 
 ## Cross-cutting data (conventions live in one place)
 
@@ -91,8 +92,7 @@ Two different methods behind one name is a bug, not a convenience.
 - a **runtime** failure (CUDA OOM, corrupt mesh) propagates — "the fallback
   handled it" is how real bugs get buried;
 - substitution is the **caller's** policy: compose
-  `segmentor.FirstAvailableSegmentor([...])`, then read `chain.last_used` and
-  `Detection.source` to see what ran;
+  an explicit caller chain, then read `Detection.source` to see what ran;
 - anything that selects a method (`render_backend`, the segmentor's `source`)
   is part of the stage config and belongs **in the cache key**.
 
@@ -104,12 +104,11 @@ CPU-built cache on GPU — are in [ISSUES.md](ISSUES.md).
 
 ## Pluggability proven — the PoseSolver stage
 
-Four `PoseSolver` implementations run through the identical
-encoders→refiner→scorer→selector chain. A solver may return several hypotheses
-and leave the choice to the scorer and selector, so "geometry proposes, features
+Three `PoseSolver` implementations run through the identical
+encoders→refiner→scorer chain. A solver may return several hypotheses
+and leave the choice to ChampionScorer, so "geometry proposes, features
 dispose" is reachable as pure composition, with no new scoring code.
 
-- `adapters.RansacSolver` — hand-rolled feature-aware RANSAC.
 - `solvers.Open3DFeatureRansacSolver` — Open3D's C++ correspondence RANSAC.
   `n_restarts>1` emits several geometrically-ranked hypotheses; the feature-aware
   scorer re-ranks the survivors (the A layer).
@@ -144,15 +143,14 @@ politics for each source live in [CNOS.md](CNOS.md), [MUSE.md](MUSE.md),
 | Implementation | `source` | Kind |
 |----------------|----------|------|
 | `segmentor_detections.BOPDetectionsSegmentor` | `bop-detections`, or per-source in a union | file — **evaluated**; one JSON or a named-source union |
-| `segmentor_cnos_official.CNOSDetectionsSegmentor` | `cnos` | file — official CNOS / CNOS-FastSAM producer, or public BOP default detections |
-| `segmentor_sam6d.SAM6DIsmDetectionsSegmentor` | `sam6d` | file — SAM-6D ISM artefacts |
-| `segmentor_nids.NIDSNetDetectionsSegmentor` | `nids` | file — NIDS-Net artefacts |
+| `BOPDetectionsSegmentor(..., source="cnos")` | `cnos` | file — official CNOS / CNOS-FastSAM producer, or public BOP default detections |
+| `BOPDetectionsSegmentor(..., source="sam6d")` | `sam6d` | file — SAM-6D ISM artefacts |
+| `BOPDetectionsSegmentor(..., source="nids")` | `nids` | file — NIDS-Net artefacts |
 | `segmentor_muse.MuseDetectionsSegmentor` | `muse-repro` | file — replay of dumped MUSE masks |
 | `segmentor_muse.MuseSegmentor` | `muse-repro` | live — GroundingDINO→SAM2→DINOv2; also its own producer |
 | `segmentor_cnos_lab.CNOSLabSegmentor` | `cnos-lab` | live — depth-size-gated foreground-patch CNOS (formerly `cnos-v3`) |
 | `segmentor.SAMSegmentor` | `sam2-amg` | live — SAM2.1 automatic mask generator, class-agnostic |
 | `segmentor.DepthSegmentor` | `depth-cc` | live — depth connected components; no model, no GPU |
-| `segmentor.FirstAvailableSegmentor` | delegates | explicit fallback chain — see the availability contract |
 
 CNOS-FastSAM, SAM-6D ISM and NIDS-Net all publish the same artefact — a
 detections JSON — so they are not separate pose-backend code paths, only
@@ -191,32 +189,9 @@ external **full pose** producer, so it is not a `Segmentor` at all:
 `segmentor_sam6d.SAM6DPemResultsCoarseEstimator` adapts PEM outputs to
 `PoseHypothesis` through the separate `CoarseEstimator` contract.
 
-## Assembly: sharing the heavy models (`popoe.assembly`)
-
-Three components load their own DINOv2 ViT-g, and SAM2 is loaded independently
-by the MUSE refiner and the AMG proposers. Composed as separate processes the
-live ensemble plus pose duplicates those weights. Measured footprint:
-[DEMO_SINGLE_GPU.md](DEMO_SINGLE_GPU.md).
-
-`assembly.ModelPool` holds one lazily-loaded copy of each shared model; every
-model-owning component grew a matching injection parameter (`model=` on the
-DINOv2 pair, `sam_model=` on the SAM2 trio) that bypasses its own loader. The
-`*_from_pool` builders wire the existing segmentors and pose encoders around
-one pool. Two scoped departures from the usual rules: pool wiring loads the
-*pooled* models at build time, not first use (a resident service wants startup
-failures at startup — though unpooled components like MUSE's Grounding DINO
-still lazy-load on the first frame); and component `config()` identity still
-describes models by name — truthful because the pool is the single place a name
-resolves to weights.
-
-The service shell that would sit on top (HTTP, cameras, supervision) stays
-outside popoe (AGENTS.md boundary); this module only guarantees the library
-composes into one process without duplicate weights.
-
 ## Verification
 
-- **Adapter fidelity** — [examples/pipeline_selfcheck.py](examples/pipeline_selfcheck.py):
-  the adapter chain reproduces the inline `FreeZeV2.estimate_pose` body
+- **Adapter fidelity** — `examples/bop_eval.py` is the evaluated composition.
   (`examples/freezev2_monolith.py`) to ~1e-15
   on identical arrays (fixed RANSAC seed + deterministic ICP).
 - **Fusion byte-identity & Protocol wiring** — [tests/](tests/), GPU-free

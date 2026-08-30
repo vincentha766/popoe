@@ -105,6 +105,6 @@ env | grep '^POPOE_' | sort
 echo "=== VSD render ($TAG) ==="
 "$PY" -m popoe.metrics.vsd "$BASE.csv" "$BOP/$BOP_DS" 2>&1 | tail -3
 echo "=== flat AR ($TAG) ==="
-"$PY" scripts/ar_flat.py "$BASE.csv" "$BOP/$BOP_DS" "faithful/$TAG"
+BOP_PATH="$BOP/$BOP_DS" "$PY" -m popoe.metrics.ar "$BASE.csv"
 touch "$OUT/DONE_${TAG}"
 echo "=== faithful_eval $TAG DONE $(date -u +%FT%TZ) ==="

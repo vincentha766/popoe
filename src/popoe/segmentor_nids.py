@@ -14,7 +14,7 @@ import json
 import os
 from typing import Mapping, Optional, Sequence
 
-from popoe.segmentor_detections import BOPDetectionsSegmentor, load_detections
+from popoe.segmentor_detections import load_detections
 
 
 def _records_from_payload(payload):
@@ -148,16 +148,6 @@ def adapt_nidsnet_json(input_json: str,
     return records
 
 
-class NIDSNetDetectionsSegmentor(BOPDetectionsSegmentor):
-    """File-backed Segmentor for NIDS-Net predictions.
-
-    Provenance wrapper over the generic detections segmentor. Does not import
-    or run NIDS-Net; point this at an adapted detections JSON.
-    """
-
-    source = "nids"
-
-
 def _main(argv: Optional[Sequence[str]] = None) -> int:
     ap = argparse.ArgumentParser(
         description="Adapt NIDS-Net predictions into popoe detections JSON.")
@@ -191,7 +181,6 @@ if __name__ == "__main__":
 
 
 __all__ = [
-    "NIDSNetDetectionsSegmentor",
     "adapt_nidsnet_json",
     "adapt_nidsnet_records",
 ]

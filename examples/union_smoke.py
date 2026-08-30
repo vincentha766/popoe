@@ -34,7 +34,7 @@ from collections import Counter
 
 import numpy as np
 
-from popoe.adapters import BestScoreSelector, select_top_instances
+from popoe.adapters import select_top_instances
 from popoe.interfaces import ObjectModel, PoseHypothesis, Scene
 from popoe.segmentor_detections import (DetectionSource,
                                         BOPDetectionsSegmentor, _coerce_sources)
@@ -119,7 +119,6 @@ def main():
     # every object whose label appears in it, PLUS merge partners — so obj20 is
     # probed when only label-19 masks are present and the pooling path runs.
     images = sorted(seg._by_img)[: args.images]
-    selector = BestScoreSelector()
     n_probes = n_zero = 0
     cand_sources = Counter()
     champ_sources = Counter()
@@ -155,7 +154,7 @@ def main():
                 ci: [PoseHypothesis(R=np.eye(3), t=np.zeros(3), score=d.score,
                                     breakdown={"source": d.source})]
                 for ci, d in enumerate(dets)}
-            for c in select_top_instances(hyps_by_det, selector, k=1):
+            for c in select_top_instances(hyps_by_det, k=1):
                 champ_sources[c.breakdown["source"]] += 1
 
     total_cands = sum(cand_sources.values())

@@ -34,11 +34,38 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from ar_flat import (MSPD_THRS, MSSD_THRS, VSD_THS, load_gt, load_models)  # noqa: E402
+from popoe.metrics.aggregate import MSPD_THRS, MSSD_THRS, VSD_THS
 
 sys.path.insert(0, os.environ.get("POPOE_BOP_TOOLKIT", "/workspace/bop_toolkit"))
-from bop_toolkit_lib import pose_error  # noqa: E402
+from bop_toolkit_lib import misc, pose_error  # noqa: E402
+import json
+import trimesh
+
+
+def load_models(bop_root: Path, obj_ids):
+    info = json.load(open(bop_root / "models_eval" / "models_info.json"))
+    out = {}
+    for o in obj_ids:
+        m = trimesh.load(bop_root / "models_eval" / f"obj_{o:06d}.ply",
+                         force="mesh")
+        out[o] = dict(pts=np.array(m.vertices), diameter=info[str(o)]["diameter"],
+                      syms=misc.get_symmetry_transformations(info[str(o)], 0.01))
+    return out
+
+
+def load_gt(bop_root: Path, scenes):
+    gt = {}
+    for s in scenes:
+        sdir = bop_root / "test" / f"{s:06d}"
+        scene_gt = json.load(open(sdir / "scene_gt.json"))
+        cams = json.load(open(sdir / "scene_camera.json"))
+        for im_s, gts in scene_gt.items():
+            K = np.array(cams[im_s]["cam_K"]).reshape(3, 3)
+            for g in gts:
+                gt.setdefault((s, int(im_s), g["obj_id"]), []).append(dict(
+                    R=np.array(g["cam_R_m2c"]).reshape(3, 3),
+                    t=np.array(g["cam_t_m2c"]).reshape(3, 1), K=K))
+    return gt
 
 
 def per_instance(csv_path, bop_root: Path):

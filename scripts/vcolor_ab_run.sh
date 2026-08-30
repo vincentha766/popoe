@@ -94,17 +94,13 @@ echo "=== split champion into pre/post-ICP poses ==="
 "$PY" scripts/coarse_vs_refined.py \
   --cand-csv "${BASE}_cands.csv" --out-csv "$BASE.csv" --prefix "$BASE"
 
-# VSD needs the GPU rasteriser, so it runs here; MSSD/MSPD are re-derived by
-# ar_flat from the same CSV. popoe's scorers now report the BOP flat
-# (per-instance) calibre as primary too; ar_flat is kept for the side-by-side
-# view of both calibres. vsd.py is run for the .vsd_errs.npz sidecar it
-# persists (and its headline AR_VSD is now flat as well).
+# VSD needs the GPU rasteriser, so it runs here; MSSD/MSPD via metrics.ar.
 for V in refined coarse; do
   echo "=== VSD($V) ==="
   "$PY" -m popoe.metrics.vsd "${BASE}_$V.csv" "$BOP/$DS" \
     2>&1 | tee "$OUT/vsd_${DS}_${ARM}_$V.log" | tail -3
   echo "=== AR($V), BOP-flat aggregation ==="
-  "$PY" scripts/ar_flat.py "${BASE}_$V.csv" "$BOP/$DS" "$DS $ARM $V" \
+  BOP_PATH="$BOP/$DS" "$PY" -m popoe.metrics.ar "${BASE}_$V.csv" \
     2>&1 | tee "$OUT/ar_${DS}_${ARM}_$V.log"
 done
 

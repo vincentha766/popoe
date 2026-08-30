@@ -64,10 +64,11 @@ CUDA_VISIBLE_DEVICES=0 python run_inference.py dataset_name=lmo model=ISM_fastsa
 The resulting `result_<dataset>.json` is consumed as a normal detections file:
 
 ```python
-from popoe.segmentor_sam6d import SAM6DIsmDetectionsSegmentor
+from popoe.segmentor_detections import BOPDetectionsSegmentor
 
-seg = SAM6DIsmDetectionsSegmentor(
+seg = BOPDetectionsSegmentor(
     "external/SAM-6D/SAM-6D/Instance_Segmentation_Model/log/sam/result_lmo.json",
+    source="sam6d",
     topk=2,
 )
 ```
@@ -113,7 +114,7 @@ est = SAM6DPemResultsCoarseEstimator(
 hyps = est.estimate(scene, obj)   # list[PoseHypothesis], t in metres
 ```
 
-This satisfies `popoe.CoarseEstimator`. It is not wired into the FreeZe
+This is a PEM-results loader, not a `PoseSolver`. It is not wired into the FreeZe
 `Pipeline.run` path because PEM already performs a full external pose estimate;
 use it as a separate candidate source or service response.
 

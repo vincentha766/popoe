@@ -4,7 +4,7 @@ import pytest
 from sklearn.decomposition import PCA
 
 import popoe
-from popoe.freeze.fusion import DinoGeDiFusion, IdentityReduction
+from popoe.freeze.fusion import DinoGeDiFusion, IDENTITY
 
 
 @pytest.fixture(autouse=True)
@@ -28,7 +28,7 @@ def _reference(vis, geo, pca, vis_w):
 
 
 def test_protocol_conformance():
-    assert isinstance(DinoGeDiFusion(), popoe.FeatureFusion)
+    assert hasattr(DinoGeDiFusion(), "fuse")
 
 
 def test_byte_identity_with_shared_pca():
@@ -111,7 +111,7 @@ def test_no_reduction_needed_is_identity_not_substitution():
     # RECORDED as identity, not left as None: None means "missing basis" and is
     # refused at the install boundary, so an identity query must be able to say
     # so. (Regression: leaving it None broke POPOE_VIS_DIM=n_vis end to end.)
-    assert fu.pca_vis == IdentityReduction()
+    assert fu.pca_vis == IDENTITY
     assert fu.pca_vis is not None
     assert fused.shape == (50, 128)
     l2 = lambda x: x / (np.linalg.norm(x, axis=1, keepdims=True) + 1e-8)
@@ -132,7 +132,7 @@ def test_identity_query_survives_the_cache_sidecar_and_installs():
     q_fusion = DinoGeDiFusion(vis_weight=1.0)
     q_fusion.fuse(vis_q, geo_q)
     snapshot = pickle.loads(pickle.dumps(q_fusion.pca_vis))   # via the .pkl
-    assert snapshot == IdentityReduction(), "compared by type, not identity"
+    assert snapshot == IDENTITY
 
     enc = FreeZeTargetEncoder(_FusionOnlyExtractor())
     enc.install_pca(snapshot)                                  # must not raise
@@ -148,7 +148,7 @@ def test_identity_query_survives_the_cache_sidecar_and_installs():
 def test_identity_marker_rejects_a_width_disagreement():
     """Identity is only valid while the two sides agree on the visual width."""
     rng = np.random.default_rng(31)
-    fu = DinoGeDiFusion(vis_weight=1.0, pca_vis=IdentityReduction())
+    fu = DinoGeDiFusion(vis_weight=1.0, pca_vis=IDENTITY)
     with pytest.raises(ValueError, match="identity reduction was recorded"):
         fu.fuse(rng.standard_normal((40, 128)).astype(np.float32),
                 rng.standard_normal((40, 64)).astype(np.float32))

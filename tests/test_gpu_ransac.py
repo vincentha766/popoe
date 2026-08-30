@@ -11,12 +11,8 @@ import pytest
 
 pytest.importorskip("torch")
 
-from popoe.interfaces import CanonFrame, PointFeatures
+from popoe.interfaces import PointFeatures
 from popoe.solvers.gpu_ransac import GPURansacSolver
-
-
-def _frame():
-    return CanonFrame(center=np.zeros(3), scale=1.0)
 
 
 def _rigid(seed=0):
@@ -53,7 +49,7 @@ def test_geometric_recovers_known_pose():
     q, t, R, tt = _matched_cloud(n=150, seed=2)
     # tight tau: only near-exact poses score full inliers on clean data.
     solver = GPURansacSolver(tau_inlier=0.003, iters=10000, device="cpu", seed=0)
-    hyps = solver.solve(q, t, _frame())
+    hyps = solver.solve(q, t)
     assert len(hyps) == 1
     ang, terr = _err(R, tt, hyps[0].R, hyps[0].t)
     assert ang < 2.0 and terr < 3e-3            # recovers the known pose
@@ -61,7 +57,7 @@ def test_geometric_recovers_known_pose():
 
 def test_returns_open3d_shaped_hypothesis():
     q, t, *_ = _matched_cloud(seed=3)
-    h = GPURansacSolver(iters=1000, device="cpu").solve(q, t, _frame())[0]
+    h = GPURansacSolver(iters=1000, device="cpu").solve(q, t)[0]
     assert h.R.shape == (3, 3) and h.t.shape == (3,)
     # same breakdown key the Open3D solver / downstream stages rely on
     assert "s_coarse" in h.breakdown and h.score == h.breakdown["s_coarse"]
@@ -79,7 +75,7 @@ def test_uses_w1_features_not_dot_feats():
                       meta={"feats_w1": q.meta["feats_w1"]})
     t = PointFeatures(pts=t.pts, feats=rng.standard_normal(t.feats.shape),
                       meta={"feats_w1": t.meta["feats_w1"]})
-    h = GPURansacSolver(tau_inlier=0.003, iters=10000, device="cpu", seed=0).solve(q, t, _frame())
+    h = GPURansacSolver(tau_inlier=0.003, iters=10000, device="cpu", seed=0).solve(q, t)
     assert h, "should recover using feats_w1"
     ang, terr = _err(R, tt, h[0].R, h[0].t)
     assert ang < 2.0 and terr < 3e-3
@@ -87,20 +83,20 @@ def test_uses_w1_features_not_dot_feats():
 
 def test_iters_zero_returns_empty():
     q, t, *_ = _matched_cloud(seed=10)
-    assert GPURansacSolver(iters=0, device="cpu").solve(q, t, _frame()) == []
+    assert GPURansacSolver(iters=0, device="cpu").solve(q, t) == []
 
 
 def test_deterministic_given_seed():
     q, t, *_ = _matched_cloud(seed=4)
-    a = GPURansacSolver(iters=1500, device="cpu", seed=7).solve(q, t, _frame())[0]
-    b = GPURansacSolver(iters=1500, device="cpu", seed=7).solve(q, t, _frame())[0]
+    a = GPURansacSolver(iters=1500, device="cpu", seed=7).solve(q, t)[0]
+    b = GPURansacSolver(iters=1500, device="cpu", seed=7).solve(q, t)[0]
     assert np.array_equal(a.R, b.R) and np.array_equal(a.t, b.t)
 
 
 def test_feature_fitness_recovers_known_pose():
     q, t, R, tt = _matched_cloud(n=150, seed=12)
     h = GPURansacSolver(tau_inlier=0.003, iters=10000, device="cpu", seed=0,
-                        fitness="feature").solve(q, t, _frame())
+                        fitness="feature").solve(q, t)
     assert h, "feature fitness should recover"
     ang, terr = _err(R, tt, h[0].R, h[0].t)
     assert ang < 2.0 and terr < 3e-3
@@ -180,7 +176,7 @@ def test_feature_fitness_fixed_denominator_not_hijacked():
 
     # the solver, using the fixed denominator, recovers pose A (not B).
     h = GPURansacSolver(tau_inlier=thr, iters=20000, device="cpu", seed=0,
-                        fitness="feature", min_inliers=6).solve(q, t, _frame())
+                        fitness="feature", min_inliers=6).solve(q, t)
     assert h, "should recover the true pose"
     angA, _ = _err(RA, tA, h[0].R, h[0].t)
     angB, _ = _err(RB, tB, h[0].R, h[0].t)
@@ -199,15 +195,15 @@ def test_feature_fitness_fixed_denominator_not_hijacked():
 def test_degenerate_returns_empty():
     q = PointFeatures(pts=np.zeros((2, 3)), feats=np.zeros((2, 16)),
                       meta={"feats_w1": np.zeros((2, 16))})
-    assert GPURansacSolver(device="cpu").solve(q, q, _frame()) == []
+    assert GPURansacSolver(device="cpu").solve(q, q) == []
 
 
 def test_agrees_with_open3d_solver_within_tolerance():
     pytest.importorskip("open3d")
     from popoe.solvers.open3d_ransac import Open3DFeatureRansacSolver
     q, t, R, tt = _matched_cloud(n=140, seed=6)
-    gpu = GPURansacSolver(tau_inlier=0.01, iters=10000, device="cpu", seed=1).solve(q, t, _frame())[0]
-    o3d = Open3DFeatureRansacSolver(tau_inlier=0.01, max_iteration=5000).solve(q, t, _frame())
+    gpu = GPURansacSolver(tau_inlier=0.01, iters=10000, device="cpu", seed=1).solve(q, t)[0]
+    o3d = Open3DFeatureRansacSolver(tau_inlier=0.01, max_iteration=5000).solve(q, t)
     assert o3d, "open3d solver should return a hypothesis"
     # both recover the same known pose -> agree with each other
     ang, terr = _err(gpu.R, gpu.t, o3d[0].R, o3d[0].t)
@@ -246,8 +242,8 @@ def test_distance_check_is_noop_on_exact_correspondences():
     genuinely different solvers at `ang < 2.0`; an equality check cannot."""
     q, t, R, tt = _matched_cloud(n=140, seed=11)
     kw = dict(tau_inlier=0.01, iters=4000, fitness="feature", device="cpu", seed=3)
-    off = GPURansacSolver(**kw).solve(q, t, _frame())
-    on = GPURansacSolver(**kw, distance_check=True).solve(q, t, _frame())
+    off = GPURansacSolver(**kw).solve(q, t)
+    on = GPURansacSolver(**kw, distance_check=True).solve(q, t)
     assert off and on
     assert np.array_equal(off[0].R, on[0].R)
     assert np.array_equal(off[0].t, on[0].t)
@@ -261,7 +257,7 @@ def test_distance_check_rejects_everything_at_zero_threshold():
     nothing at all."""
     q, t, R, tt = _matched_cloud(n=100, seed=4)
     kw = dict(tau_inlier=1e-12, iters=2000, fitness="feature", device="cpu", seed=4)
-    assert GPURansacSolver(**kw, distance_check=True).solve(q, t, _frame()) == []
+    assert GPURansacSolver(**kw, distance_check=True).solve(q, t) == []
 
 
 def test_distance_check_never_accepts_more_than_edge_alone():
@@ -273,8 +269,8 @@ def test_distance_check_never_accepts_more_than_edge_alone():
         q, t, R, tt = _matched_cloud(n=100, seed=seed, noise=0.004)
         kw = dict(tau_inlier=0.006, iters=3000, fitness="feature",
                   device="cpu", seed=seed)
-        off = GPURansacSolver(**kw).solve(q, t, _frame())
-        on = GPURansacSolver(**kw, distance_check=True).solve(q, t, _frame())
+        off = GPURansacSolver(**kw).solve(q, t)
+        on = GPURansacSolver(**kw, distance_check=True).solve(q, t)
         if not off:
             continue
         assert not on or (on[0].breakdown["gpu_score"]

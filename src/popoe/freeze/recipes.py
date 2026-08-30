@@ -14,9 +14,8 @@ the official CNOS-FastSAM detections):
   * label pooling for confusable same-shape pairs (YCB-V clamps 19/20).
 
 Lab-only (opt-in, **not** the headline path): mask-stage
-``size_select`` via :func:`ycbv_lab_segmentor` / ``best_segmentor(...,
-size_select=...)`` / ``bop_eval --size-select``. Formal defaults keep
-``size_select=None``.
+``size_select`` via ``best_segmentor(..., size_select=...)`` /
+``bop_eval --size-select``. Formal defaults keep ``size_select=None``.
 
 Heavy models load lazily on first use; everything here is metric-space.
 """
@@ -116,11 +115,7 @@ def best_encoders(device: str = "cuda", target_grid: int = 32,
     qx = QueryFeatureExtractor(device, dino=dino, gedi=gedi,
                                render_backend=render_backend)
     tx = TargetFeatureExtractor(device, dino=dino, gedi=gedi)
-    qx.fusion.vis_weight = 1.0   # pinned; make_freeze_encoders shares qx.fusion
-    # |P_Q|. Historical 3000; FreeZeV2 Sec. IV-A uses 5k ("For P_Q and
-    # P_T^dense we use 5k and 3k points"). Env, not a parameter, so it travels
-    # the same road as the other feature knobs and bop_eval's enc_cfg can
-    # record what actually ran.
+    qx.fusion.vis_weight = 1.0
     n_points = int(os.environ.get("POPOE_QUERY_POINTS", "3000"))
     return make_freeze_encoders(qx, tx, n_points=n_points)
 
@@ -138,8 +133,7 @@ def best_segmentor(detections_json: str | None = None, topk: int = 2,
     the two must be given.
 
     ``size_select`` is opt-in mask-stage size arbitration for confusable pairs
-    (``None`` default = formal BOP headline path). See
-    :func:`ycbv_lab_segmentor` for the lab clamp recipe.
+    (``None`` default = formal BOP headline path).
     """
     if (detections_json is None) == (sources is None):
         raise ValueError("pass exactly one of detections_json or sources")
@@ -159,31 +153,6 @@ def best_segmentor(detections_json: str | None = None, topk: int = 2,
     if sources is not None:
         return BOPDetectionsSegmentor(sources=sources, **kw)
     return BOPDetectionsSegmentor(detections_json, source=source, **kw)
-
-
-def ycbv_lab_segmentor(detections_json: str | None = None, topk: int = 2,
-                       sources=None, size_select: str = "nearest",
-                       size_select_fallback: bool = True):
-    """YCB-V *lab / confusable-clamp* segmentor (not the formal headline path).
-
-    Combines formal merge labels with mask-stage nearest/soft size select.
-    Does **not** change ``best_segmentor`` defaults or REPRODUCTION headline
-    numbers — call this (or pass ``size_select=`` explicitly) for lab runs.
-    """
-    if size_select not in ("soft", "nearest"):
-        raise ValueError(
-            f"ycbv_lab_segmentor size_select must be 'soft' or 'nearest', "
-            f"got {size_select!r}"
-        )
-    return best_segmentor(
-        detections_json=detections_json,
-        sources=sources,
-        topk=topk,
-        merge_labels=YCBV_MERGE_LABELS,
-        size_select=size_select,
-        confusable_diameters=dict(YCBV_CLAMP_DIAMETERS_M),
-        size_select_fallback=size_select_fallback,
-    )
 
 
 SOLVERS = ("o3d", "gpu", "gpu-feat", "gpu-feat-dist", "teaser")   # o3d is the evaluated mainline default

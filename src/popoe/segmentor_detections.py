@@ -257,7 +257,7 @@ def decode_detection_mask(seg: dict) -> np.ndarray:
 # (NIDS-Net's GroundingDINO/SAM/DINOv2 stack, a CNOS-style script, a manual
 # SAM-prompt tool). Naming each source keeps provenance on every mask
 # (`Detection.source`), exactly as the fallback chain does
-# (segmentor.FirstAvailableSegmentor) — see ARCHITECTURE.md.
+# (caller policy) — see ARCHITECTURE.md.
 
 @dataclass(frozen=True)
 class DetectionSource:

@@ -1,38 +1,8 @@
-"""Object-agnostic segmentors + the explicit fallback chain.
+"""Object-agnostic live segmentors (SAM2 AMG, depth connected-components).
 
-Every segmentor here satisfies `interfaces.Segmentor`
-(`segment(scene, obj) -> list[Detection]`) and does EXACTLY ONE thing. A
-segmentor whose dependency is missing raises `SegmentorUnavailable`; it never
-quietly substitutes a weaker method.
-
-Why no fallback inside an implementation
-----------------------------------------
-It used to be inside: `SAMSegmentor.segment` silently dropped to depth
-connected-components on load failure, on generate() exception, AND on an empty
-result. Two things that costs you:
-
-  * **You cannot tell what actually ran.** A run on a box without the SAM2
-    checkpoint produced depth-blob masks while every log line, config and
-    cache key still said the method you asked for. `Detection.source` +
-    `FirstAvailableSegmentor.last_used` now make the answer explicit.
-  * **Scores stop being comparable.** `score` means a different thing per
-    method (SAM predicted-IoU / area fraction). Merging them ranked a large
-    depth blob above a genuine mask. The chain returns one segmentor's
-    output, never a blend.
-
-Fallback is a CALLER's policy, so the caller composes it and can see the
-outcome:
-
-    seg = FirstAvailableSegmentor([
-        SAMSegmentor(),               # SAM2 AMG, source=sam2-amg
-        DepthSegmentor(),             # no deps; always available
-    ])
-    dets = seg.segment(scene, obj)
-    print(seg.last_used)              # -> "sam2-amg" or "depth-cc"
-
-Only `SegmentorUnavailable` (missing package / missing checkpoint) advances the
-chain. A runtime failure — CUDA OOM, a corrupt image — propagates: masking real
-bugs as "the fallback handled it" is how the above shipped in the first place.
+A segmentor whose dependency is missing raises `SegmentorUnavailable`; it
+never quietly substitutes a weaker method. `Detection.source` records what
+ran.
 
 Installation (SAM2 paths):
     pip install git+https://github.com/facebookresearch/sam2.git
@@ -75,8 +45,7 @@ def default_ckpt_dir() -> str:
 class SegmentorUnavailable(BackendUnavailable):
     """A segmentor's backend is missing (package, checkpoint, device).
 
-    The ONLY condition that advances a FirstAvailableSegmentor chain. Runtime
-    errors are not this: they propagate. See interfaces.BackendUnavailable."""
+    Runtime errors are not this: they propagate. See interfaces.BackendUnavailable."""
 
 
 def _disable_cudnn() -> None:
@@ -116,57 +85,6 @@ def build_sam2_model(model_size: str = 'small', device: str = 'cuda',
             f"{ckpt_name} -P {ckpt_dir}/")
     return build_sam2(cfg, ckpt_path, device=device, apply_postprocessing=False)
 
-
-# ── The explicit chain ──────────────────────────────────────────────────
-
-class FirstAvailableSegmentor:
-    """Try each segmentor in order; use the first one that is available.
-
-    This is the ONLY place a fallback lives. It records what ran:
-    `last_used` (str) and `Detection.source` on every returned detection.
-
-    Args:
-        segmentors: ordered [(name, segmentor)] or [segmentor] (name taken
-            from `.source` if the segmentor exposes one, else its class name).
-        advance_on_empty: if True, an available segmentor returning NO
-            detections also advances the chain. Default False — "no object in
-            this image" is a legitimate answer, and conflating it with "this
-            segmentor is broken" is what the old SAMSegmentor did.
-    """
-
-    def __init__(self, segmentors, advance_on_empty: bool = False):
-        self.segmentors = [
-            s if isinstance(s, tuple)
-            else (getattr(s, 'source', None) or type(s).__name__, s)
-            for s in segmentors
-        ]
-        self.advance_on_empty = advance_on_empty
-        self.last_used: str | None = None
-        self._skipped: dict[str, str] = {}   # name -> why unavailable
-
-    def segment(self, scene: Scene, obj: ObjectModel) -> list[Detection]:
-        for name, seg in self.segmentors:
-            try:
-                dets = seg.segment(scene, obj)
-            except SegmentorUnavailable as e:
-                if name not in self._skipped:     # announce once, not per image
-                    self._skipped[name] = str(e)
-                    print(f"[segmentor] {name} unavailable -> {e}\n"
-                          f"[segmentor] falling back to the next in the chain.")
-                continue
-            if not dets and self.advance_on_empty:
-                continue
-            self.last_used = name
-            for d in dets:
-                d.source = d.source or name
-            return dets
-        self.last_used = None
-        raise SegmentorUnavailable(
-            "no segmentor in the chain was available: "
-            + "; ".join(f"{n}: {w}" for n, w in self._skipped.items()))
-
-
-# ── Segmentors ──────────────────────────────────────────────────────────
 
 class SAMSegmentor:
     """SAM2.1 automatic mask generator. Class-agnostic: returns whatever the

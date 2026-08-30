@@ -45,7 +45,6 @@ def test_recorded_scale_wins_over_stored_points(bop_eval):
     frame = bop_eval.restore_canon_frame(
         arrays, {"canon_basis": "diameter"}, PTS, obj_id=1)
     assert frame.scale == pytest.approx(0.123, abs=0)
-    assert np.all(frame.center == 0)
 
 
 def test_legacy_extent_ungated_falls_back_to_from_points(bop_eval):

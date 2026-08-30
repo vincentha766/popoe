@@ -1,22 +1,7 @@
 """
-popoe.freeze.adapters — the FreeZe-v2 stage implementations. Thin wrappers that
-make the concrete FreeZe classes (feature extractors, feature-aware scoring)
-satisfy the stage Protocols in popoe.interfaces, without changing their logic.
-`examples/pipeline_selfcheck.py` checks the full adapter chain is
-bitwise-identical to the inline `FreeZeV2.estimate_pose` body
-(`examples/freezev2_monolith.py`).
-
-The method-agnostic adapters (RansacSolver, ICPRefiner, BestScoreSelector)
-stay in popoe.adapters.
-
-One design point worth knowing: the target encoder needs the query side's
-fitted visual PCA. Because fusion is an injectable component
-(popoe.freeze.fusion), we SHARE one fusion instance across both encoders —
-PCA reuse is automatic, no `_pca_vis` copy. `make_freeze_encoders()` wires
-that up.
-
-Encoder adapters need the heavy models (DINOv2/GeDi) and a GPU; FreeZeScorer
-is pure numpy and unit-testable offline.
+popoe.freeze.adapters — FreeZe-v2 encoder adapters. Thin wrappers around
+the feature extractors. The target encoder reuses the query's visual PCA via
+a shared fusion instance (wired in best_encoders).
 """
 
 from __future__ import annotations
@@ -134,7 +119,7 @@ class FreeZeQueryEncoder:
 
 class FreeZeTargetEncoder:
     """Adapt TargetFeatureExtractor. Consumes the CanonFrame produced by the
-    query side; relies on the shared fusion (see make_freeze_encoders) for the
+    query side; relies on the shared fusion (wired in best_encoders) for the
     reused PCA, so no `_pca_vis` copy is needed here."""
 
     def __init__(self, extractor):
@@ -160,12 +145,8 @@ class FreeZeTargetEncoder:
         were built by truncation, so a target that fits a real PCA is just as
         incoherent. Either way the answer is re-encode, never substitute.
 
-        A query that legitimately needed NO reduction (`n_vis == vis_dim`, e.g.
-        `POPOE_VIS_DIM=1536` against 1536-D DINOv2) is a different thing and is
-        accepted: it hands over `fusion.IdentityReduction()`, not `None`. That
-        distinction is the whole reason the marker exists — `None` has to stay
-        reserved for "missing", or a lost sidecar becomes indistinguishable
-        from a deliberate configuration."""
+        A query that legitimately needed NO reduction (`n_vis == vis_dim`)
+        hands over `pca_vis="identity"`, not `None`."""
         if pca_vis is None:
             raise ValueError(
                 "install_pca(None): the target side must REUSE the query's "
@@ -173,7 +154,7 @@ class FreeZeTargetEncoder:
                 "query features are unusable (incomplete cache entry, or a query "
                 "whose PCA never fitted) — re-encode the query instead of "
                 "installing nothing. A query that genuinely needed no reduction "
-                "passes fusion.IdentityReduction(), not None. See the "
+                "passes pca_vis='identity', not None. See the "
                 "availability contract in popoe.interfaces.")
         self.ex.fusion.pca_vis = pca_vis
 
@@ -198,20 +179,15 @@ class FreeZeTargetEncoder:
 
 
 def make_freeze_encoders(query_extractor, target_extractor, n_points: int = 3000):
-    """Wire query+target extractors to SHARE one fusion instance (so the visual
-    PCA fit on the query side is transparently reused on the target side), and
-    return (QueryEncoder, TargetEncoder) adapters."""
+    """Share one fusion instance (query PCA reused on the target side)."""
     target_extractor.fusion = query_extractor.fusion
     return (FreeZeQueryEncoder(query_extractor, n_points),
             FreeZeTargetEncoder(target_extractor))
 
 
-# ── Scoring ─────────────────────────────────────────────────────────────
-
 class FreeZeScorer:
-    """Adapt feature_aware_score + final_score into the single scoring stage.
-    Reproduces FreeZeV2.estimate_pose's final combination exactly:
-    s_fine re-scored at the refined pose, then S = s_coarse^a * s_fine^b * s_icp^g."""
+    """Paper Eq.7: S = s_coarse^a * s_fine^b * s_icp^g. ChampionScorer is the
+    evaluated rule; this is the FreeZe formula as a PoseScorer stage."""
 
     def __init__(self, tau_inlier: float = 0.03,
                  alpha: float = 1.0, beta: float = 1.0, gamma: float = 1.0):
@@ -222,7 +198,8 @@ class FreeZeScorer:
               query: PointFeatures, target: PointFeatures) -> PoseHypothesis:
         from popoe.registration import feature_aware_score, final_score
         s_fine, _ = feature_aware_score(
-            pose.R, pose.t, query.pts, target.pts, query.feats, target.feats, self.tau_inlier,
+            pose.R, pose.t, query.pts, target.pts, query.feats, target.feats,
+            self.tau_inlier,
         )
         s_coarse = pose.breakdown.get("s_coarse", pose.score)
         s_icp = pose.breakdown.get("s_icp", pose.breakdown.get("fitness", 1.0))
@@ -231,3 +208,6 @@ class FreeZeScorer:
             R=pose.R, t=pose.t, score=score,
             breakdown={**pose.breakdown, "s_fine": s_fine},
         )
+
+
+

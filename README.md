@@ -76,10 +76,7 @@ popoe.Detection, popoe.PointFeatures, popoe.PoseHypothesis
 Run the reference pipeline (needs a CUDA GPU + the external deps + a BOP dataset):
 
 ```bash
-# Adapter pipeline is bitwise-identical to the inline reference (acceptance check):
-python examples/pipeline_selfcheck.py --bop /path/to/ycbv --obj 5 -n 3
-
-# Swap the pose solver with one line and compare vs GT:
+# Swap the pose solver and compare vs GT:
 python examples/solver_swap_demo.py  --bop /path/to/ycbv --obj 5 -n 5
 ```
 
@@ -90,50 +87,37 @@ registration. Example — a new pose solver is one new file:
 
 ```python
 # my_solver.py
-from popoe import PointFeatures, CanonFrame, PoseHypothesis
+from popoe import PointFeatures, PoseHypothesis
 
 class MySolver:  # satisfies popoe.PoseSolver structurally
-    def solve(self, query: PointFeatures, target: PointFeatures,
-              frame: CanonFrame) -> list[PoseHypothesis]:
+    def solve(self, query: PointFeatures, target: PointFeatures
+              ) -> list[PoseHypothesis]:
         R, t = my_registration(query.pts, query.feats, target.pts, target.feats)
         return [PoseHypothesis(R=R, t=t, score=..., breakdown={"s_coarse": ...})]
 ```
 
-```python
-from popoe import Pipeline
-pipe = Pipeline(segmentor=..., query_encoder=..., target_encoder=...,
-                solver=MySolver(), refiners=[...], selector=..., scorer=...)
-best = pipe.run(scene, obj)
-```
-
-The shipped solvers (`popoe.adapters.RansacSolver`,
-`popoe.solvers.Open3DFeatureRansacSolver`, `popoe.solvers.GPURansacSolver`,
-and `popoe.solvers.TeaserSolver`) are worked examples. Another robust backend
-like MAC would be added the same way — one file.
+`popoe.Pipeline` is the library composition of those stages. The evaluated
+BOP loop is `examples/bop_eval.py`. The shipped solvers
+(`popoe.solvers.Open3DFeatureRansacSolver`, `popoe.solvers.GPURansacSolver`,
+and `popoe.solvers.TeaserSolver`) are worked examples.
 
 A stage never hides a fallback: if its backend is missing (no package, no
 checkpoint, no GPU) it raises `BackendUnavailable` rather than quietly running a
-weaker method under the same name. Substitution is the caller's call, and the
-caller can see what ran:
+weaker method under the same name.
 
 ```python
-from popoe.segmentor import DepthSegmentor, FirstAvailableSegmentor, SAMSegmentor
+from popoe.segmentor import DepthSegmentor, SAMSegmentor
 
-seg = FirstAvailableSegmentor([
-    SAMSegmentor(),       # SAM2 AMG, source=sam2-amg
-    DepthSegmentor(),     # no deps at all
-])
-dets = seg.segment(scene, obj)
-seg.last_used      # -> 'sam2-amg' | 'depth-cc'
-dets[0].source     # per detection — survives into the CSV
+dets = SAMSegmentor().segment(scene, obj)   # raises if SAM2 is missing
+dets[0].source     # 'sam2-amg' — survives into the CSV
 ```
 
 See [ARCHITECTURE.md](ARCHITECTURE.md#the-availability-contract-no-hidden-fallbacks)
 for why (short version: a silent fallback makes results unattributable and
 poisons the config-addressed cache).
 
-A solver only has to *propose* candidates; the feature-aware `PoseScorer` +
-`Selector` *dispose*. So a geometry-only RANSAC can emit several hypotheses
+A solver only has to *propose* candidates; `ChampionScorer` *disposes*. So a
+geometry-only RANSAC can emit several hypotheses
 (`Open3DFeatureRansacSolver(n_restarts=8)`) and let the existing scorer choose,
 with no new scoring code. See
 [ARCHITECTURE.md](ARCHITECTURE.md#pluggability-proven--the-posesolver-stage)
@@ -170,10 +154,8 @@ not popoe dependencies. Their official stacks use heavy and version-pinned
 segmentation, foundation-model and pose-estimation packages. The source
 checkouts are pinned under `external/`, but runtime should still happen in
 separate `uv`/conda projects or services. Export predictions, then consume
-them here as named files or through the provenance-specific wrappers
-`popoe.segmentor_cnos_official.CNOSDetectionsSegmentor`,
-`popoe.segmentor_nids.NIDSNetDetectionsSegmentor`, and
-`popoe.segmentor_sam6d.SAM6DIsmDetectionsSegmentor`.
+them here as named files through `BOPDetectionsSegmentor(..., source="cnos")`
+(or `"nids"` / `"sam6d"`).
 That keeps `popoe`'s pose backend independent of segmentation-model dependency
 conflicts while preserving per-detection source provenance through scoring.
 See [CNOS.md](CNOS.md), [NIDS_NET.md](NIDS_NET.md), and [SAM6D.md](SAM6D.md) for
@@ -298,9 +280,9 @@ seg = BOPDetectionsSegmentor(frame.detections_path, source="local-cnos")
 
 ```
 src/popoe/               # method-agnostic pipeline
-  interfaces.py          # stage Protocols + data classes + reference Pipeline
+  interfaces.py          # stage Protocols + data classes
   registration.py        # RANSAC / ICP / feature-aware scoring primitives
-  adapters.py            # generic stage adapters (RansacSolver/ICPRefiner/selector)
+  adapters.py            # ICPRefiner / select_top_instances
   scoring.py             # ChampionScorer (evaluated scorer)
   renderer.py  segmentor.py  segmentor_cnos_lab.py  segmentor_cnos_official.py
   solvers/open3d_ransac.py  solvers/gpu_ransac.py  solvers/teaser.py

@@ -4,12 +4,13 @@ import numpy as np
 
 from popoe.interfaces import ObjectModel, Scene
 from popoe.segmentor_cnos_official import (
-    CNOSDetectionsSegmentor,
+    CNOS_SOURCE,
     adapt_cnos_json,
     build_cnos_bop_command,
     build_cnos_custom_infer_command,
     build_cnos_custom_render_command,
 )
+from popoe.segmentor_detections import BOPDetectionsSegmentor
 
 
 def _scene():
@@ -32,7 +33,7 @@ def test_cnos_detections_segmentor_stamps_official_source(tmp_path):
         "mask_path": "mask.npy",
     }]))
 
-    seg = CNOSDetectionsSegmentor(str(p), topk=1, min_pixels=1)
+    seg = BOPDetectionsSegmentor(str(p), source=CNOS_SOURCE, topk=1, min_pixels=1)
     dets = seg.segment(_scene(), ObjectModel(obj_id=9, mesh_path="x", diameter=0.1))
 
     assert len(dets) == 1
@@ -59,7 +60,7 @@ def test_cnos_adapt_custom_stamps_placeholder_ids(tmp_path):
 
     records = adapt_cnos_json(
         str(raw), str(out), scene_id=3, image_id=42, category_id=9)
-    seg = CNOSDetectionsSegmentor(str(out), topk=1, min_pixels=1)
+    seg = BOPDetectionsSegmentor(str(out), source=CNOS_SOURCE, topk=1, min_pixels=1)
     scene = Scene(rgb=np.zeros((8, 8, 3), np.uint8),
                   depth=np.zeros((8, 8), np.float32),
                   K=np.eye(3), scene_id=3, im_id=42)

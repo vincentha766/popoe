@@ -23,7 +23,7 @@ import numpy as np
 import pytest
 
 from popoe.freeze.recipes import _build_solver, stages_for_object
-from popoe.interfaces import CanonFrame, PointFeatures
+from popoe.interfaces import PointFeatures
 from popoe.solvers import Open3DFeatureRansacSolver
 
 
@@ -68,8 +68,7 @@ def test_correspondence_path_recovers_a_planted_pose():
     solver = Open3DFeatureRansacSolver(tau_inlier=0.005, max_iteration=2000,
                                        seed=11, corr_topk=3)
     hyps = solver.solve(PointFeatures(pts=pts_q, feats=fq),
-                        PointFeatures(pts=pts_t, feats=ft),
-                        CanonFrame(center=np.zeros(3), scale=1.0))
+                        PointFeatures(pts=pts_t, feats=ft))
     assert hyps, "correspondence path returned no hypotheses"
     R, t = hyps[0].R, hyps[0].t
     # Orthonormality first — a transposed correspondence list would already

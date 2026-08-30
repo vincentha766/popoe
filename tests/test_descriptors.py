@@ -10,7 +10,7 @@ lookup contract from popoe.interfaces.PointDescriptor.
 import numpy as np
 import pytest
 
-from popoe.descriptors import FPFHDescriptor, FPFH_DIM, describe, load_fpfh
+from popoe.descriptors import FPFHDescriptor, FPFH_DIM, load_fpfh
 from popoe.interfaces import PointDescriptor
 
 pytest.importorskip("open3d")
@@ -204,35 +204,6 @@ def test_role_decides_the_convention_regardless_of_geometry():
         desc.resolve_orient(cad, role="neither")
 
 
-def test_describe_passes_role_only_to_backbones_that_accept_it():
-    """GeDi and dGeDi keep the two-argument signature; describe() must not
-    break them, and must not swallow a TypeError from inside a role-aware
-    compute() by silently retrying without the role."""
-    pts = _bumpy_sphere(60)
-
-    class RoleBlind:
-        def compute(self, pts, pcd):
-            return np.zeros((len(pts), 4), np.float32)
-
-    class RoleAware:
-        def compute(self, pts, pcd, role=None):
-            self.seen = role
-            return np.zeros((len(pts), 4), np.float32)
-
-    class RaisesInside:
-        def compute(self, pts, pcd, role=None):
-            raise TypeError("unrelated internal failure")
-
-    assert describe(RoleBlind(), pts, pts, "query").shape == (60, 4)
-    aware = RoleAware()
-    describe(aware, pts, pts, "target")
-    assert aware.seen == "target"
-    with pytest.raises(TypeError, match="unrelated internal failure"):
-        describe(RaisesInside(), pts, pts, "query")
-    with pytest.raises(ValueError):
-        describe(RoleBlind(), pts, pts, "sideways")
-
-
 def test_auto_orient_fallback_without_a_role():
     """The no-role fallback still has to do something sensible for offline and
     interactive use (tests, notebooks), even though the pipeline passes a role."""
@@ -278,8 +249,8 @@ def test_query_and_target_of_one_surface_agree_on_the_convention():
     visible = cad[cad[:, 2] < -0.15] + standoff
 
     desc = FPFHDescriptor()
-    q = describe(desc, cad, cad, role="query")
-    t = describe(desc, visible, visible, role="target")
+    q = desc.compute(cad, cad, role="query")
+    t = desc.compute(visible, visible, role="target")
 
     # Match each visible point to its CAD counterpart (same index space is lost
     # after the mask, so re-derive by position).

@@ -27,7 +27,7 @@ from typing import Optional
 
 import numpy as np
 
-from popoe.interfaces import CanonFrame, PointFeatures, PoseHypothesis
+from popoe.interfaces import PointFeatures, PoseHypothesis
 
 
 class Open3DFeatureRansacSolver:
@@ -81,7 +81,7 @@ class Open3DFeatureRansacSolver:
         self.corr_topk = corr_topk
 
     def solve(self, query: PointFeatures, target: PointFeatures,
-              frame: CanonFrame) -> list[PoseHypothesis]:
+              frame=None) -> list[PoseHypothesis]:
         import open3d as o3d
         from popoe.registration import feature_aware_score
 

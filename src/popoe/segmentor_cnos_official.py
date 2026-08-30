@@ -15,8 +15,8 @@ import os
 from pathlib import Path
 from typing import Mapping, Optional, Sequence
 
-from popoe.external_cmd import ExternalCommand, run_external_command
-from popoe.segmentor_detections import BOPDetectionsSegmentor, load_detections
+from popoe.external_cmd import ExternalCommand
+from popoe.segmentor_detections import load_detections
 
 
 CNOS_SOURCE = "cnos"
@@ -202,7 +202,7 @@ def adapt_cnos_records(records,
 
     Official BOP outputs already carry authoritative ids. The custom CAD/RGB
     script writes placeholder ids, so single-frame custom output must be
-    stamped with the target frame/object ids before using `CNOSDetectionsSegmentor`.
+    stamped with the target frame/object ids before using `BOPDetectionsSegmentor`.
     """
 
     out = []
@@ -263,12 +263,6 @@ def adapt_cnos_json(input_json: str,
     with open(output_json, "w") as f:
         json.dump(records, f)
     return records
-
-
-class CNOSDetectionsSegmentor(BOPDetectionsSegmentor):
-    """File-backed Segmentor for official CNOS/CNOS-FastSAM predictions."""
-
-    source = CNOS_SOURCE
 
 
 def _add_root_args(p):
@@ -396,7 +390,7 @@ if __name__ == "__main__":
 
 
 __all__ = [
-    "CNOSDetectionsSegmentor",
+    "CNOS_SOURCE",
     "ExternalCommand",
     "adapt_cnos_json",
     "adapt_cnos_records",
@@ -404,5 +398,4 @@ __all__ = [
     "build_cnos_custom_infer_command",
     "build_cnos_custom_render_command",
     "resolve_cnos_root",
-    "run_external_command",
 ]

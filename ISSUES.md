@@ -207,6 +207,22 @@ Fixes:
 2. `examples/bop_eval.py`: query features + fitted PCA are cached with the
    target features — one basis per object, persisted.
 3. `adapters.py`: deterministic query sampling (seed=obj_id).
+4. `interfaces.py` (2026-08-23): `Pipeline.run` re-installs the query's PCA
+   snapshot before every target encode when the target encoder exposes
+   `install_pca` — a THIRD door into the same incoherence, and the one
+   `Pipeline` itself left open. `examples/bop_eval.py` already did this, so no
+   evaluated number is affected; `Pipeline` did not, so every caller that drives
+   more than one object through it was exposed. The failure mode there is not
+   run-to-run but call-to-call: `Pipeline` caches query features, so from the
+   SECOND call onward `encode_query` never runs and each object's targets are
+   projected in whichever object's basis was installed last. Measured on a
+   two-object live service (mug + spam, 3 restarts x 2 segmentors): the mug —
+   first in the registry, so its basis is overwritten by the spam query — scores
+   0.155-0.161 with a 0.4-4.1 deg rotation error on call 1 and 0.080-0.097 with
+   a 94-179 deg error on every later call, while the spam can (last, so its own
+   basis stays installed) is unaffected. A missing snapshot now raises rather
+   than silently using the loaded basis. Regression:
+   `tests/test_interfaces.py::test_pipeline_reinstalls_query_pca_on_cached_runs`.
 
 Verification: fresh-cache run (v4) then cache-hit rerun (v4b) must agree
 within RANSAC noise (~±3pt/object) and match the formal subset baseline
@@ -445,8 +461,9 @@ The same sweep found three smaller things, all since fixed (`d691349`,
    seed stays OUT of the encoder cache key on purpose: it moves poses, not
    features, so keying it would invalidate every pod cache for nothing.
 5. **`solver_swap_demo` could not print one of its own quoted columns.** The
-   summary emitted recall @0.05/0.1/0.2d while the ARCHITECTURE.md table quotes
-   @0.2d and @0.5d. Thresholds and labels now come from one tuple.
+   summary emitted recall @0.05/0.1/0.2d while the solver A/B table (now in
+   REPRODUCTION.md) quotes @0.2d and @0.5d. Thresholds and labels now come
+   from one tuple.
 6. **`registration._geometric_prune` was dead** — zero references;
    `ransac_pose_estimation` inlines a simpler two-point check instead.
 
@@ -467,10 +484,9 @@ for all three, and the 72/33/35 head-to-head. The run log has no summary block
 because the pod died at 140, which is why the figures were derived post-hoc;
 that is a recorded circumstance, not a missing artefact.
 
-What remains is only that REPRODUCTION.md has no cross-reference row pointing
-at them — and whether the ledger rule even applies is a judgement call, since
-ARCHITECTURE.md states outright that the table "is not a performance claim for
-popoe". Left open deliberately.
+The table now lives only in REPRODUCTION.md (Solver A/B ledger), which states
+outright that it is not a performance claim for popoe. ARCHITECTURE.md
+describes the seam and points at the ledger; it does not quote the numbers.
 
 Lesson, second order: "I could not find it" is not "it does not exist". A
 provenance complaint is itself a claim about artefacts and needs the same

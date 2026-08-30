@@ -37,15 +37,15 @@ q = np.load(sorted(glob.glob(f"{CACHE}/query_*.npz"))[0])
 query = PointFeatures(pts=q["pts"].astype(np.float64), feats=q["feats"].astype(np.float64))
 target = PointFeatures(pts=pts.astype(np.float64), feats=feats.astype(np.float64),
                        pts_dense=dense.astype(np.float64))
-frame = CanonFrame(center=np.zeros(3), scale=1.0)
+frame = CanonFrame(scale=1.0)
 print(f"query {query.pts.shape} target {target.pts.shape}", flush=True)
 
 def bench(name, solver, n=3):
-    solver.solve(query, target, frame)          # warmup
+    solver.solve(query, target)          # warmup
     ts = []
     for _ in range(n):
         torch.cuda.synchronize(); t0 = time.time()
-        hyps = solver.solve(query, target, frame)
+        hyps = solver.solve(query, target)
         torch.cuda.synchronize(); ts.append(time.time() - t0)
     print(f"[SOLVE] {name:34s} mean {np.mean(ts):6.3f} s  "
           f"(min {min(ts):.3f} max {max(ts):.3f})  hyps={len(hyps)}", flush=True)

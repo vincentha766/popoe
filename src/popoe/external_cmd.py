@@ -37,8 +37,4 @@ class ExternalCommand:
         return subprocess.run(**popen_kwargs)
 
 
-def run_external_command(command: ExternalCommand, **kwargs):
-    return command.run(**kwargs)
-
-
-__all__ = ["ExternalCommand", "run_external_command"]
+__all__ = ["ExternalCommand"]

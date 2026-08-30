@@ -8,9 +8,7 @@ import numpy as np
 import pytest
 
 from popoe.interfaces import Detection, ObjectModel, Scene, Segmentor
-from popoe.segmentor import (
-    DepthSegmentor, FirstAvailableSegmentor, SegmentorUnavailable,
-)
+from popoe.segmentor import DepthSegmentor, SegmentorUnavailable
 
 
 def _scene(depth=None):
@@ -48,49 +46,6 @@ class _Works:
                 for _ in range(self.n)]
 
 
-def test_chain_skips_unavailable_and_records_what_ran():
-    chain = FirstAvailableSegmentor([_Unavailable(), _Works()])
-    dets = chain.segment(_scene(), _obj())
-
-    assert len(dets) == 2
-    assert chain.last_used == "works"
-    # every detection is stamped, so provenance survives into the CSV / cache key
-    assert {d.source for d in dets} == {"works"}
-
-
-def test_chain_prefers_the_first_available():
-    chain = FirstAvailableSegmentor([_Works(n=1), _Works(n=3)])
-    assert len(chain.segment(_scene(), _obj())) == 1
-    assert chain.last_used == "works"
-
-
-def test_runtime_failure_propagates_and_does_not_fall_back():
-    """The old code caught bare Exception and fell back — an OOM looked like a
-    successful (worse) segmentation. It must surface instead."""
-    chain = FirstAvailableSegmentor([_Broken(), _Works()])
-    with pytest.raises(RuntimeError, match="CUDA out of memory"):
-        chain.segment(_scene(), _obj())
-
-
-def test_empty_result_is_an_answer_not_a_failure():
-    """No object in this image is legitimate; it must not silently advance to a
-    weaker method (the old SAMSegmentor did exactly that)."""
-    chain = FirstAvailableSegmentor([_Works(n=0), _Works(n=2)])
-    assert chain.segment(_scene(), _obj()) == []
-    assert chain.last_used == "works"
-
-    opted_in = FirstAvailableSegmentor([_Works(n=0), _Works(n=2)],
-                                       advance_on_empty=True)
-    assert len(opted_in.segment(_scene(), _obj())) == 2
-
-
-def test_exhausted_chain_raises_rather_than_returning_nothing():
-    chain = FirstAvailableSegmentor([_Unavailable()])
-    with pytest.raises(SegmentorUnavailable, match="no segmentor in the chain"):
-        chain.segment(_scene(), _obj())
-    assert chain.last_used is None
-
-
 def test_depth_segmentor_runs_with_no_deps_and_scores_by_area():
     pytest.importorskip("cv2")   # the only heavy dep below the chain layer
     depth = np.zeros((32, 32), np.float32)
@@ -110,7 +65,6 @@ def test_depth_segmentor_runs_with_no_deps_and_scores_by_area():
 
 def test_segmentors_satisfy_the_stage_protocol():
     assert isinstance(DepthSegmentor(), Segmentor)
-    assert isinstance(FirstAvailableSegmentor([DepthSegmentor()]), Segmentor)
 
 
 def test_an_oom_during_model_load_is_not_treated_as_unavailability(monkeypatch):
@@ -223,12 +177,8 @@ def test_an_arch_mismatch_still_routes_to_the_next_segmentor(monkeypatch):
             self.backbone.model
             return []
 
-    chain = FirstAvailableSegmentor([_DinoLoadGuardSegmentor(), _Works(n=1)])
-    dets = chain.segment(_scene(), _obj())
-
-    assert len(dets) == 1
-    assert chain.last_used == "works"
-    assert {d.source for d in dets} == {"works"}
+    with pytest.raises(SegmentorUnavailable):
+        _DinoLoadGuardSegmentor().segment(_scene(), _obj())
 
 
 def test_an_oom_probe_does_not_latch_the_renderer_into_cpu_mode(monkeypatch):

@@ -9,6 +9,25 @@ stage contracts composed at the runner level:
      (inst_count==1, i.e. all of LMO/YCB-V, reproduces the old single-row
      global argmax exactly)
 
+Runner invariants (load-bearing for reproducible benchmark runs):
+
+  * One query encode per object. Queries and fitted visual PCA are cached up
+    front. The target cache key includes the query key because target visual
+    features live in the query PCA basis.
+  * Feature extraction is pinned at w=1. The visual-weight sweep reweights
+    cached ``[vis|geo]`` features at selection time, and ChampionScorer's
+    ``s_feat_1`` really is a w=1 re-score.
+  * Completed targets emit exactly ``inst_count`` rows. Champions are written
+    first and zero rows pad any missing instances. Resume is a row-count
+    invariant: fewer rows means a partial target and those stale rows are
+    dropped before re-run.
+  * ``--cand-csv`` is the offline interface: every mask x visual-weight
+    hypothesis with its score breakdown and solver name, so selection rules
+    can be replayed without re-running DINO/GeDi/FPFH.
+  * Confusable-object arbitration is explicit. YCB-V clamp label pooling is
+    the formal path; ``--size-select`` and ``--dual-assign`` are
+    score-affecting lab paths and require fresh output files.
+
 Workflow features (the experiment accelerators):
 
   * ``--cache DIR``  — per-candidate target features persist to disk; reruns
@@ -51,8 +70,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from popoe.adapters import (BestScoreSelector, resolve_resume,
-                            select_top_instances)
+from popoe.adapters import resolve_resume, select_top_instances
 from popoe.cache import (StageCache, conditional_enc_entries, file_fingerprint,
                          fingerprint)
 from popoe.datasets.bop import bop_layout, default_targets_path
@@ -453,8 +471,7 @@ def restore_canon_frame(arrays, enc_cfg, pts, obj_id):
     suspect, so the remedy is a fresh cache, not a repaired query."""
     from popoe.interfaces import CanonFrame
     if "canon_scale" in arrays:
-        return CanonFrame(center=np.zeros(3, np.float32),
-                          scale=float(arrays["canon_scale"]))
+        return CanonFrame(scale=float(arrays["canon_scale"]))
     if (enc_cfg.get("canon_basis", "extent") == "extent"
             and enc_cfg.get("query_min_views", "0") == "0"):
         return CanonFrame.from_points(pts)
@@ -903,7 +920,6 @@ def main():
     else:
         q_enc, t_enc = best_encoders(target_grid=args.grid,
                                      render_backend=args.render_backend)
-    selector = BestScoreSelector()
 
     # Config-addressed stage cache: keys fingerprint the encoder configuration
     # and input CONTENT (mesh bytes, mask pixels) plus — for targets — the
@@ -948,8 +964,8 @@ def main():
     if enc_cfg["geom_backbone"].lower() == "fpfh":
         # Added ONLY when FPFH is the active backbone: unconditional keys would
         # change every existing GeDi key and throw away the pod-side cache.
-        from popoe.descriptors import fpfh_config
-        enc_cfg.update(fpfh_config())
+        from popoe.descriptors import load_fpfh
+        enc_cfg.update(load_fpfh().config())
     # Paper-fidelity feature knobs (FreeZeV2 Sec. IV-A). Same conditional-add
     # rule as FPFH above: each enters the key ONLY at a non-default value, so
     # every cache built before these knobs existed keeps its exact key — and a
@@ -1300,7 +1316,7 @@ def main():
                         tw = tgt if w == 1.0 else _reweighted(tgt, w, vis_split)
                         try:
                             with profiling.stage("solve"):
-                                hyps = list(solver.solve(qw, tw, frame))
+                                hyps = list(solver.solve(qw, tw))
                             for h in hyps:
                                 with profiling.stage("refine"):
                                     h = refiner.refine(h, scene, obj, qw, tw)
@@ -1346,10 +1362,10 @@ def main():
                         champs = [best] if best is not None else []
                     else:
                         champs = select_top_instances(
-                            hyps_by_det, selector, inst_count, nms_dist=nms_m)
+                            hyps_by_det, inst_count, nms_dist=nms_m)
                 else:
                     champs = select_top_instances(
-                        hyps_by_det, selector, inst_count, nms_dist=nms_m)
+                        hyps_by_det, inst_count, nms_dist=nms_m)
                 for best in champs:
                     wr.writerow([scene_id, im_id, obj_id,
                                  f"{best.score:.6f}",

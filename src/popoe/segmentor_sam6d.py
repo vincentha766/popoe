@@ -23,9 +23,9 @@ from typing import Optional, Sequence
 
 import numpy as np
 
-from popoe.external_cmd import ExternalCommand, run_external_command
+from popoe.external_cmd import ExternalCommand
 from popoe.interfaces import Detection, ObjectModel, PoseHypothesis, Scene
-from popoe.segmentor_detections import BOPDetectionsSegmentor
+
 
 
 SAM6D_SOURCE = "sam6d"
@@ -130,12 +130,6 @@ def build_pem_bop_command(dataset: str,
         argv.extend(["--exp_id", str(exp_id)])
     argv.extend(extra_args)
     return ExternalCommand(tuple(argv), cwd=str(_pem_dir(sam6d_root)))
-
-
-class SAM6DIsmDetectionsSegmentor(BOPDetectionsSegmentor):
-    """File-backed Segmentor for SAM-6D ISM detections."""
-
-    source = SAM6D_SOURCE
 
 
 @dataclass(frozen=True)
@@ -458,7 +452,7 @@ if __name__ == "__main__":
 
 __all__ = [
     "ExternalCommand",
-    "SAM6DIsmDetectionsSegmentor",
+    "SAM6D_SOURCE",
     "SAM6DPemPrediction",
     "SAM6DPemResultsCoarseEstimator",
     "build_ism_bop_command",
@@ -467,5 +461,4 @@ __all__ = [
     "load_sam6d_pem_json",
     "load_sam6d_pem_results",
     "resolve_sam6d_root",
-    "run_external_command",
 ]

@@ -9,7 +9,6 @@ from popoe.freeze.recipes import (
     YCBV_CLAMP_DIAMETERS_M,
     YCBV_MERGE_LABELS,
     best_segmentor,
-    ycbv_lab_segmentor,
 )
 from popoe.interfaces import ObjectModel, Scene
 
@@ -21,7 +20,7 @@ def _rle(mask):
     return {"size": list(mask.shape), "counts": r["counts"]}
 
 
-def test_ycbv_lab_segmentor_sets_nearest_and_merge(tmp_path):
+def test_best_segmentor_can_set_nearest_and_merge(tmp_path):
     H, W = 32, 32
     m = np.zeros((H, W), bool)
     m[8:24, 8:24] = True
@@ -32,19 +31,17 @@ def test_ycbv_lab_segmentor_sets_nearest_and_merge(tmp_path):
     p = tmp_path / "d.json"
     p.write_text(json.dumps(dets))
 
-    seg = ycbv_lab_segmentor(str(p), topk=1, size_select="nearest")
+    seg = best_segmentor(
+        str(p), topk=1, merge_labels=YCBV_MERGE_LABELS,
+        size_select="nearest",
+        confusable_diameters=dict(YCBV_CLAMP_DIAMETERS_M),
+    )
     assert seg.merge_labels == YCBV_MERGE_LABELS
     assert seg.size_select == "nearest"
     assert seg.confusable_diameters == YCBV_CLAMP_DIAMETERS_M
 
-    # Formal default remains size_select=None
     plain = best_segmentor(str(p), topk=1, merge_labels=YCBV_MERGE_LABELS)
     assert plain.size_select is None
-
-
-def test_ycbv_lab_segmentor_rejects_bad_mode():
-    with pytest.raises(ValueError, match="size_select"):
-        ycbv_lab_segmentor("x.json", size_select="band")
 
 
 def test_best_segmentor_size_select_soft_without_depth(tmp_path):

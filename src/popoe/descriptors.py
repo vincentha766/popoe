@@ -48,17 +48,6 @@ MAX_PTS_FOR_MST = 20000
 KEEP_ORIGINAL_ABOVE = 0.9
 
 
-def _accepts_role(fn) -> bool:
-    """Does this compute() take a `role` keyword (or **kwargs)?"""
-    import inspect
-    try:
-        params = inspect.signature(fn).parameters
-    except (TypeError, ValueError):   # C extensions without introspection
-        return False
-    return "role" in params or any(
-        p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
-
-
 def _as_numpy(x) -> np.ndarray:
     """Accept torch tensors or numpy arrays; Open3D needs contiguous float64."""
     if hasattr(x, "detach"):
@@ -186,7 +175,7 @@ class FPFHDescriptor:
         `role` is authoritative when given: "query" is a CAD model sampled all
         around (closed surface, orient outward), "target" is a single-view
         depth cloud (open surface, orient toward the camera at the origin).
-        Both live call sites know their role and pass it — see `describe()`.
+        Both live call sites know their role and pass it to `compute()`.
 
         Without a role this falls back to a DISTANCE heuristic, and that
         fallback has a genuinely ambiguous band. Three candidate rules were
@@ -200,7 +189,7 @@ class FPFHDescriptor:
         A CAD model whose origin sits outside its own geometry is genuinely
         indistinguishable from a depth cloud by points alone. So the fallback
         is a best effort for offline/interactive use, not something the
-        pipeline should rely on: `describe()` passes the role instead.
+        pipeline should rely on: `compute(..., role=)` passes the role instead.
         """
         if self.orient not in ("auto", "outward", "camera", "none"):
             raise ValueError(f"unknown orient mode: {self.orient!r}")
@@ -348,26 +337,6 @@ class FPFHDescriptor:
         return out
 
 
-def describe(descriptor, pts, pcd, role: str):
-    """Call a PointDescriptor, passing the call site's ROLE when it can use it.
-
-    "query" = CAD model sampled all around; "target" = single-view depth cloud.
-    GeDi and dGeDi are role-blind (their LRF resolves orientation internally)
-    and keep the plain two-argument signature; FPFH needs the role because a
-    normal's sign is part of its descriptor and the two sides must agree.
-    Inferring the role from the points was tried and does not work — see
-    FPFHDescriptor.resolve_orient for the measurements.
-    """
-    if role not in ("query", "target"):
-        raise ValueError(f"unknown role: {role!r}")
-    # Signature check rather than try/except TypeError: a TypeError raised
-    # from INSIDE a role-aware compute() would otherwise be swallowed and
-    # silently retried without the role.
-    if _accepts_role(descriptor.compute):
-        return descriptor.compute(pts, pcd, role=role)
-    return descriptor.compute(pts, pcd)  # role-blind: GeDi, dGeDi, ...
-
-
 def load_fpfh() -> FPFHDescriptor:
     """Env-configured FPFH, matching how the other backbones are selected.
 
@@ -390,8 +359,3 @@ def load_fpfh() -> FPFHDescriptor:
                                                 str(1.0 / 3))),
         orient=os.environ.get("POPOE_FPFH_ORIENT", "auto"),
     )
-
-
-def fpfh_config() -> dict:
-    """Cache-key fragment for the env-configured FPFH (see load_fpfh)."""
-    return load_fpfh().config()

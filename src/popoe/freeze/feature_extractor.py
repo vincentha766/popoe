@@ -11,7 +11,6 @@ import torch.nn.functional as F
 import numpy as np
 from sklearn.decomposition import PCA
 from popoe import profiling
-from popoe.descriptors import describe
 from popoe.freeze.fusion import DinoGeDiFusion
 from popoe.interfaces import CanonFrame
 
@@ -103,7 +102,7 @@ class _NoSingletonGeDiBatches:
         self.descriptor = descriptor
         self.samples_per_batch = int(samples_per_batch)
 
-    def compute(self, pts, pcd):
+    def compute(self, pts, pcd, role=None):
         n = _row_count(pts)
         pad = (
             n > 0 and self.samples_per_batch > 1
@@ -140,10 +139,10 @@ class _TwoScaleGeDi:
         self.a = _make_gedi_single(r_a)
         self.b = _make_gedi_single(r_b)
 
-    def compute(self, pts, pcd):
+    def compute(self, pts, pcd, role=None):
         import numpy as np
-        fa = self.a.compute(pts, pcd)
-        fb = self.b.compute(pts, pcd)
+        fa = self.a.compute(pts, pcd, role=role)
+        fb = self.b.compute(pts, pcd, role=role)
         if hasattr(fa, "cpu"): fa = fa.cpu().numpy()
         if hasattr(fb, "cpu"): fb = fb.cpu().numpy()
         return np.concatenate([fa, fb], axis=1).astype(np.float32)
@@ -165,9 +164,7 @@ def load_gedi(device='cuda'):
 def load_geometric_descriptor(device='cuda'):
     """Build the geometric branch (a popoe.interfaces.PointDescriptor).
 
-    POPOE_GEOM_BACKBONE selects it: gedi (default) | fpfh | dgedi. This is the
-    dispatcher every caller should use; `load_gedi` is one of its branches, not
-    a synonym for it.
+    POPOE_GEOM_BACKBONE selects it: gedi (default) | fpfh.
     """
     backend = os.environ.get('POPOE_GEOM_BACKBONE', 'gedi').lower()
     if backend == 'fpfh':
@@ -176,12 +173,8 @@ def load_geometric_descriptor(device='cuda'):
         from popoe.descriptors import load_fpfh
         return load_fpfh()
     if backend == 'dgedi':
-        import sys
-        sys.path.insert(0, '/workspace/freezev2')
-        from dgedi_adapter import load_dgedi
-        mode = os.environ.get('POPOE_DGEDI_MODE', 'single_scale')
-        ckpt = f'/workspace/dGeDi/checkpoints/dGeDi_{mode}.pth'
-        return load_dgedi(ckpt, mode=mode, device=device, enable_flash=False)
+        raise ValueError(
+            "POPOE_GEOM_BACKBONE=dgedi is not in this tree. Use gedi or fpfh.")
     return load_gedi(device)
 
 
@@ -307,8 +300,7 @@ class QueryFeatureExtractor:
         ARCHITECTURE.md, Canonicalisation). Surfaces the existing `_canon_scale` (set during
         extract_query_features); center=0 because the code scales without
         centring. Additive/read-only — does not change existing behaviour."""
-        return CanonFrame(center=np.zeros(3, np.float32),
-                          scale=float(getattr(self, "_canon_scale", 1.0)))
+        return CanonFrame(scale=float(getattr(self, "_canon_scale", 1.0)))
 
     def _init_nvdiffrast(self):
         """True if the GPU rasteriser will be used. Honours render_backend:
@@ -658,8 +650,7 @@ class QueryFeatureExtractor:
         # (GeDi, dGeDi) ignore it; FPFH needs it to pick the normal convention,
         # which cannot be inferred from the points (see popoe.descriptors).
         with profiling.stage("  qry_gedi"):
-            geo_feats = describe(
-                self.gedi,
+            geo_feats = self.gedi.compute(
                 torch.from_numpy(geo_input),
                 torch.from_numpy(geo_input),
                 role="query",
@@ -819,8 +810,7 @@ class TargetFeatureExtractor:
     def canon_frame(self) -> CanonFrame:
         """See QueryFeatureExtractor.canon_frame. On the target side `_canon_scale`
         is assigned from the query's value by the caller before extraction."""
-        return CanonFrame(center=np.zeros(3, np.float32),
-                          scale=float(getattr(self, "_canon_scale", 1.0)))
+        return CanonFrame(scale=float(getattr(self, "_canon_scale", 1.0)))
 
     @torch.no_grad()
     def extract_target_features(self, rgb, depth, mask, intrinsics, pca_vis=None):
@@ -950,8 +940,7 @@ class TargetFeatureExtractor:
         canon = getattr(self, '_canon_scale', 1.0)
         # role="target": a single-view depth cloud, camera at the origin.
         with profiling.stage("  tgt_gedi"):
-            geo_feats = describe(
-                self.gedi,
+            geo_feats = self.gedi.compute(
                 torch.from_numpy((pts_sparse * canon).astype(np.float32)),
                 torch.from_numpy((pcd_dense * canon).astype(np.float32)),
                 role="target",

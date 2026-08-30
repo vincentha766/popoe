@@ -209,8 +209,7 @@ def main():
         # campaign cache (diameter + MIN_VIEWS=18) stores a filtered cloud
         # whose extent is NOT the recorded basis.
         if "canon_scale" in arrays:
-            q.meta["canon_frame"] = CanonFrame(center=np.zeros(3, np.float32),
-                                               scale=float(arrays["canon_scale"]))
+            q.meta["canon_frame"] = CanonFrame(scale=float(arrays["canon_scale"]))
         elif (os.environ.get("POPOE_CANON_BASIS", "extent") == "extent"
               and os.environ.get("POPOE_QUERY_MIN_VIEWS", "0") == "0"):
             q.meta["canon_frame"] = CanonFrame.from_points(q.pts)

@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from popoe.interfaces import CanonFrame, PointFeatures, PoseHypothesis
+from popoe.interfaces import PointFeatures, PoseHypothesis
 
 
 def _import_teaser():
@@ -97,7 +97,7 @@ class TeaserSolver:
         self.rot_cost_threshold = rot_cost_threshold
 
     def solve(self, query: PointFeatures, target: PointFeatures,
-              frame: CanonFrame) -> list[PoseHypothesis]:
+              frame=None) -> list[PoseHypothesis]:
         tpp = _import_teaser()
         from popoe.registration import feature_aware_score
 

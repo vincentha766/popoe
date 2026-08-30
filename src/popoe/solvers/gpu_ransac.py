@@ -43,7 +43,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from popoe.interfaces import CanonFrame, PointFeatures, PoseHypothesis
+from popoe.interfaces import PointFeatures, PoseHypothesis
 
 _EDGE_RATIO = 0.9          # Open3D CorrespondenceCheckerBasedOnEdgeLength(0.9)
 
@@ -194,7 +194,7 @@ class GPURansacSolver:
         self.seed = seed
 
     def solve(self, query: PointFeatures, target: PointFeatures,
-              frame: CanonFrame) -> list[PoseHypothesis]:
+              frame=None) -> list[PoseHypothesis]:
         import torch
         from popoe.registration import feature_aware_score
 

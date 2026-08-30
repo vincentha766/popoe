@@ -5,10 +5,10 @@ import pytest
 
 from popoe.interfaces import ObjectModel, Scene
 from popoe.segmentor_nids import (
-    NIDSNetDetectionsSegmentor,
     adapt_nidsnet_json,
     adapt_nidsnet_records,
 )
+from popoe.segmentor_detections import BOPDetectionsSegmentor
 
 
 def _scene():
@@ -62,7 +62,7 @@ def test_nids_segmentor_reads_adapted_mask_path_output(tmp_path):
     assert len(records) == 1
     assert records[0]["mask_path"] == str(raw_dir / "mask.npy")
 
-    seg = NIDSNetDetectionsSegmentor(str(out_path), topk=1, min_pixels=1)
+    seg = BOPDetectionsSegmentor(str(out_path), source="nids", topk=1, min_pixels=1)
     dets = seg.segment(_scene(), ObjectModel(obj_id=9, mesh_path="x",
                                              diameter=0.1))
     assert len(dets) == 1
