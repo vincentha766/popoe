@@ -55,7 +55,7 @@ not implemented by the formal runner.
 
 | Paper setting | Current popoe formal path | Status / disclosure |
 |---|---|---|
-| CNOS, SAM-6D, NIDS and MUSE, evaluated individually or as an ensemble (§IV-A: "used either individually or as an ensemble"; the ensemble rows 18/19 use all four) | The A and B ensemble recipes below both run the same four official sources (CNOS + SAM6D-441 + NIDS + MUSE); official files for all seven core sets are in `data/detections/`. `scripts/faithful_eval.sh` is CNOS-only and serves the single-source arms. | **Match on composition** for the ensemble arms (four-way, per the rows-18/19 merged segmentation cell; Vincent 2026-08-06, replacing the earlier three-way scoping). Composition match does not make B paper-faithful — B is tuned elsewhere in the pipeline. |
+| CNOS, SAM-6D, NIDS and MUSE, evaluated individually or as an ensemble (§IV-A: "used either individually or as an ensemble"; the ensemble rows 18/19 use all four) | The A and B ensemble recipes below both run the same four official sources (CNOS + SAM6D-441 + NIDS + MUSE); official files for all seven core sets are in `data/detections/`. The single-source arms are the `### faithful-cnos` runbook below (CNOS-FastSAM only). | **Match on composition** for the ensemble arms (four-way, per the rows-18/19 merged segmentation cell; Vincent 2026-08-06, replacing the earlier three-way scoping). Composition match does not make B paper-faithful — B is tuned elsewhere in the pipeline. |
 | 162 templates per object, using the CNOS camera viewpoints | Faithful pins set `POPOE_N_VIEWS=162` and `POPOE_QUERY_VIEWS=ico162`. | **Match.** |
 | Poisson disk sampling of the raw query surface points | The query cloud is drawn with `trimesh.sample.sample_surface_even` — rejection-based approximately-even sampling, not a strict Poisson-disk sampler. Measured on the eight LM-O meshes at N=5000: it returns the full count, but its minimum nearest-neighbour spacing is 23% below a blue-noise sampler's (ratio 1.302-1.309) — i.e. it gives up exactly the "minimum inter-point distance" the paper's sentence claims. | **Approximation / pinned-by-us. PRICED 2026-08-10: −0.88 pt** (isolation arm D20, `POPOE_QUERY_SAMPLER=poisson`, LM-O full, faithful-cnos: 0.5568 vs baseline 0.5656; MSSD/MSPD/VSD all move the same way, −1.04/−1.22/−0.37, so it is not a single-leg artifact and it is well outside the 0.19 noise floor). **Swapping in a genuine Poisson-disk sampler makes the faithful arm WORSE**, the same shape as D19: the gap is real as a fidelity record but does not explain the shortfall, and "the faithful arm reads low because of this deviation" is falsified. ⚠️ The paper's [77] is Bridson 2007, a VOLUMETRIC dart-throwing algorithm with no unique meaning on a mesh surface; the arm used Open3D's Yuksel-2015 sample elimination, which satisfies the stated property but IS NOT the cited algorithm. Do not write this up as "implementing [77]". Registration + pre-run criterion: gedi `specs/D20_SAMPLER_ARM_SPEC.md`. |
 | Per-point multi-view feature aggregation ("weighted average") | Aggregation is a binary-visibility equal-weight mean (`sum / visible_count`): a view that sees the point weighs 1, others 0. The paper does not publish its weight formula. | **Pinned-by-us.** Do not claim the paper confirms the absence of e.g. view-angle weights. |
@@ -340,6 +340,10 @@ un-suffixed sibling directory; replays write `replays/`.
 > (changing output paths would change run identity).
 
 ### faithful-cnos
+
+This block is the CNOS-only runner. The former `scripts/faithful_eval.sh` /
+`scripts/faithful_run.sh` wrappers duplicated it (mismatched output names,
+no `POPOE_PIN`) and were removed.
 
 | Field | Frozen value |
 |---|---|
@@ -1309,10 +1313,9 @@ grid32/five-weights, YCB-V merge+s-coarse) carry over unchanged unless the
 triage says otherwise. Triage-driven addition to every arm: `--trans-nms 0.05`
 — paper §III-F translation NMS on refined poses; the paper names the mechanism
 but no radius, so the value (0.05× the models_info diameter; same-instance duplicates converge post-ICP within ~1-2% of the diameter, and nested/thin objects can hold distinct instances closer than 0.1) is pinned-by-us
-and parameterised. Default-on in `bop_eval.py`; the four runbooks and the
-`scripts/faithful_*.sh` CNOS wrappers spell it explicitly so a future default
-change cannot silently re-identity the freezes. `--trans-nms 0` disables and
-must be recorded as a deviation.
+and parameterised. Default-on in `bop_eval.py`; the four runbooks spell it
+explicitly so a future default change cannot silently re-identity the
+freezes. `--trans-nms 0` disables and must be recorded as a deviation.
 
 **Server-only acceptance for the four itodd/hb runs (B2-F4).** Their test GT
 is withheld by BOP, so `ar_flat.py` has nothing to score and there is NO local
