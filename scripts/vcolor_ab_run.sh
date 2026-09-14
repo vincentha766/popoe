@@ -18,9 +18,9 @@
 #              been served from cache forever.
 #
 # Both arms are seeded and run the same selection, so the delta is the features
-# and nothing else. --score-coarse also stashes the pre-ICP pose, because this
-# bug acts on the FEATURES and should therefore show up in the coarse pose
-# first; refinement can mask or amplify it.
+# and nothing else. --use-s-coarse also stashes the pre-ICP pose (and multiplies
+# s_coarse into the champion score): this bug acts on the FEATURES and should
+# therefore show up in the coarse pose first; refinement can mask or amplify it.
 #
 # Usage:
 #   OUT=/path/to/out CACHE_ROOT=/path/to/cache BOP=/path/to/bop_data \
@@ -88,7 +88,7 @@ git -C "$PWD" rev-parse HEAD | sed 's/^/popoe commit /'
   --topk 2 --grid 32 --solver o3d --seed "$SEED" \
   --weights 1.0,0.7,0.5,0.3,0.2 \
   --render-backend nvdiffrast \
-  --score-coarse \
+  --use-s-coarse \
   --out "$BASE.csv" --cache "$CACHE" --cand-csv "${BASE}_cands.csv"
 
 echo "=== split champion into pre/post-ICP poses ==="

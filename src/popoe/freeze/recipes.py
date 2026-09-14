@@ -14,8 +14,8 @@ the official CNOS-FastSAM detections):
   * label pooling for confusable same-shape pairs (YCB-V clamps 19/20).
 
 Lab-only (opt-in, **not** the headline path): mask-stage
-``size_select`` via ``best_segmentor(..., size_select=...)`` /
-``bop_eval --size-select``. Formal defaults keep ``size_select=None``.
+``size_select`` via ``best_segmentor(..., size_select=...)``. Formal
+defaults keep ``size_select=None``.
 
 Heavy models load lazily on first use; everything here is metric-space.
 """
@@ -221,8 +221,8 @@ def solver_provenance(name: str, seed: int | None,
 
     Isolation knobs that change results without changing the solver *name*
     MUST appear on this line — otherwise two configurations look identical
-    in the log. ``--solver o3d`` and ``--solver o3d --corr-topk 10`` used
-    to both print ``solver=o3d seed=42 (seeded)``. Likewise gpu-feat vs
+    in the log. ``--solver o3d`` and ``stages_for_object(..., corr_topk=10)``
+    used to both print ``solver=o3d seed=42 (seeded)``. Likewise gpu-feat vs
     gpu-feat-dist is partly carried by the name, but the effective
     ``distance_check`` bit is still printed so a renamed default cannot
     silently drop the condition.

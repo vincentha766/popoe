@@ -51,7 +51,7 @@ def test_parse_rule_terms_and_exponents(rr):
 
 def test_parse_rule_missing_column_is_loud(rr):
     cols = [c for c in _rows()[0] if c != "s_coarse"]
-    with pytest.raises(SystemExit, match="score-coarse"):
+    with pytest.raises(SystemExit, match="use-s-coarse"):
         rr.parse_rule("s_icp * s_coarse", cols)
     with pytest.raises(SystemExit, match="not in the dump"):
         rr.parse_rule("s_icp * nonsense", cols)

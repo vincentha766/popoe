@@ -19,12 +19,25 @@ conditional-add block in bop_eval (tested in test_bop_eval_cli, which asserts
 default runs keep the historical key set).
 """
 
+import importlib.util
+from pathlib import Path
+
 import numpy as np
 import pytest
 
 from popoe.freeze.recipes import _build_solver, stages_for_object
 from popoe.interfaces import PointFeatures
 from popoe.solvers import Open3DFeatureRansacSolver
+
+_EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "bop_eval.py"
+
+
+@pytest.fixture(scope="module")
+def bop_eval():
+    spec = importlib.util.spec_from_file_location("bop_eval", _EXAMPLE)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def test_corr_topk_reaches_the_o3d_solver():
@@ -90,7 +103,7 @@ def test_icosphere_directions_shape_norms_and_determinism():
     assert np.allclose(icosphere_directions(2), d)
 
 
-def test_probe_corr_stats_on_a_planted_pose():
+def test_probe_corr_stats_on_a_planted_pose(bop_eval):
     """Feature-quality ground truth on a synthetic instance.
 
     Query features = coordinates (perfectly discriminative), target = the same
@@ -99,7 +112,7 @@ def test_probe_corr_stats_on_a_planted_pose():
     towards chance — this pins that the function measures the FEATURES, not
     the geometry (a bug that compared clouds directly would still pass the
     first half)."""
-    from examples.bop_eval import probe_corr_stats
+    probe_corr_stats = bop_eval.probe_corr_stats
     from popoe.interfaces import PointFeatures
 
     rng = np.random.default_rng(5)
@@ -125,26 +138,6 @@ def test_probe_corr_stats_on_a_planted_pose():
     assert r1s < 0.2, f"scrambled features still match: rate1={r1s}"
 
 
-def test_probe_corr_requires_cache_and_explicit_backend(tmp_path):
-    """The two probe guards are SystemExit, not silent fallbacks: a probe that
-    quietly built features would measure a different cache than it claims."""
-    import subprocess, sys, os
-    env = dict(os.environ, PYTHONPATH="src")
-    base = [sys.executable, "examples/bop_eval.py", "--bop", str(tmp_path),
-            "--dataset", "lmo", "--detections", "x.json",
-            "--out", str(tmp_path / "o.csv"), "--probe-corr",
-            str(tmp_path / "p.csv")]
-    r = subprocess.run(base + ["--render-backend", "nvdiffrast"],
-                       capture_output=True, text=True, env=env)
-    assert r.returncode != 0 and "--cache" in (r.stderr + r.stdout)
-    # --render-backend defaults to nvdiffrast, so the auto guard needs the
-    # explicit value; a default-auto assumption here was the test's own bug.
-    r = subprocess.run(base + ["--cache", str(tmp_path / "c"),
-                               "--render-backend", "auto"],
-                       capture_output=True, text=True, env=env)
-    assert r.returncode != 0 and "render-backend" in (r.stderr + r.stdout)
-
-
 def test_n_restarts_reaches_the_solver_and_refuses_non_o3d():
     solver, _, _ = stages_for_object(0.1, n_restarts=5)
     assert solver.n_restarts == 5
@@ -153,13 +146,13 @@ def test_n_restarts_reaches_the_solver_and_refuses_non_o3d():
         _build_solver("gpu", tau=0.03, n_ransac=10, n_restarts=5)
 
 
-def test_probe_half_stats_attributes_the_dead_branch():
+def test_probe_half_stats_attributes_the_dead_branch(bop_eval):
     """One half informative, the other scrambled: the half probe must say so.
 
     Visual half = coordinates (discriminative), geometric half = shuffled
     (useless). rate1_vis must be ~1 and rate1_geo near chance — the exact
     attribution question the banana case needs answered."""
-    from examples.bop_eval import probe_half_stats
+    probe_half_stats = bop_eval.probe_half_stats
     from popoe.interfaces import PointFeatures
 
     rng = np.random.default_rng(9)

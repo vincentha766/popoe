@@ -11,7 +11,6 @@ picks its best remaining candidate under the size-aware product rule.
 
 Used by:
   * offline ``scripts/eval_dual_cad_metric_fit_ab.py`` / BOP CSV export
-  * ``examples/bop_eval.py --dual-assign`` (buffers confusable objects per image)
 
 Cand-index alignment assumes both objects were segmented from the **same**
 ordered merge pool (same ``merge_labels`` + top-K ordering).

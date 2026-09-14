@@ -24,9 +24,7 @@ Runner invariants (load-bearing for reproducible benchmark runs):
   * ``--cand-csv`` is the offline interface: every mask x visual-weight
     hypothesis with its score breakdown and solver name, so selection rules
     can be replayed without re-running DINO/GeDi/FPFH.
-  * Confusable-object arbitration is explicit. YCB-V clamp label pooling is
-    the formal path; ``--size-select`` and ``--dual-assign`` are
-    score-affecting lab paths and require fresh output files.
+  * Confusable-object arbitration on YCB-V is label pooling (``--merge``).
 
 Workflow features (the experiment accelerators):
 
@@ -76,10 +74,9 @@ from popoe.cache import (StageCache, conditional_enc_entries, file_fingerprint,
 from popoe.datasets.bop import bop_layout, default_targets_path
 from popoe import profiling
 from popoe.interfaces import ObjectModel, PointFeatures, PoseHypothesis, Scene
-from popoe.confusable_select import dual_assign_hyps, partner_id
 from popoe.freeze.feature_extractor import mesh_shading_key_parts
 from popoe.freeze.recipes import (
-    TAU_FRAC, WEIGHTS, YCBV_CLAMP_DIAMETERS_M, YCBV_MERGE_LABELS,
+    TAU_FRAC, WEIGHTS, YCBV_MERGE_LABELS,
     best_encoders, best_segmentor, scale_vis, solver_provenance,
     stages_for_object,
 )
@@ -106,17 +103,17 @@ CAND_BASE_HEADER = ["scene_id", "im_id", "obj_id", "cand", "w", "s_icp",
                     "s_feat_1", "metric_fit", "score", "R", "t"]
 CAND_COARSE_HEADER = ["s_coarse", "R_coarse", "t_coarse"]
 CAND_EXTRA_HEADER = ["source", "R_prererank", "t_prererank"]
-# --score-feat-w rides at the very END of the header: appending keeps every
+# s_feat_w rides at the very END of the header: appending keeps every
 # existing column at its current index, so readers that address columns by
 # position still line up.
 CAND_FEATW_HEADER = ["s_feat_w"]
 
 
 def cand_csv_header(score_coarse, score_feat_w=False):
-    """Column header for the --cand-csv dump. The optional --score-coarse block
-    (s_coarse plus the PRE-ICP pose it was measured at, R_coarse / t_coarse),
-    `solver`, and new provenance/replay columns are appended after the original
-    candidate payload.
+    """Column header for the --cand-csv dump. The optional coarse block
+    (s_coarse plus the PRE-ICP pose it was measured at, R_coarse / t_coarse)
+    is written when ``--use-s-coarse`` is on. `solver` and provenance/replay
+    columns are appended after the original candidate payload.
 
     R_coarse / t_coarse ride along with s_coarse because they come from the same
     switch (ICPRefiner(keep_coarse=True)) and answer the question s_coarse only
@@ -136,9 +133,9 @@ def cand_csv_compatible_headers(score_coarse, score_feat_w=False):
     Older dumps exist in a few schemas. A fresh file gets the current
     header; appending to a legacy file writes only the columns that header names.
 
-    --score-feat-w is the exception: a legacy header has no s_feat_w column, so
-    appending would silently DROP the one measurement the diagnostic run exists
-    to produce. Demand the exact matching header instead.
+    An s_feat_w dump is the exception: a legacy header has no s_feat_w column,
+    so appending would silently DROP that measurement. Demand the exact
+    matching header instead.
     """
     if score_feat_w:
         return [cand_csv_header(score_coarse, True)]
@@ -558,32 +555,15 @@ def main():
     ap.add_argument("--grid", type=int, default=32)
     ap.add_argument("--cache", default="", help="target-feature cache dir")
     ap.add_argument("--cand-csv", default="", help="dump every hypothesis")
-    ap.add_argument("--score-coarse", action="store_true",
-                    help="also record the paper's S_coarse (pre-ICP feature "
-                         "score, canonical w=1) as an s_coarse column in "
-                         "--cand-csv. Diagnostic only: the champion score/R/t "
-                         "(and the main --out rows) are unchanged; only the "
-                         "extra s_coarse column and the wall-clock `time` "
-                         "column (more compute) differ.")
-    ap.add_argument("--score-feat-w", action="store_true",
-                    help="also record the MATCHED-space feature score as an "
-                         "s_feat_w column in --cand-csv: the same score as "
-                         "s_feat_1 at the same pose, but in the weight-scaled "
-                         "space instead of the canonical w=1 one. Diagnostic "
-                         "only — champion score/R/t and the --out rows are "
-                         "unchanged; it costs one extra feature score per "
-                         "hypothesis. Needed for the canonical-vs-matched rule "
-                         "comparison, which CANNOT be reconstructed from "
-                         "s_feat_1 and w.")
     ap.add_argument("--use-s-coarse", action="store_true",
                     help="USE S_coarse in arbitration: score *= max(s_coarse,0) "
                          "(rule s_icp*s_feat_1*metric_fit*s_coarse). Per-DATASET "
-                         "switch — helps YCB-V, hurts LM-O. Implies "
-                         "--score-coarse (records the s_coarse column too). This "
-                         "DOES change the main --out score/R/t, so use a FRESH "
-                         "--out and --cand-csv: resume/append are keyed by rows, "
-                         "not config, so reusing a file written without this "
-                         "flag silently keeps its old scores (as with any "
+                         "switch — helps YCB-V, hurts LM-O. Also records the "
+                         "s_coarse column on --cand-csv. This DOES change the "
+                         "main --out score/R/t, so use a FRESH --out and "
+                         "--cand-csv: resume/append are keyed by rows, not "
+                         "config, so reusing a file written without this flag "
+                         "silently keeps its old scores (as with any "
                          "score-affecting knob — --merge, --weights, --grid).")
     ap.add_argument("--render-rerank", action="store_true",
                     help="After ICP, re-rank PCA-axis flip variants by DINOv2 "
@@ -639,23 +619,6 @@ def main():
                          "none elsewhere — obj ids 19/20 exist on tless/itodd/"
                          "hb too and must not be pooled there), 'ycbv', "
                          "'none', or '19:20,...'")
-    ap.add_argument("--size-select", default="none",
-                    choices=["none", "soft", "nearest"],
-                    help="opt-in mask-stage size arbitration for confusable "
-                         "pairs (YCB-V clamps). 'none' (default) is the formal "
-                         "headline path; 'nearest'/'soft' re-rank pooled masks "
-                         "by depth extent vs CAD diameters (needs scene depth). "
-                         "Score-affecting — use a FRESH --out / --cand-csv.")
-    ap.add_argument("--size-select-no-fallback", action="store_true",
-                    help="with --size-select nearest: do not fall back to pure "
-                         "appearance when no mask matches the query diameter")
-    ap.add_argument("--dual-assign", action="store_true",
-                    help="for confusable merge pairs co-visible in one image, "
-                         "assign each cand index to the CAD with higher "
-                         "metric_fit before writing the champion (multi-object "
-                         "dual-CAD). Requires --merge with a pair (e.g. ycbv). "
-                         "Score-affecting — use a FRESH --out / --cand-csv. "
-                         "YCB-V inst_count==1 only.")
     ap.add_argument("--icp-dense", action="store_true",
                     help="FIDELITY FIX (FreeZeV2 Eq. 6): refine against the "
                          "DENSE target cloud — every valid depth pixel inside "
@@ -674,31 +637,6 @@ def main():
                          "Two of those three numbers are still unmatched here: "
                          "P_Q is 3000 against the paper's 5k, and --grid 32 "
                          "gives P_T^sparse up to 1024 against its 256.")
-    ap.add_argument("--n-restarts", type=int, default=1,
-                    help="o3d solver restarts per (mask, weight); restart>0 "
-                         "runs on a deterministic 70%% subsample and every "
-                         "restart's pose becomes a separate hypothesis. The "
-                         "weight sweep gives each mask 5 solve attempts in 5 "
-                         "feature spaces; this knob gives it N attempts in ONE "
-                         "space, which is the control that separates "
-                         "'diversity of feature spaces' from 'more RANSAC "
-                         "budget' in the sweep's measured value.")
-    ap.add_argument("--probe-corr", default="",
-                    help="CORRESPONDENCE PROBE: instead of solving, measure "
-                         "how many of the correspondences the matcher would "
-                         "hand RANSAC are geometrically right under GT (w=1 "
-                         "canonical features; tau = 3%% of the diameter). "
-                         "Writes one row per (target, mask) to this CSV. "
-                         "Cache-only and CPU-capable: encoders never load, "
-                         "every cache miss is fatal or counted. Feature "
-                         "quality gets measured WITHOUT RANSAC in the way, "
-                         "which is the point.")
-    ap.add_argument("--corr-topk", type=int, default=0,
-                    help="FIDELITY KNOB (FreeZeV2 Sec. IV-A: 'a top-k strategy "
-                         "with k = 10'): precompute, for each target point, its "
-                         "k best query matches and hand RANSAC that set, "
-                         "instead of Open3D's internal k=1 matching. 0 = "
-                         "historical path, byte-identical. o3d solver only.")
     ap.add_argument("--tau-diameter", action="store_true",
                     help="FIDELITY FIX (FreeZeV2 Sec. IV-A): set tau_inlier / "
                          "tau_ICP / the feature-score inlier radius to 3%% of "
@@ -706,11 +644,6 @@ def main():
                          "query cloud's largest bounding-box side (which is "
                          "2-35%% smaller on LM-O). Pose-side only; caches hit. "
                          "Score-affecting — use a FRESH --out.")
-    ap.add_argument("--max-targets", type=int, default=0,
-                    help="PROBE knob: stop after this many completed targets "
-                         "(0 = full run). For per-set single-image "
-                         "preflights; the output CSV is partial by design "
-                         "and must never feed a formal score.")
     ap.add_argument("--min-mask-pixels", type=int, default=100,
                     help="drop candidate masks smaller than this many pixels "
                          "(unreliable geometry). Paper Sec. III-C keeps the "
@@ -768,10 +701,9 @@ def main():
             f"with --icp-dense --icp-dense-max {_n_td} (got icp_dense="
             f"{args.icp_dense}, max={args.icp_dense_max}) or unset the env — "
             f"a mismatch silently splits the paper's single dense cloud.")
-    # --use-s-coarse implies recording it too (the s_coarse cand-csv column and
-    # the coarse-pose wiring), so it depends on --score-coarse.
-    if args.use_s_coarse:
-        args.score_coarse = True
+    # --use-s-coarse also records the s_coarse cand-csv column (the coarse-pose
+    # wiring is required to compute the factor).
+    score_coarse = bool(args.use_s_coarse)
     # sar_ti is produced by the rerank stage; a scorer consuming it without
     # that stage is a wiring error. Refuse at launch, not 20 h in.
     if args.render_score and not args.render_rerank:
@@ -780,19 +712,6 @@ def main():
     # Validate the source-mode BEFORE any file work (resume cleanup rewrites
     # --out): a CLI-argument error must not fire after destructive steps.
     validate_source_args(args.detections, args.sources)
-    if args.probe_corr:
-        # Fail-fast guards, BEFORE any filesystem work. CPU-capable by
-        # construction: every feature comes from the cache, so the heavy
-        # encoders never load. 'auto' would make the render_backend key part
-        # describe THIS box's GPU rather than the box that built the cache —
-        # demand the explicit value the cache was built with.
-        if args.render_backend == "auto":
-            raise SystemExit("--probe-corr needs an explicit --render-backend "
-                             "(the value the cache was built with; the "
-                             "campaign caches say nvdiffrast).")
-        if not args.cache:
-            raise SystemExit("--probe-corr reads features, it does not create "
-                             "them; pass --cache.")
 
     bop = Path(args.bop)
     ds_name, layout = resolve_layout(bop, args.dataset, args.split,
@@ -808,24 +727,6 @@ def main():
     if args.merge == "auto":
         print("--merge auto -> "
               + ("ycbv clamp pooling" if merge else "none"), flush=True)
-    size_select = None if args.size_select == "none" else args.size_select
-    confusable_diameters = None
-    if size_select is not None:
-        # Diameters for every id that participates in a merge group; fall back
-        # to the known YCB-V clamp table (lab recipe).
-        confusable_diameters = dict(YCBV_CLAMP_DIAMETERS_M)
-        if merge:
-            for ids in merge.values():
-                for oid in ids:
-                    confusable_diameters.setdefault(
-                        int(oid), YCBV_CLAMP_DIAMETERS_M.get(int(oid), 0.0))
-            confusable_diameters = {
-                k: v for k, v in confusable_diameters.items() if v > 0
-            }
-        if not confusable_diameters:
-            raise SystemExit(
-                "--size-select needs confusable diameters; use --merge ycbv "
-                "or extend YCBV_CLAMP_DIAMETERS_M")
     if args.cache:
         os.makedirs(args.cache, exist_ok=True)
 
@@ -887,39 +788,23 @@ def main():
         args.detections, args.sources,
         topk=args.topk,
         merge_labels=merge,
-        size_select=size_select,
-        confusable_diameters=confusable_diameters,
-        size_select_fallback=not args.size_select_no_fallback,
         min_pixels=args.min_mask_pixels,
         iou_dedupe=args.mask_iou_dedupe,
     )
-    if size_select:
-        print(f"size_select={size_select} diameters={confusable_diameters}",
-              flush=True)
-    if args.dual_assign:
-        if not merge:
-            raise SystemExit("--dual-assign requires --merge with a confusable pair")
-        print(f"dual_assign=ON merge={merge}", flush=True)
     # Provenance: reproducibility is a property of the RUN, so it belongs in the
     # log next to the numbers, not only in the shell history that produced them.
     # Built by recipes so it reports the EFFECTIVE seed per solver family — the
     # gpu solvers are deterministic by default and teaser has no RNG, so a flat
     # "UNSEEDED" would be a false claim in a cited run's log.
-    # Also prints corr_topk (o3d) / distance_check (gpu*) so configurations
-    # that share a solver name remain distinguishable after the fact.
-    print(solver_provenance(args.solver, args.seed,
-                            corr_topk=args.corr_topk), flush=True)
+    print(solver_provenance(args.solver, args.seed), flush=True)
     # Same rule one stage upstream: the query sampler changes every number and
     # shares its CLI surface with the default arm, so it has to be on the line
     # too.
     from popoe.freeze.adapters import query_sampler_provenance
     print(query_sampler_provenance(
         int(os.environ.get("POPOE_QUERY_POINTS", "3000"))), flush=True)
-    if args.probe_corr:
-        q_enc = t_enc = None    # guards ran at arg-validation time
-    else:
-        q_enc, t_enc = best_encoders(target_grid=args.grid,
-                                     render_backend=args.render_backend)
+    q_enc, t_enc = best_encoders(target_grid=args.grid,
+                                 render_backend=args.render_backend)
 
     # Config-addressed stage cache: keys fingerprint the encoder configuration
     # and input CONTENT (mesh bytes, mask pixels) plus — for targets — the
@@ -955,8 +840,7 @@ def main():
         # trimesh CPU ray-caster produce different CAD views, hence different
         # query features. It used to be absent from the key, so a cache built on
         # a box without nvdiffrast was silently reused on one with it.
-        "render_backend": (args.render_backend if args.probe_corr
-                           else q_enc.render_backend),
+        "render_backend": q_enc.render_backend,
     }
     # .lower() to match how load_geometric_descriptor() resolves the backbone: POPOE_GEOM_BACKBONE
     # =FPFH loads FPFH, and its knobs must reach the key or a radius sweep reuses
@@ -992,10 +876,10 @@ def main():
     # that was actually encoded. Read once, up front, so a missing/renamed
     # models_info.json fails before any GPU work.
     diameters_m: dict = {}
-    if args.tau_diameter or args.probe_corr or args.trans_nms > 0:
+    if args.tau_diameter or args.trans_nms > 0:
         mi_path = bop / layout["models_dir"] / "models_info.json"
         if not mi_path.exists():
-            raise SystemExit(f"--tau-diameter/--probe-corr/--trans-nms need "
+            raise SystemExit(f"--tau-diameter/--trans-nms need "
                              f"{mi_path} (BOP ships it next to the meshes); "
                              f"not found. --trans-nms 0 disables the NMS "
                              f"(protocol deviation — record it).")
@@ -1038,12 +922,6 @@ def main():
             q.meta["canon_frame"] = restore_canon_frame(hit, enc_cfg,
                                                         q.pts, obj_id)
         else:
-            if args.probe_corr:
-                raise SystemExit(
-                    f"--probe-corr: query cache miss for obj {obj_id} — the "
-                    f"probe reads features, it does not create them. Point "
-                    f"--cache at the campaign cache and match its enc_cfg env "
-                    f"knobs (grid, POPOE_QUERY_*, POPOE_CANON_BASIS, ...).")
             q = q_enc.encode_query(obj)
             if cache:
                 # Sidecar FIRST, arrays second: the .npz is the commit marker,
@@ -1067,11 +945,8 @@ def main():
                                  f"{layout['models_dir']}/models_info.json")
             tau_basis = diameters_m[obj_id]
         stages = stages_for_object(extent, size_aware=obj_id in merge,
-                                   score_coarse=args.score_coarse,
+                                   score_coarse=score_coarse,
                                    use_s_coarse=args.use_s_coarse,
-                                   score_feat_w=args.score_feat_w,
-                                   corr_topk=args.corr_topk,
-                                   n_restarts=args.n_restarts,
                                    solver=args.solver, seed=args.seed,
                                    tau_basis_m=tau_basis,
                                    render_rerank=args.render_rerank,
@@ -1094,17 +969,16 @@ def main():
     cand_f = None
     cand_header = None
     if args.cand_csv:
-        header = cand_csv_header(args.score_coarse, args.score_feat_w)
+        header = cand_csv_header(score_coarse)
         cand_header = header
         new = not os.path.exists(args.cand_csv)
         if not new:
             # Appending: the existing header must match this run's column set,
-            # or --score-coarse toggling between runs would write rows under a
+            # or --use-s-coarse toggling between runs would write rows under a
             # mismatched header (silent schema corruption).
             with open(args.cand_csv, newline="") as fchk:
                 existing = next(csv.reader(fchk), [])
-            if existing not in cand_csv_compatible_headers(args.score_coarse,
-                                                           args.score_feat_w):
+            if existing not in cand_csv_compatible_headers(score_coarse):
                 raise SystemExit(
                     f"--cand-csv {args.cand_csv} has header {existing} but this "
                     f"run would write {header} (score-coarse mismatch). Use a "
@@ -1117,30 +991,6 @@ def main():
         cand_wr = csv.writer(cand_f)
         if new:
             cand_wr.writerow(header)
-
-    # --probe-corr: GT, symmetries, output writer, and the stats function.
-    probe_wr = None
-    probe_gt_cache: dict = {}
-    probe_syms: dict = {}
-    if args.probe_corr:
-        import sys as _sys
-        _tk = os.environ.get("POPOE_BOP_TOOLKIT")
-        if not _tk:
-            raise SystemExit(
-                "set POPOE_BOP_TOOLKIT to a thodan/bop_toolkit checkout")
-        _sys.path.insert(0, _tk)
-        from bop_toolkit_lib import misc as _btk_misc
-        mi_raw = json.load(open(bop / layout["models_dir"] / "models_info.json"))
-        for _k, _v in mi_raw.items():
-            # Continuous symmetries discretised the way the AR metric does it;
-            # without syms a perfectly matched sym object would read as 0%.
-            probe_syms[int(_k)] = _btk_misc.get_symmetry_transformations(_v, 0.01)
-        probe_f = open(args.probe_corr, "w", newline="")
-        probe_wr = csv.writer(probe_f)
-        probe_wr.writerow(["scene_id", "im_id", "obj_id", "cand", "n_t", "n_q",
-                           "n_gt", "rate1", "rate10", "reach10", "med1_mm",
-                           "tau_mm", "rate1_vis", "reach10_vis", "rate1_geo",
-                           "reach10_geo"])
 
     dense_sizes: list = []
 
@@ -1249,8 +1099,8 @@ def main():
                           scene_id=scene_id, im_id=im_id)
             scene_fp = fingerprint(rgb, depth, K) if cache else None
 
-            # Buffer per-object hyp maps so --dual-assign can re-pick after
-            # both confusable CADs have registered the same cand indices.
+            # Buffer per-object hyp maps so every pending object on this
+            # image is written after its detections have been scored.
             buffered: dict = {}  # obj_id -> (inst_count, hyps_by_det, elapsed)
 
             for obj_id, inst_count in pending:
@@ -1286,34 +1136,6 @@ def main():
                             f"only {len(tgt.pts)} encoded target point(s)")
                         note_degrade("encode_target", label, reason)
                         continue
-                    if probe_wr is not None:
-                        if scene_id not in probe_gt_cache:
-                            probe_gt_cache[scene_id] = json.load(
-                                open(sdir / "scene_gt.json"))
-                        gts = [dict(R=np.array(g["cam_R_m2c"]).reshape(3, 3),
-                                    t=np.array(g["cam_t_m2c"], dtype=float))
-                               for g in probe_gt_cache[scene_id].get(str(im_id), [])
-                               if g["obj_id"] == obj_id]
-                        if gts:
-                            r1, r10, reach, med1, tau_mm = probe_corr_stats(
-                                q, tgt, gts, probe_syms[obj_id],
-                                diameters_m[obj_id])
-                            hv = probe_half_stats(q, tgt, gts,
-                                                  probe_syms[obj_id],
-                                                  diameters_m[obj_id])
-                        else:
-                            # A detection with no GT instance (false-positive
-                            # mask): recorded, not scored - dropping it would
-                            # overstate the pool quality.
-                            r1 = r10 = reach = med1 = tau_mm = -1.0
-                            hv = (-1.0, -1.0, -1.0, -1.0)
-                        probe_wr.writerow([scene_id, im_id, obj_id, ci,
-                                           len(tgt.pts), len(q.pts), len(gts),
-                                           f"{r1:.4f}", f"{r10:.4f}",
-                                           f"{reach:.4f}", f"{med1:.2f}",
-                                           f"{tau_mm:.2f}"]
-                                          + [f"{v:.4f}" for v in hv])
-                        continue
                     for w in weights:
                         qw = q if w == 1.0 else _reweighted(q, w, vis_split)
                         tw = tgt if w == 1.0 else _reweighted(tgt, w, vis_split)
@@ -1330,21 +1152,14 @@ def main():
                                     cand_wr.writerow(cand_csv_row(
                                         scene_id, im_id, obj_id, ci, w, h,
                                         getattr(det, "source", ""),
-                                        args.solver, args.score_coarse,
-                                        cand_header, args.score_feat_w,
+                                        args.solver, score_coarse,
+                                        cand_header,
                                     ))
                         except Exception as e:
                             note_failure("solve/refine/score", f"obj{obj_id}", e)
                             continue
                 elapsed = f"{time.time()-t_start:.3f}"
                 buffered[obj_id] = (inst_count, hyps_by_det, elapsed)
-
-            if probe_wr is not None:
-                # Probe mode never writes pose rows: the out CSV stays empty
-                # and resume semantics do not apply. The probe CSV is the
-                # product.
-                n_done += len(pending)
-                continue
 
             for obj_id, (inst_count, hyps_by_det, elapsed) in buffered.items():
                 # THE COMPLETION INVARIANT: a finished target emits EXACTLY
@@ -1356,19 +1171,8 @@ def main():
                 # first) — passed unconditionally so the flag has ONE meaning.
                 nms_m = (args.trans_nms * diameters_m[obj_id]
                          if args.trans_nms > 0 else 0.0)
-                if args.dual_assign and inst_count == 1:
-                    pid = partner_id(obj_id, merge)
-                    if pid is not None and pid in buffered:
-                        best = dual_assign_hyps(
-                            hyps_by_det, buffered[pid][1], use_metric_fit=True
-                        )
-                        champs = [best] if best is not None else []
-                    else:
-                        champs = select_top_instances(
-                            hyps_by_det, inst_count, nms_dist=nms_m)
-                else:
-                    champs = select_top_instances(
-                        hyps_by_det, inst_count, nms_dist=nms_m)
+                champs = select_top_instances(
+                    hyps_by_det, inst_count, nms_dist=nms_m)
                 for best in champs:
                     wr.writerow([scene_id, im_id, obj_id,
                                  f"{best.score:.6f}",
@@ -1382,25 +1186,8 @@ def main():
                 n_done += 1
                 if n_done % 50 == 0:
                     print(f"{n_done} targets this run", flush=True)
-            if args.max_targets and n_done >= args.max_targets:
-                print(f"--max-targets {args.max_targets} reached — probe "
-                      f"stops here (output is a PARTIAL run by design)",
-                      flush=True)
-                break
     if cand_f is not None:
         cand_f.close()
-    if probe_wr is not None:
-        probe_f.close()
-        rows_p = list(csv.DictReader(open(args.probe_corr)))
-        scored = [r for r in rows_p if float(r["n_gt"]) > 0]
-        if scored:
-            a = np.array([[float(r["rate1"]), float(r["rate10"]),
-                           float(r["reach10"])] for r in scored])
-            print(f"probe: {len(rows_p)} (target,mask) rows, {len(scored)} "
-                  f"with GT | mean rate1={a[:,0].mean():.4f} "
-                  f"rate10={a[:,1].mean():.4f} reach10={a[:,2].mean():.4f} | "
-                  f"median rate1={np.median(a[:,0]):.4f}", flush=True)
-        print(f"probe -> {args.probe_corr}", flush=True)
     if dense_sizes:
         # Positive evidence that --icp-dense actually reached ICP: an empty or
         # sparse-looking distribution here means the fix did nothing.

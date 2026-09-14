@@ -91,10 +91,11 @@ def test_sources_list_builds_named_union(bop_eval, tmp_path):
 # ── the max-inst topk floor ──────────────────────────────────────────────
 
 def test_cand_csv_header_s_coarse_and_solver_columns(bop_eval):
-    """The header always ends with a `solver` column; --score-coarse inserts the
-    coarse block (s_coarse and the pre-ICP pose it was measured at) just before
-    it. The pose columns share the switch because they share the mechanism —
-    ICPRefiner(keep_coarse=True) is what produces both."""
+    """The header always ends with a `solver` column; score_coarse=True inserts
+    the coarse block (s_coarse and the pre-ICP pose it was measured at) just
+    before it. The pose columns share the switch because they share the
+    mechanism — ICPRefiner(keep_coarse=True) is what produces both. The eval
+    CLI turns this on with ``--use-s-coarse``."""
     off = bop_eval.cand_csv_header(False)
     on = bop_eval.cand_csv_header(True)
     assert off[-4:] == ["solver", "source", "R_prererank", "t_prererank"]
@@ -117,7 +118,7 @@ def test_cand_csv_legacy_headers_are_compatible(bop_eval):
 
 
 def test_cand_csv_header_s_feat_w_is_appended_last(bop_eval):
-    """--score-feat-w appends at the END, so every pre-existing column keeps its
+    """s_feat_w appends at the END, so every pre-existing column keeps its
     index and position-addressing readers still line up."""
     off = bop_eval.cand_csv_header(False)
     on = bop_eval.cand_csv_header(False, True)

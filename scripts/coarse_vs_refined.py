@@ -15,8 +15,8 @@ holding the selection fixed. It is NOT "the pipeline without refinement": the
 candidate set and the winner are chosen with ICP evidence in hand. Any
 comparison against FreeZe's no-refinement row has to carry that caveat.
 
-Input is a `bop_eval --cand-csv … --score-coarse` dump, which since this change
-carries `R_coarse` / `t_coarse` (the pose ICP started from) beside every row's
+Input is a `bop_eval --cand-csv … --use-s-coarse` dump, which carries
+`R_coarse` / `t_coarse` (the pose ICP started from) beside every row's
 refined `R` / `t`. Output is two BOP-format CSVs over the SAME target set:
 
     <prefix>_refined.csv   the champion's post-ICP pose  (must equal --out)
@@ -88,7 +88,7 @@ def champions_by_key(cand_csv):
             if col not in (rd.fieldnames or []):
                 raise SystemExit(
                     f"{cand_csv} has no {col!r} column — re-dump with "
-                    f"`bop_eval --cand-csv … --score-coarse`, which is what "
+                    f"`bop_eval --cand-csv … --use-s-coarse`, which is what "
                     f"records the pre-ICP pose.")
         for r in rd:
             k = tuple(r[c] for c in KEY)
@@ -159,7 +159,7 @@ def split(cand_csv, out_csv, prefix):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cand-csv", required=True,
-                    help="bop_eval --cand-csv dump from a --score-coarse run")
+                    help="bop_eval --cand-csv dump from a --use-s-coarse run")
     ap.add_argument("--out-csv", required=True,
                     help="the same run's --out CSV (target list + zero rows)")
     ap.add_argument("--prefix", required=True,

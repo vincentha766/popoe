@@ -41,7 +41,7 @@ def parse_rule(rule: str, columns) -> dict:
                 f"rule {rule!r}: {name!r} is not a numeric scoring term "
                 f"(it is an id / pose / provenance column)")
         if name not in cols:
-            hint = (" — re-dump with `bop_eval --cand-csv … --score-coarse`"
+            hint = (" — re-dump with `bop_eval --cand-csv … --use-s-coarse`"
                     if name == "s_coarse" else "")
             raise SystemExit(
                 f"rule {rule!r} references column {name!r}, not in the dump "
