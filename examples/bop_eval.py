@@ -616,7 +616,7 @@ def main():
                          "fitness, the B layer) | gpu-feat-dist (gpu-feat plus the "
                          "paper's second triplet-rejection condition, the "
                          "matched-point distance test this port never had; "
-                         "isolation arm for gedi decision 19) | teaser (TEASER++ certifiable "
+                         "isolation arm) | teaser (TEASER++ certifiable "
                          "registration). gpu* need torch; teaser needs "
                          "teaserpp_python (source build). A non-default "
                          "solver changes score/R/t, so use a FRESH --out and "
@@ -911,7 +911,7 @@ def main():
                             corr_topk=args.corr_topk), flush=True)
     # Same rule one stage upstream: the query sampler changes every number and
     # shares its CLI surface with the default arm, so it has to be on the line
-    # too. gedi D20.
+    # too.
     from popoe.freeze.adapters import query_sampler_provenance
     print(query_sampler_provenance(
         int(os.environ.get("POPOE_QUERY_POINTS", "3000"))), flush=True)

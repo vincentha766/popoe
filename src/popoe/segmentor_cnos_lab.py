@@ -6,9 +6,9 @@ This is the lab/real-scene track, deliberately separate from official CNOS:
 * `source='cnos-lab'` means the local recipe: proposal masks -> depth size gate
   -> DINOv2 foreground-patch ranking.
 
-Formerly named ``cnos-v3``: the "v3" was the iteration count of gedi's
-``cnos_match3.py`` lab script, not an official CNOS release. Old artifacts
-carrying ``source="cnos-v3"`` mean this recipe.
+Formerly named ``cnos-v3``: the "v3" was an internal iteration count, not an
+official CNOS release. Old artifacts carrying ``source="cnos-v3"`` mean this
+recipe.
 
 The core gate and patch scoring are numpy-only and unit-testable. Heavy
 components (SAM2 proposals, DINOv2 patch extraction, template image loading)
@@ -363,7 +363,7 @@ class PatchForegroundScorer:
 
 
 class DinoV2ForegroundPatchExtractor:
-    """Lazy DINOv2 patch extractor matching `gedi/scripts/cnos_match3.py`."""
+    """Lazy DINOv2 patch extractor used by the CNOS-lab ranking step."""
 
     def __init__(self, device: str = "cuda", model_name: str = "dinov2_vitg14_reg",
                  grid: int = GRID, model=None):

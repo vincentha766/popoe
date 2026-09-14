@@ -21,7 +21,7 @@ Report **per scene** (multi-view frames are correlated).
 
 Example:
   uv run python scripts/eval_dual_cad_metric_fit_ab.py \\
-      --cands ../gedi/ycbv_local_data/union_scoring_20260716/popoe_ycbv_union2_cands.csv \\
+      --cands path/to/popoe_ycbv_union2_cands.csv \\
       --bop bop_data/ycbv \\
       --out-dir outputs/dual_cad_metric_fit_ab
 """

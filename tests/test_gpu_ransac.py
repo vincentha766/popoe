@@ -211,8 +211,8 @@ def test_agrees_with_open3d_solver_within_tolerance():
 
 
 # --- Block 3: the paper's SECOND triplet-rejection condition (distance_check) --
-# Absent from this port since it was written; see the module docstring and gedi
-# decision 19. Open3D semantics: after the triplet's transform is estimated,
+# Absent from this port since it was written; see the module docstring.
+# Open3D semantics: after the triplet's transform is estimated,
 # THAT triplet's own three residuals must all be under tau. It bites exactly
 # when a sampled triplet mixes wrong correspondences whose edge lengths happen
 # to stay consistent — Kabsch then least-squares-fits them and the residuals

@@ -1,13 +1,13 @@
-"""A THIRD PoseSolver — gedi's vectorized GPU RANSAC, ported.
+"""A THIRD PoseSolver — vectorized GPU RANSAC.
 
 Motivation (B layer): Open3D's C++ correspondence-RANSAC ranks hypotheses by
 GEOMETRIC inlier count and cannot take a custom fitness, so the feature
 similarity can only re-rank the survivors (the A layer). To put feature
 agreement INSIDE hypothesis selection — changing which hypotheses survive, not
-just their order — we need our own RANSAC. This is gedi's batched implementation
-(`freezev2_sweep_vis_weight.gpu_ransac`): vectorised triplet sampling + edge-
-length pruning + batched Kabsch/SVD, ~54 ms for 10k hypotheses on a GPU. It runs
-on CPU too (small scales), so the whole thing is unit-testable without a GPU.
+just their order — we need our own RANSAC. This is a batched implementation:
+vectorised triplet sampling + edge-length pruning + batched Kabsch/SVD, ~54 ms
+for 10k hypotheses on a GPU. It runs on CPU too (small scales), so the whole
+thing is unit-testable without a GPU.
 
 This module ports the SELECTION only (RANSAC). ICP refinement and final scoring
 stay the existing stages (ICPRefiner / ChampionScorer), exactly as for
@@ -19,8 +19,8 @@ coarse `PoseHypothesis`, `score = s_coarse`, breakdown carrying `s_coarse`).
   since it was written. The v1 paper joins two conditions with `or` — matched-
   point distances over a geometric threshold OR inconsistent relative edge
   lengths — and only the edge test was implemented. ON reproduces Open3D's
-  `CorrespondenceCheckerBasedOnDistance`. Registered as the isolation arm for
-  gedi decision 19; until it has been priced, no part of the +5.36 pt
+  `CorrespondenceCheckerBasedOnDistance`. Registered as the isolation arm
+  ``gpu-feat-dist``; until it has been priced, no part of the +5.36 pt
   solver-substitution recovery may be attributed to this gap.
 
 `fitness`:
@@ -53,8 +53,9 @@ def _gpu_ransac(pts_q, feats_q, pts_t, feats_t, thr, iters, k, min_inliers,
     """Batched RANSAC. Returns (R, t, fitness_value, n_inliers) as numpy/floats,
     or None if degenerate. `feats_*` are the (already chosen) w=1 features.
 
-    Faithful to gedi's gpu_ransac; the only additions are an explicit torch
-    Generator (determinism for tests) and the selectable fitness."""
+    The only additions beyond a faithful correspondence-RANSAC port are an
+    explicit torch Generator (determinism for tests) and the selectable
+    fitness."""
     import torch
 
     if iters < 1:
@@ -78,8 +79,8 @@ def _gpu_ransac(pts_q, feats_q, pts_t, feats_t, thr, iters, k, min_inliers,
     c_sim = topv.reshape(-1)                          # (C,) cosine of each corr
 
     # mutual filter restricts the SAMPLING pool (fewer spurious triplets);
-    # scoring still uses the full top-k pool. OFF by default, matching the gedi
-    # reference (which only enables it under FREEZEV2_GPU_MUTUAL=1).
+    # scoring still uses the full top-k pool. OFF by default (enable with
+    # FREEZEV2_GPU_MUTUAL=1).
     if mutual_filter:
         q_best_t = sim.argmax(dim=0)                  # best target per query
         mutual = q_best_t[c_q] == c_t
@@ -116,7 +117,7 @@ def _gpu_ransac(pts_q, feats_q, pts_t, feats_t, thr, iters, k, min_inliers,
 
     if distance_check:
         # The SECOND rejection condition of the paper's triplet pruning, and the
-        # one this port never had (gedi REPRODUCTION.md; gedi decision 19). The
+        # one this port never had. The
         # v1 paper joins two conditions with `or`: reject a triplet when the
         # distances between matched points exceed a geometric threshold OR the
         # relative edge lengths are inconsistent. Only the edge test is above.
@@ -167,7 +168,7 @@ def _gpu_ransac(pts_q, feats_q, pts_t, feats_t, thr, iters, k, min_inliers,
 
 
 class GPURansacSolver:
-    """PoseSolver via gedi's batched GPU RANSAC (metre-space points, w=1 feats).
+    """PoseSolver via batched GPU RANSAC (metre-space points, w=1 feats).
 
     Args mirror Open3DFeatureRansacSolver where they overlap. `fitness` selects
     the hypothesis-ranking score ('geometric' | 'feature'); `device=None` picks

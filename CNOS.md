@@ -166,12 +166,11 @@ separate path such as `data/detections/cnos_lab/` and keep
 
 ## Local CNOS-lab (formerly CNOS-v3)
 
-`popoe.segmentor_cnos_lab.CNOSLabSegmentor` is the local lab recipe migrated
-from `gedi/scripts/cnos_match3.py`: proposal masks are filtered by visible 3D
-extent from depth, then ranked by DINOv2 foreground-patch similarity to
-templates. The old name's "v3" was that script's iteration count — renamed
-because it read as an official CNOS release. Old artifacts with
-`source="cnos-v3"` mean this recipe.
+`popoe.segmentor_cnos_lab.CNOSLabSegmentor` is the local lab recipe: proposal
+masks are filtered by visible 3D extent from depth, then ranked by DINOv2
+foreground-patch similarity to templates. The old name's "v3" was an internal
+iteration count — renamed because it read as an official CNOS release. Old
+artifacts with `source="cnos-v3"` mean this recipe.
 
 It is intentionally separate from official CNOS. Use it for real-scene/lab
 experiments, not for claiming official CNOS benchmark results.

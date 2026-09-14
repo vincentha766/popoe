@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """A/B: CNOS mask selection with vs without depth size gate (obj19/20 clamps).
 
-Validates the real-scene cnos_match3 geometry prior on BOP YCB-V, using *existing*
-official CNOS-FastSAM detections (no SAM/DINO re-run):
+Validates the CNOS-lab depth-extent geometry prior on BOP YCB-V, using
+*existing* official CNOS-FastSAM detections (no SAM/DINO re-run):
 
   v2  — pick top-1 by detector appearance score
   v3  — keep only masks whose 3D extent is in [0.25, 1.1] × query diameter,
@@ -369,8 +369,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             "max_extent_ratio": args.max_extent_ratio,
             "min_pixels": args.min_pixels,
             "note": (
-                "Extent gate matches cnos_match3 / DepthSizeGate; "
-                "min_pixels default 100 for BOP resolution (match3 real-scene used 8000)."
+                "Extent gate matches DepthSizeGate; "
+                "min_pixels default 100 for BOP resolution (real-scene used 8000)."
             ),
         },
         "methods": {

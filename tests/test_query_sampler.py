@@ -1,4 +1,4 @@
-"""POPOE_QUERY_SAMPLER (gedi arm D20).
+"""POPOE_QUERY_SAMPLER.
 
 The point of these is not that poisson sampling works — Open3D's does. It is
 that the DEFAULT path is untouched and that the knob reaches the cache key.
@@ -23,7 +23,7 @@ def mesh_path(tmp_path):
     return str(p)
 
 
-def test_default_is_bitwise_the_pre_d20_call(mesh_path, monkeypatch):
+def test_default_is_bitwise_the_historical_call(mesh_path, monkeypatch):
     """The knob must be invisible when unset: every published number, and every
     cached query feature on the GPU host, was produced by this exact call."""
     monkeypatch.delenv("POPOE_QUERY_SAMPLER", raising=False)
@@ -62,8 +62,8 @@ def test_poisson_is_reproducible_and_better_spaced(mesh_path, monkeypatch):
     def min_nn(p):
         return cKDTree(p).query(p, k=2)[0][:, 1].min()
 
-    # Gate G6 in gedi specs/D20_SAMPLER_ARM_SPEC.md. Measured 1.27-1.29x on six
-    # YCB-V meshes at N=5000; 1.15 is the floor with margin.
+    # Measured 1.27-1.29x on six YCB-V meshes at N=5000; 1.15 is the floor
+    # with margin.
     assert min_nn(a) / min_nn(e) >= 1.15
 
 

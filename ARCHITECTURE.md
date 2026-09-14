@@ -6,8 +6,8 @@ implementation only needs matching method signatures — no base class, no
 registration — so stages stay decoupled and any one can be re-implemented alone.
 
 Measured claims, run artefacts, and withdrawn tables live in
-[REPRODUCTION.md](REPRODUCTION.md). Incident write-ups that taught a rule live
-in [ISSUES.md](ISSUES.md). This file is the seams and the invariants.
+[REPRODUCTION.md](REPRODUCTION.md). Rules learned from incidents live in [ISSUES.md](ISSUES.md). This file
+is the seams and the invariants.
 
 ## Stages
 
@@ -100,7 +100,7 @@ A silent substitution makes results unattributable (logs still name the method
 you asked for) and poisons the config-addressed cache (the key fingerprints the
 config, not the method that actually ran). The incidents that taught this —
 CNOS swapping to a sliding window then depth blobs, the renderer reusing a
-CPU-built cache on GPU — are in [ISSUES.md](ISSUES.md).
+CPU-built cache on GPU — are summarised in [ISSUES.md](ISSUES.md).
 
 ## Pluggability proven — the PoseSolver stage
 

@@ -97,8 +97,8 @@ cat <<EOF
 Done. Ledger: $LEDGER
 
 Next (LOCAL-CPU, no GPU needed):
-  1. AR per arm:  python ../gedi/scripts/freezev2_compute_ar_mssd_mspd.py <csv>
-     (full BOP AR additionally needs ../gedi/scripts/freezev2_vsd_compute.py)
+  1. AR per arm:  python -m popoe.metrics.ar <csv>
+     (full BOP AR additionally needs python -m popoe.metrics.vsd)
   2. PAIRED comparison, not just the AR delta — same targets, same detections,
      so build the contingency table (ours-ok/theirs-ok per target) the way the
      FreeZeV2.2 bad-case pass did. A 2-point AR gap with 200 wins and 180

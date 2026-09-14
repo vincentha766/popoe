@@ -1,6 +1,6 @@
 """Render-appearance re-rank of pose hypotheses (knife-4 / FreeZe SAR core).
 
-Offline measurement (gedi knife 4, 2026-07-29): re-selecting among PCA-axis
+Offline measurement (2026-07-29): re-selecting among PCA-axis
 rotational variants by DINOv2 render-vs-scene patch cosine (`sar_ti`) lifts
 YCB-V combo_sym full BOP AR (flat) 0.8275 → **0.8605** (> FreeZe(CNOS) 0.853).
 This module is the **in-pipeline** form of that re-rank.
@@ -341,8 +341,8 @@ class RenderAppearanceReranker:
         # not comparable to one that did not, and s_icp reaches the scorer as a
         # multiplicative factor. Re-ICP'ing only the flips inflated their s_icp
         # ~4x, so the selector preferred a flip on measurement asymmetry alone
-        # (LM-O AR(2/3) 0.77 -> 0.25). scripts/freezev2_flip_post.py in the gedi
-        # archive hit the same trap offline and guards it the same way.
+        # (LM-O AR(2/3) 0.77 -> 0.25). The offline flip-rescore path hit the
+        # same trap and guards it the same way.
         if self.re_icp:
             dense = target.pts_dense if target.pts_dense is not None else target.pts
             if dense is not None and len(dense) >= 4 and len(query.pts) >= 4:

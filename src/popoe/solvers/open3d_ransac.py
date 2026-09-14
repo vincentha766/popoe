@@ -53,8 +53,8 @@ class Open3DFeatureRansacSolver:
         # Measured on MSSD over YCB-V obj 5 (REPRODUCTION.md Solver A/B ledger):
         # this roughly halves median MSSD vs n_restarts=1 and wins head-to-head
         # 72:33, but does NOT reach the hand-rolled feature-aware RansacSolver.
-        # An older claim of parity was withdrawn (ISSUES.md 2026-07-26); cite the
-        # MSSD numbers, never a raw rotation angle.
+        # An older claim of parity was withdrawn; cite the MSSD numbers in
+        # REPRODUCTION.md, never a raw rotation angle.
         self.n_restarts = n_restarts
         self.subsample = subsample
         # Open3D's RANSAC draws from a GLOBAL RNG that it does not seed itself,

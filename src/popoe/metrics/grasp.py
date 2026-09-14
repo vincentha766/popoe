@@ -1,11 +1,10 @@
 """Grasping-axis pose metrics from a BOP prediction CSV (no renderer needed).
 
-Port of gedi `scripts/freezev2_grasp_eval.py` (2026-08-06), byte-compatible in
-aggregation and output so numbers reconcile against the archived grasp rows in
+Aggregation and output are kept byte-compatible with the archived grasp rows in
 `REPRODUCTION.md` (headline rows #5/#6). Per that ledger's calibre note, the
-grasp axis deliberately keeps the archived script's statistics — **mean over
-per-object recalls** and **median over per-object medians** — NOT the BOP flat
-calibre used by metrics/ar.py and metrics/vsd.py. Do not "fix" this without
+grasp axis deliberately keeps those statistics — **mean over per-object
+recalls** and **median over per-object medians** — NOT the BOP flat calibre
+used by metrics/ar.py and metrics/vsd.py. Do not "fix" this without
 re-baselining the archived numbers.
 
 Reports, per object then averaged:

@@ -56,7 +56,7 @@ def scale_vis(feats: np.ndarray, w: float,
     800 and a weight sweep would scale 800 of the 1536 visual channels and leave
     the other 736 at w=1 — a sweep silently running a different weighting than
     its label says, the same shape as the "w=1 was never w=1" defect
-    (ISSUES.md 2026-07-14).
+    (ISSUES.md).
 
     `vis_dim=None` keeps the historical equal-halves answer, so no existing
     caller changes behaviour. The split is NOT inferred from `POPOE_VIS_DIM`:
@@ -198,7 +198,6 @@ def _build_solver(name: str, tau: float, n_ransac: int, seed: int | None = None,
         # SEPARATE NAME rather than a flag on gpu-feat so the arm is identifiable
         # in solver_provenance and in every run log — an isolation arm whose
         # identity lives in a boolean the log does not print is not isolable.
-        # gedi decision 19.
         return GPURansacSolver(tau_inlier=tau, iters=n_ransac,
                                fitness="geometric" if name == "gpu" else "feature",
                                distance_check=(name == "gpu-feat-dist"),
@@ -228,7 +227,7 @@ def solver_provenance(name: str, seed: int | None,
     ``solver=o3d seed=42 (seeded)``, so the missing flag stayed invisible for
     a day. Likewise gpu-feat vs gpu-feat-dist is partly carried by the name,
     but the effective ``distance_check`` bit is still printed so a renamed
-    default cannot silently drop the condition. gedi TODO ① / decision 19.
+    default cannot silently drop the condition.
     """
     if name == "teaser":
         return f"solver={name} seed=n/a (deterministic — TEASER++ has no RNG)"

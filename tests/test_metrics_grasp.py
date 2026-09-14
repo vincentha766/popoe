@@ -1,4 +1,4 @@
-"""metrics.grasp — grasp-axis ADD(-S) port of gedi freezev2_grasp_eval.py.
+"""metrics.grasp — grasp-axis ADD(-S) at the archived per-object calibre.
 
 The defining property here is the ARCHIVED calibre (deliberately NOT flat):
 mean over per-object recalls, median over per-object medians. The archived

@@ -1,4 +1,4 @@
-"""Cross-validate popoe's two-source union INGESTION against the gedi-era
+"""Cross-validate popoe's two-source union INGESTION against the archived
 merge-script reference (CNOS + SAM-6D, LM-O).
 
 The reference (`union_cnos_sam6d_lmo.reference.json`) is the merged detection
@@ -41,7 +41,7 @@ def _canon(r):
 
 @pytest.mark.skipif(not all(os.path.exists(p) for p in (CNOS, SAM6D, REF)),
                     reason="local CNOS/SAM-6D/reference detection files absent")
-def test_union_ingestion_matches_gedi_reference():
+def test_union_ingestion_matches_reference():
     mine = (load_bop_detections(CNOS, source="cnos")
             + load_bop_detections(SAM6D, source="sam6d"))
     ref = load_bop_detections(REF)                 # keeps its own source tags

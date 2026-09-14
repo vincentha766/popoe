@@ -157,8 +157,8 @@ frame's masks on another is exactly the stale-mask failure seen on the
 
 ## Divergences From the Paper
 
-Carried over from the validated script `gedi/scripts/muse_match.py`. Keep this
-list honest — it is what stops these numbers being read as an exact replication.
+Keep this list honest — it is what stops these numbers being read as an exact
+replication.
 
 | Paper | Here | Why |
 |-------|------|-----|
@@ -172,10 +172,9 @@ which is the honest reason this list is worth re-auditing: the crop handed to
 DINOv2 kept its background pixels, so the class token embedded the surroundings
 along with the object, while the paper (§4.1) preserves "only the object region
 inside the box". G3 measured it as the dominant AP hole (+16 pt on LM-O) and
-`mask_rgb=True` / `gem_tokens="all"` are now the defaults — see
-[§ Gap-closing plan](#gap-closing-plan-g1g5--status). The historical recipe is
-still reachable via `--no-mask-rgb` / `--gem-tokens fg`, so numbers filed before
-2026-07-26 are reproducible, not silently rebased.
+`mask_rgb=True` / `gem_tokens="all"` are now the defaults. The historical recipe
+is still reachable via `--no-mask-rgb` / `--gem-tokens fg`, so numbers filed
+before 2026-07-26 are reproducible, not silently rebased.
 
 Two departures from the reference script itself (not from the paper), both
 tightening behaviour rather than changing the method:
@@ -210,163 +209,31 @@ Defaults (`alpha=0.5`, `beta=0.8`, `tau=0.02`, `gamma=0.1`, `gem_p=1.5`, prompt
 ## Verification Status
 
 - Unit tests: `tests/test_segmentor_muse.py` — scoring core, cross-class
-  ranking, per-frame memoisation, size-gate union, detections round-trip. GPU-free.
-- End-to-end parity against `gedi/scripts/muse_match.py`: **run 2026-07-26** on a
-  4090, same frame (`shots_0723/rgb_000000.png`), same parameters, popoe commit
-  `e07a129`. Artefacts: `gedi/muse_parity_20260726/`.
+  ranking, per-frame memoisation, size-gate union, detections round-trip.
+  GPU-free.
+- The port reproduces the *method*, not bit-identical scores. Proposal and
+  gating match a reference Grounding DINO → SAM2 → depth-gate cascade;
+  scoring differs because `square_crop` is exclusive-bbox + PIL BICUBIC
+  here, and inclusive-bbox + cv2 LINEAR in the reference. Crop windows
+  differ by ~1–2 px; `S_abs` moves by ~0.003–0.017. Treat a sub-0.02
+  margin as a tie. Bit-parity is not pursued: popoe's exclusive bbox is
+  the geometrically correct one, and the same crop serves CNOS-lab.
 
-| check | result |
-|---|---|
-| proposals surviving the size gate | 3 of 7, **both** |
-| mask SET produced (content-aligned) | **identical**, 3 of 3 |
-| same mask at every rank | **no** — `obj_000009`'s top-1/top-2 swapped |
-| max abs delta on `S_final` | 0.0168 |
+## Reimplementation vs official AP
 
-**Read this as: the port reproduces the method, not the arithmetic.** Proposal
-and gating are bit-identical — Grounding DINO, SAM2 and the depth gate select
-exactly the same three regions. Every difference is in scoring, and it comes
-from the two `square_crop` implementations, which are not the same function:
+`build_muse_segmentor` / `popoe-muse` / `popoe-bop-muse` default to
+`mask_rgb=True`, `gem_tokens="all"` (paper §4.1: keep only the object
+region inside the box). Opt out with `--no-mask-rgb --gem-tokens fg`.
 
-| | reference (`cnos_match3.py:31`) | popoe (`segmentor_cnos_lab.py`, `square_crop`) |
-|---|---|---|
-| bbox | inclusive (`ys.max()`) | exclusive (`ys.max() + 1`) |
-| half-width | `(hw + int(hw*2*pad)) // 2` | `round(side * (0.5 + pad))` |
-| resample | cv2 `INTER_LINEAR` | PIL `BICUBIC` |
+Measured segmentation AP (`source='muse-repro'`, not official `muse`):
 
-Measured on this frame's masks, the crop windows differ by 2 px in size and
-1 px in origin, which is enough to move `S_abs` by 0.003–0.017.
+| Dataset | Official `muse` | Default `muse-repro` |
+|---|---:|---:|
+| LM-O | 0.471 | 0.388 |
+| YCB-V | 0.690 | 0.684 |
 
-`obj_000009`'s top-1 and top-2 sat 0.0031 apart in the reference run — below
-that sensitivity — so the ranking flipped. `obj_000014`, whose margin was
-0.0496, ranked identically. **Neither implementation is "right" here**: a
-0.003 margin means this frame does not discriminate between those two masks at
-all, in either version. Treat a sub-0.02 margin on this pipeline as a tie, not
-a decision.
-
-**Decision (2026-07-26): bit-parity is not pursued.** popoe's exclusive bbox is
-the geometrically correct one — the reference's inclusive bbox is an off-by-one
-— so aligning would mean freezing that off-by-one into this repo. The shared
-`square_crop` also serves CNOS-lab, an evaluated path, so changing it needs its
-own A/B rather than a drive-by edit. What matters is recorded instead: the two
-crop conventions differ, the resulting score sensitivity is ~0.017, and any
-margin below that is a tie.
-
-Nothing has been registered in `REPRODUCTION.md`: this run verifies the port
-against its reference, it does not produce a benchmark number.
-
-## Gap-closing plan (G1–G5) — status
-
-The single status copy for the `muse-repro` AP gap. `gedi/TODO.md` points here;
-do not keep a second copy of this table anywhere. Each row's evidence lives in
-the result section named in the last column.
-
-Starting point (2026-07-26, same harness, LM-O / YCB-V segmentation AP):
-`muse-repro` **0.228 / 0.326** against official `muse` **0.471 / 0.690** (local
-PyPI-pycocotools recomputes of the official files; the public leaderboard rows
-are 0.477 / 0.690).
-
-| # | Probe | Verdict | Where |
-|---|---|---|---|
-| G1 | Depth size gate off / relaxed | **Refuted** — 0.224 vs 0.228 gate-on, noise-level | § G1 result |
-| G2 | `patch_sim` cosine (paper Eqs. 2–3) vs Tanimoto | **Refuted** — 0.219, slightly worse than Tanimoto | § G2 result |
-| G3 | `mask_rgb` + `gem_tokens=all` | **Confirmed** — LM-O 0.388, YCB-V 0.684; promoted to default | § G3 result, § G3 YCB-V confirm |
-| G4 | `square_crop` convention vs the reference | **Documented, not chased** — ~0.017 score sensitivity; bit-parity explicitly declined | § Verification Status |
-| G5 | Write back the frozen default | **Done** — defaults changed here, AP rows ledgered in `REPRODUCTION.md` § `muse-repro` G3 AP, narrative in `gedi/progress.md` | — |
-
-**Where this leaves the gap.** YCB-V is at parity (−0.006, inside run-to-run
-noise). LM-O keeps a **−0.083** residual, unattributed; the candidates are
-templates, GD/SAM2 cascade details, the ranker, and αβτγ tuning. Nothing cheap
-is left on this line — G1 and G2 spent a pod each to refute a hypothesis, and
-the one that paid off (G3) was a hygiene bug, not a hyperparameter.
-
-**What stays open.** The G3 recipe has only been measured on *segmentation* AP.
-Its effect on **pose** is unmeasured (needs GPU; `REPRODUCTION.md` §
-Remaining follow-up). Until that runs, FreeZe four-way **pose** keeps using the
-authors' official `muse` JSON, per the naming rule at the top of this file —
-`muse-repro` numbers must never be filed as `muse`.
-
-## G1 result (2026-07-26) — depth size gate A/B
-
-LM-O full split, topk=3, same templates/env as campaign2 muse-repro.
-Code: branch `g1-muse-depth-gate-ab` @ `8f7378d`, flag `--no-size-gate`.
-Pod: reused `ctxs25f2eczigt` (network volume). Artefacts:
-`outputs/g1_muse_gate_20260726/`, pod
-`/workspace/results/g1_muse_gate_20260726/`.
-
-| condition | AP | AP50 | AP75 |
-|---|---:|---:|---:|
-| official `muse` | **0.471** | — | — |
-| muse-repro **gate on** (default) | **0.228** | 0.377 | 0.259 |
-| muse-repro **gate off** (G1) | **0.224** | 0.376 | 0.243 |
-
-**Conclusion:** disabling the depth 3D-extent gate does **not** close the
-official gap (Δ ≈ −0.004 vs gate-on, noise-level). Next levers: **G2**
-**G2** patch_sim cosine (paper eqs) vs Tanimoto, then **G3** GD/SAM2 cascade.
-Keep the gate available for real-robot confuser filtering; it is not the
-BOP AP bottleneck.
-
-## G2 result (2026-07-26) — patch_sim cosine (paper Eqs. 2–3)
-
-LM-O full split, topk=3, gate **on** (default), `class_sim=cosine`,
-`patch_sim=cosine`. Code @ `0a86752`. Pod reuse `ctxs25f2eczigt`.
-Artefacts: `outputs/g2_muse_patch_sim_20260726/`.
-
-| condition | AP | AP50 | AP75 |
-|---|---:|---:|---:|
-| official `muse` | **0.471** | — | — |
-| default (cos cls + **Tanimoto** GeM) | **0.228** | 0.377 | 0.259 |
-| G1 gate off + default sim | 0.224 | 0.376 | 0.243 |
-| **G2 cos cls + cos GeM** (paper eqs) | **0.219** | 0.362 | 0.248 |
-
-**Conclusion:** switching patch similarity to cosine (literal paper
-equations) does **not** close the official gap; slightly worse than
-Tanimoto(GeM). Gap is elsewhere — GD/SAM2 cascade, templates, fg GeM
-masking, hyperparameters, or unpublished submission details (**G3+**).
-
-## G3 result (2026-07-26) — mask_rgb + gem_tokens=all
-
-Paper §4.1: "only the object region inside the box is preserved" before
-matching. Run: `--mask-rgb --gem-tokens all`, default gate + default
-sim (cos,tanimoto), LM-O full, topk=3. Code @ `e57cf03`.
-Artefacts: `outputs/g3_muse_mask_rgb_20260726/`.
-
-| condition | AP | AP50 | AP75 | notes |
-|---|---:|---:|---:|---|
-| official `muse` | **0.471** | — | — | BOP submission |
-| default repro | **0.228** | 0.377 | 0.259 | square crop + FG GeM |
-| G1 gate off | 0.224 | 0.376 | 0.243 | no depth gate |
-| G2 cos+cos | 0.219 | 0.362 | 0.248 | paper eq cosine |
-| **G3 mask_rgb + gem all** | **0.388** | **0.629** | **0.454** | **+16 pt vs default** |
-
-**Conclusion:** The main muse-repro AP hole was **proposal embedding
-hygiene** (class token seeing background in the square crop), not the
-depth gate or Tanimoto/cosine choice. Closing most of the gap:
-
-```text
-official 0.471
-G3       0.388   ← recovered ~2/3 of the deficit
-default  0.228
-```
-
-Residual ~0.08 may be templates / GD thresholds / SAM2 cascade details /
-αβτγ fine-tune. **Recommend promoting `--mask-rgb` (and likely
-`--gem-tokens all`) as the new muse-repro default** after a YCB-V
-confirm run.
-
-## G3 YCB-V confirm + default promotion (2026-07-26)
-
-Same knobs as LMO G3 (`--mask-rgb --gem-tokens all`), full YCB-V test
-(900 images, 21 classes). Artefacts:
-`outputs/g3_muse_ycbv_mask_rgb_20260726/`.
-
-| split | official AP | default (pre-G3) | **G3 mask_rgb+gem_all** |
-|---|---:|---:|---:|
-| LM-O | 0.471 | 0.228 | **0.388** |
-| YCB-V | 0.690 | 0.326 | **0.684** |
-
-YCB-V is essentially **parity with official** (−0.006). LMO residual
-~0.08 remains (templates / cascade / ranker).
-
-**Default change (this commit):** `build_muse_segmentor` and CLIs now default
-to `mask_rgb=True`, `gem_tokens="all"`. Opt out with `--no-mask-rgb` /
-`--gem-tokens fg` for the historical recipe.
+YCB-V is at parity. LM-O keeps an unattributed residual. Turning the
+depth gate off, or switching patch similarity to cosine, does not close
+it. Four-way **pose** still consumes the authors' official `muse` JSON —
+`muse-repro` numbers must never be filed as `muse`. Rows and commits:
+[REPRODUCTION.md](REPRODUCTION.md) segmentation AP ledger.

@@ -43,9 +43,8 @@ Pipeline (paper Fig.2 / Eq.1-10):
 4. Matching — ``S_rel = softmax_c(S_abs/tau)`` over ALL registered classes,
    ``S_joint = beta*S_abs + (1-beta)*S_rel``, ``S_final = P(O|p)^gamma * S_joint``.
 
-Deliberate divergences from the paper, carried over from the validated script
-``gedi/scripts/muse_match.py`` (keep this list honest — it is what stops these
-numbers being read as an exact replication):
+Deliberate divergences from the paper (keep this list honest — it is what
+stops these numbers being read as an exact replication):
 
 * A depth-based 3D-extent size gate runs after proposal. MUSE has none (its BOP
   results are RGB-only); we keep it because it is cheap and directly targets the
