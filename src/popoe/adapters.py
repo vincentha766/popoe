@@ -123,7 +123,7 @@ def fixed_seed_subsample(n: int, cap: int):
     dense_mask_cloud). Both sides draw through this function over the same
     row-major (depth>0)&mask index space, so they reach the identical cloud
     without threading it through the feature cache — duplicate the rule and
-    the single-cloud contract silently splits again (triage D4)."""
+    the two stages no longer share one cloud."""
     if cap and n > cap:
         return np.sort(np.random.default_rng(0).choice(n, cap, replace=False))
     return None

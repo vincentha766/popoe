@@ -18,7 +18,7 @@ from popoe.registration import (
 class FreeZeV2:
     """
     Full FreeZeV2 pipeline for a single object-mask pair.
-    Uses /workspace/gedi for geometric features, DINOv2 for visual features.
+    Uses GeDi (POPOE_GEDI_PATH) for geometric features, DINOv2 for visual features.
     DINOv2 and GeDi are shared between query/target extractors to save VRAM.
     """
 

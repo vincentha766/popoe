@@ -6,11 +6,9 @@ behind small `Protocol` contracts, so **every step can grow its own method** —
 add a segmentor, a feature backbone, a pose solver, a scorer, without touching
 the rest.
 
-**Scope**: popoe owns benchmark-grade pose estimation (BOP datasets, metrics,
-evaluated-best recipes). Applications — robot grasping, AR, inspection — live in
-their own repositories and consume popoe as a dependency behind the
-`PoseEstimator`-style seam (see e.g. a lab grasping stack wiring
-`popoe.freeze.recipes` into its own pipeline).
+**Scope**: popoe is the pose library — BOP datasets, metrics, and evaluated
+recipes. Downstream applications (grasping, HTTP, a robot stack) live elsewhere
+and should call popoe behind the stage contracts, not grow those layers here.
 
 ```
 ObjectModel (CAD) ─┬─ QueryEncoder ──────────── q, CanonFrame ─┐
@@ -23,9 +21,11 @@ The bundled reference implementation reproduces a FreeZe-v2-style pipeline
 and ships multiple `PoseSolver` implementations to demonstrate pluggability.
 
 > Status: research code, `v0.1`. The framework layer (contracts + fusion) is
-> covered by tests; the reference implementation runs on a CUDA GPU with the
-> external models below. See [ARCHITECTURE.md](ARCHITECTURE.md) for the design.
-> Measured claims live in [REPRODUCTION.md](REPRODUCTION.md).
+> covered by tests and runs on CPU. The FreeZe-style reference implementation
+> needs a CUDA GPU, the external models below, a BOP split, and detection
+> JSONs (none of those are in this clone). See
+> [ARCHITECTURE.md](ARCHITECTURE.md) for the design. Measured claims live in
+> [REPRODUCTION.md](REPRODUCTION.md).
 
 ## Install
 
@@ -35,29 +35,65 @@ pip install -e ".[reference]"   # + reference impl (torch, open3d, trimesh, open
 pip install -e ".[dev]"         # + pytest
 ```
 
+CPU-only check that the clone is healthy:
+
+```bash
+pip install -e ".[dev]"
+pytest tests/
+```
+
 ### External dependencies (not on PyPI)
 
-The reference implementation orchestrates external models/toolkits — install
-these separately and point popoe at them via env vars:
+The reference implementation orchestrates external models/toolkits. Clone them
+yourself and **export the env vars**. Unset, they are empty — there is no
+lab-host fallback.
 
-| Component | Env var | Notes |
-|-----------|---------|-------|
-| GeDi checkpoint + repo | `POPOE_GEDI_PATH` (default `/workspace/gedi`) | geometric descriptor |
-| SAM 2 checkpoints | `POPOE_SAM2_CKPT` (default `/workspace/sam2_checkpoints`) | segmentation |
-| bop_toolkit | `POPOE_BOP_TOOLKIT` (default `/workspace/bop_toolkit`) | metrics (VSD/MSSD/MSPD) |
-| nvdiffrast | — | optional, falls back to trimesh CPU rendering |
-| Official CNOS producer | `POPOE_CNOS_PATH` or `external/cnos` submodule | optional detections source |
-| NIDS-Net producer | `external/NIDS-Net` submodule | optional detections source |
-| SAM-6D producer | `POPOE_SAM6D_PATH` or `external/SAM-6D` submodule | optional ISM detections / PEM pose source |
+| Component | Env var | Where it comes from |
+|-----------|---------|---------------------|
+| GeDi | `POPOE_GEDI_PATH` | Clone [fabiopoiesi/gedi](https://github.com/fabiopoiesi/gedi). The directory must contain `data/chkpts/3dmatch/chkpt.tar` (see that repo). This is the geometric descriptor, not a popoe sibling. |
+| SAM 2 checkpoints | `POPOE_SAM2_CKPT` | Directory holding `sam2.1_hiera_large.pt`. Needed only for live SAM2 / MUSE / CNOS-lab, not for file-backed BOP eval. |
+| bop_toolkit | `POPOE_BOP_TOOLKIT` | Clone [thodan/bop_toolkit](https://github.com/thodan/bop_toolkit). Used by `solver_swap_demo.py` and `python -m popoe.metrics.ar`. |
+| nvdiffrast | — | Optional GPU renderer; missing it falls back to trimesh CPU rendering (raises `BackendUnavailable` where a silent swap would lie). |
+| Official CNOS / NIDS / SAM-6D producers | `POPOE_CNOS_PATH`, `external/NIDS-Net`, `POPOE_SAM6D_PATH` | Optional. Evaluated BOP runs consume **already-written** detection files; you do not need these producers unless you want to regenerate detections. |
 
-DINOv2 is pulled via `torch.hub`. See [NOTICE](NOTICE) for upstream licenses —
-**each keeps its own license; verify before use.**
+DINOv2 weights come from `torch.hub` on first encode (`TORCH_HOME` caches them).
+See [NOTICE](NOTICE) for upstream licenses — **each keeps its own license;
+verify before use.**
 
-For pinned producer source checkouts:
+Pinned producer source checkouts (optional):
 
 ```bash
 git submodule update --init --recursive external/cnos external/NIDS-Net external/SAM-6D
 ```
+
+### BOP data
+
+popoe does not vendor BOP. Download a Classic-Core split from
+[bop.felk.cvut.cz/datasets](https://bop.felk.cvut.cz/datasets/) and pass the
+dataset root to `--bop` (the directory that contains `models/`, `test/` or
+`test_primesense/`, and `test_targets_bop19.json`). Per-dataset layout
+quirks (T-LESS/HB primesense split, ITODD `gray/*.tif`, T-LESS `models_cad`)
+are in `popoe.datasets.bop.BOP_LAYOUTS`.
+
+Units at the library boundary: CAD mesh vertices in **millimetres**;
+unprojected depth and output `t` in **metres**. BOP CSVs convert `t` back to
+mm at the edge.
+
+### Detection files
+
+The JSONs under `data/detections/` are **not in git** (large). A clone has
+empty directories plus `PROVENANCE.md` and `MANIFEST.sha256`. Place the files
+at the paths in the manifest, then:
+
+```bash
+python scripts/freeze_detections.py --check
+```
+
+Download sources and SHA256s: [CNOS.md](CNOS.md), [NIDS_NET.md](NIDS_NET.md),
+[SAM6D.md](SAM6D.md), [MUSE.md](MUSE.md), and
+`data/detections/*/PROVENANCE.md`. Official names (`cnos`, `sam6d`, `nids`,
+`muse`) are reserved for official artefacts; lab reimplementations write
+`cnos-lab` / `muse-repro`.
 
 ## Quickstart — the stages
 
@@ -73,12 +109,18 @@ popoe.Scene, popoe.ObjectModel, popoe.CanonFrame
 popoe.Detection, popoe.PointFeatures, popoe.PoseHypothesis
 ```
 
-Run the reference pipeline (needs a CUDA GPU + the external deps + a BOP dataset):
+A GPU demo of the reference pipeline (GeDi + DINOv2 + a BOP split):
 
 ```bash
-# Swap the pose solver and compare vs GT:
-python examples/solver_swap_demo.py  --bop /path/to/ycbv --obj 5 -n 5
+export POPOE_GEDI_PATH=/path/to/gedi
+export POPOE_BOP_TOOLKIT=/path/to/bop_toolkit
+python examples/solver_swap_demo.py --bop /path/to/ycbv --obj 5 -n 5 --seed 42
 ```
+
+Full BOP eval is `examples/bop_eval.py` plus the frozen recipes in
+[REPRODUCTION.md](REPRODUCTION.md). Those command blocks record a lab host
+(`/workspace/...`); override `POPOE`, `BOP`, `DET`, `POPOE_GEDI_PATH`, and
+`POPOE_BOP_TOOLKIT` locally and leave the rest of each block unchanged.
 
 ## Extending — add your own method for a step
 

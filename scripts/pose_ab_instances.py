@@ -36,7 +36,10 @@ import numpy as np
 
 from popoe.metrics.aggregate import MSPD_THRS, MSSD_THRS, VSD_THS
 
-sys.path.insert(0, os.environ.get("POPOE_BOP_TOOLKIT", "/workspace/bop_toolkit"))
+_tk = os.environ.get("POPOE_BOP_TOOLKIT")
+if not _tk:
+    raise SystemExit("set POPOE_BOP_TOOLKIT to a thodan/bop_toolkit checkout")
+sys.path.insert(0, _tk)
 from bop_toolkit_lib import misc, pose_error  # noqa: E402
 import json
 import trimesh

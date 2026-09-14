@@ -28,7 +28,10 @@ RECALL_FRACS = (0.05, 0.10, 0.20, 0.50)
 
 def load_eval_model(bop_root, obj_id):
     import sys
-    sys.path.insert(0, os.environ.get("POPOE_BOP_TOOLKIT", "/workspace/bop_toolkit"))
+    toolkit = os.environ.get("POPOE_BOP_TOOLKIT")
+    if not toolkit:
+        raise SystemExit("set POPOE_BOP_TOOLKIT to a thodan/bop_toolkit checkout")
+    sys.path.insert(0, toolkit)
     from bop_toolkit_lib import misc
     import trimesh
 
@@ -58,7 +61,7 @@ def run_chain(solver, refiner, scorer, q, t, scene, obj):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--bop", default="/workspace/bop_data/ycbv")
+    ap.add_argument("--bop", required=True, help="BOP dataset root (e.g. /path/to/ycbv)")
     ap.add_argument("--obj", type=int, default=5)
     ap.add_argument("-n", "--n-instances", type=int, default=5)
     ap.add_argument("--n-points", type=int, default=5000)

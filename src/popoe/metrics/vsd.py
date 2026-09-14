@@ -26,8 +26,15 @@ except ImportError:  # run as a bare file without popoe installed
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from popoe.metrics import aggregate
 
-sys.path.insert(0, os.environ.get("POPOE_BOP_TOOLKIT", "/workspace/bop_toolkit"))
-from bop_toolkit_lib import misc
+def _bop_misc():
+    toolkit = os.environ.get("POPOE_BOP_TOOLKIT")
+    if not toolkit:
+        raise SystemExit(
+            "set POPOE_BOP_TOOLKIT to a thodan/bop_toolkit checkout "
+            "(needed for bop_toolkit_lib.misc)")
+    sys.path.insert(0, toolkit)
+    from bop_toolkit_lib import misc
+    return misc
 
 VSD_DELTA_MM = 15.0  # default fallback; prefer aggregate.vsd_delta_mm(dataset)
 VSD_TAUS = aggregate.VSD_TAUS
@@ -129,6 +136,7 @@ def compute_ar_vsd(csv_path, bop_root, models_eval_dir=None):
     # Load meshes + symmetries + diameters once
     models_info = json.load(open(models_eval_dir / "models_info.json"))
     obj_data = {}
+    misc = _bop_misc()
     for obj_id_str, info in models_info.items():
         obj_id = int(obj_id_str)
         m = trimesh.load(models_eval_dir / f"obj_{obj_id:06d}.ply", force="mesh")

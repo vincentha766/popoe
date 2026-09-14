@@ -68,8 +68,8 @@ DINOv2 hub weights are external as usual.
 ```bash
 pip install -e ".[muse]"                       # torch, transformers, Pillow, pycocotools
 pip install git+https://github.com/facebookresearch/sam2.git
-export POPOE_SAM2_CKPT=/workspace/sam2_ckpt    # sam2.1_hiera_large.pt lives here
-export TORCH_HOME=/workspace/torch_cache       # avoids re-downloading DINOv2 ViT-G
+export POPOE_SAM2_CKPT=/path/to/sam2_ckpt      # sam2.1_hiera_large.pt lives here
+export TORCH_HOME=/path/to/torch_cache         # optional; caches DINOv2 ViT-G
 ```
 
 Grounding DINO weights come from the HF hub on first use
@@ -83,7 +83,7 @@ Single frame:
 popoe-muse \
   --frame     capture/frame_000000.json \
   --classes   9=/templates/ycbv/obj_000009,14=/templates/ycbv/obj_000014 \
-  --models-info /workspace/bop_data/ycbv/models/models_info.json \
+  --models-info /path/to/ycbv/models/models_info.json \
   --out       outputs/muse_ycbv_frame0.json \
   --topk 3
 ```
@@ -103,8 +103,8 @@ BOP target split:
 
 ```bash
 popoe-bop-muse \
-  --bop-root /workspace/bop_data/ycbv \
-  --template-root /workspace/templates/ycbv \
+  --bop-root /path/to/ycbv \
+  --template-root /path/to/templates/ycbv \
   --out outputs/muse-repro_ycbv-test.json \
   --shard-dir outputs/muse-repro_ycbv-test_shards \
   --resume
@@ -163,7 +163,7 @@ replication.
 | Paper | Here | Why |
 |-------|------|-----|
 | No depth size gate (BOP proposals are RGB-only) | Depth 3D-extent gate after proposal, union of all registered classes' intervals | Cheap, already validated on this project's real shots, targets the printed-text confuser failure mode |
-| Paper Eqs. (2)–(3): cosine on cls **and** GeM | Default: cosine(cls) + **Tanimoto**(GeM); optional ``patch_sim=cosine`` | G2 A/B; paper prose also names Tanimoto |
+| Paper Eqs. (2)–(3): cosine on cls **and** GeM | Default: cosine(cls) + **Tanimoto**(GeM); optional ``patch_sim=cosine`` | paper prose also names Tanimoto |
 | — | No union-bbox box-prompt refinement (CNOS-lab has one) | The GD+SAM2 cascade is the paper's largest ablation lever (+0.108 mAP over plain SAM proposals); it should not need the patch |
 | Naive softmax | Max-subtracted softmax | Identical on any input the reference handles; additionally keeps an all-failed proposal row from becoming NaN and poisoning every class's ranking |
 
@@ -171,7 +171,7 @@ replication.
 which is the honest reason this list is worth re-auditing: the crop handed to
 DINOv2 kept its background pixels, so the class token embedded the surroundings
 along with the object, while the paper (§4.1) preserves "only the object region
-inside the box". G3 measured it as the dominant AP hole (+16 pt on LM-O) and
+inside the box". Measured as the dominant AP hole (+16 pt on LM-O) and
 `mask_rgb=True` / `gem_tokens="all"` are now the defaults. The historical recipe
 is still reachable via `--no-mask-rgb` / `--gem-tokens fg`, so numbers filed
 before 2026-07-26 are reproducible, not silently rebased.

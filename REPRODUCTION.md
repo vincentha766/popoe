@@ -10,8 +10,14 @@ bit-identical if the run is seeded).
 
 A popoe-native formal line already exists and needs no parity run: YCB-V
 full BOP AR **0.8201**, LM-O **0.6896**, grasp ADD(-S)@0.1d 0.8616 / 0.7816.
-The tables below also record a historical script-line re-run through popoe
-entrypoints. Do not rewrite one line with the other.
+The tables below also record a historical re-run of the same recipes through
+popoe entrypoints. Do not rewrite one line with the other.
+
+Frozen command blocks below were captured on a lab host whose layout used
+`/workspace/{popoe,bop_data,gedi,bop_toolkit,torch_cache}`. Those strings
+are the recorded environment, not a requirement of this repo. Point
+`POPOE`, `BOP`, `DET`, `POPOE_GEDI_PATH`, `POPOE_BOP_TOOLKIT`, and
+`TORCH_HOME` at local paths and leave the rest of each block unchanged.
 
 ## FreeZeV2 §IV-A experimental-setup conformance audit (2026-08-06)
 
@@ -27,16 +33,16 @@ Code inspected: originally the working tree based on `1d785b7` (dirty at audit
 time); the execution-path rows have since been updated against the 2026-08-06
 fix-wave commits as each landed. This is a setup/protocol audit, not a result
 row or a reproducible run identity. **Full-table re-verification performed at
-`a101594` (2026-08-07, adversarial agent, row-by-row against code + paper
+`a101594` (2026-08-07, row-by-row against code + paper
 text): zero conclusion-level errors, no cross-invalidation from the
 patch-style updates; the wording/attribution fixes it listed were applied in
-the same pass (triage A3/D8 closed).** **Terminal delta re-check (2026-08-07,
+the same pass.** **Terminal delta re-check (2026-08-07,
 pre-pin): the only behavioural code change since `a101594` is `31d277e`
-(--render-score / --mask-m 2n / faithful wrappers re-carry rerank). Its
+(--render-score / --mask-m 2n / paper-faithful recipes re-carry rerank). Its
 surface touches exactly one row — `M=N+1`, updated to a declared deliberate
 deviation in the frozen recipes — plus the additional-variables paragraph
 below; every other row's subject (sampling, aggregation, canvas, DINOv2,
-budgets, tau, solvers, timing) is outside that diff. A3 closed at the pin.**
+budgets, tau, solvers, timing) is outside that diff.**
 
 Status meanings: **match** = the paper setting and executed path agree;
 **pinned-by-us** = the paper is silent and a frozen local choice fills the gap;
@@ -46,9 +52,9 @@ not implemented by the formal runner.
 
 | Paper setting | Current popoe formal path | Status / disclosure |
 |---|---|---|
-| CNOS, SAM-6D, NIDS and MUSE, evaluated individually or as an ensemble (§IV-A: "used either individually or as an ensemble"; the ensemble rows 18/19 use all four) | The A and B ensemble recipes below both run the same four official sources (CNOS + SAM6D-441 + NIDS + MUSE); official files for all seven core sets are in `data/detections/`. The single-source arms are the `### faithful-cnos` runbook below (CNOS-FastSAM only). | **Match on composition** for the ensemble arms (four-way, per the rows-18/19 merged segmentation cell). Composition match does not make B paper-faithful — B is tuned elsewhere in the pipeline. |
+| CNOS, SAM-6D, NIDS and MUSE, evaluated individually or as an ensemble (§IV-A: "used either individually or as an ensemble"; the ensemble rows 18/19 use all four) | The paper-faithful and tuned ensemble recipes below both run the same four official sources (CNOS + SAM6D-441 + NIDS + MUSE); official files for all seven core sets are in `data/detections/`. The single-source arms are the `### faithful-cnos` runbook below (CNOS-FastSAM only). | **Match on composition** for the ensemble arms (four-way, per the rows-18/19 merged segmentation cell). Composition match does not make the tuned recipe paper-faithful — it is tuned elsewhere in the pipeline. |
 | 162 templates per object, using the CNOS camera viewpoints | Faithful pins set `POPOE_N_VIEWS=162` and `POPOE_QUERY_VIEWS=ico162`. | **Match.** |
-| Poisson disk sampling of the raw query surface points | The query cloud is drawn with `trimesh.sample.sample_surface_even` — rejection-based approximately-even sampling, not a strict Poisson-disk sampler. Measured on the eight LM-O meshes at N=5000: it returns the full count, but its minimum nearest-neighbour spacing is 23% below a blue-noise sampler's (ratio 1.302-1.309) — i.e. it gives up exactly the "minimum inter-point distance" the paper's sentence claims. | **Approximation / pinned-by-us. PRICED 2026-08-10: −0.88 pt** (isolation arm D20, `POPOE_QUERY_SAMPLER=poisson`, LM-O full, faithful-cnos: 0.5568 vs baseline 0.5656; MSSD/MSPD/VSD all move the same way, −1.04/−1.22/−0.37, so it is not a single-leg artifact and it is well outside the 0.19 noise floor). **Swapping in a genuine Poisson-disk sampler makes the faithful arm WORSE**, the same shape as D19: the gap is real as a fidelity record but does not explain the shortfall, and "the faithful arm reads low because of this deviation" is falsified. ⚠️ The paper's [77] is Bridson 2007, a VOLUMETRIC dart-throwing algorithm with no unique meaning on a mesh surface; the arm used Open3D's Yuksel-2015 sample elimination, which satisfies the stated property but IS NOT the cited algorithm. Do not write this up as "implementing [77]". |
+| Poisson disk sampling of the raw query surface points | The query cloud is drawn with `trimesh.sample.sample_surface_even` — rejection-based approximately-even sampling, not a strict Poisson-disk sampler. Measured on the eight LM-O meshes at N=5000: it returns the full count, but its minimum nearest-neighbour spacing is 23% below a blue-noise sampler's (ratio 1.302-1.309) — i.e. it gives up exactly the "minimum inter-point distance" the paper's sentence claims. | **Approximation / pinned-by-us. PRICED 2026-08-10: −0.88 pt** (isolation run, `POPOE_QUERY_SAMPLER=poisson`, LM-O full, faithful-cnos: 0.5568 vs baseline 0.5656; MSSD/MSPD/VSD all move the same way, −1.04/−1.22/−0.37, so it is not a single-leg artifact and it is well outside the 0.19 noise floor). **Swapping in a genuine Poisson-disk sampler makes the faithful arm WORSE**, the same shape as the distance-check isolation: the gap is real as a fidelity record but does not explain the shortfall, and "the faithful arm reads low because of this deviation" is falsified. ⚠️ The paper's [77] is Bridson 2007, a VOLUMETRIC dart-throwing algorithm with no unique meaning on a mesh surface; the arm used Open3D's Yuksel-2015 sample elimination, which satisfies the stated property but IS NOT the cited algorithm. Do not write this up as "implementing [77]". |
 | Per-point multi-view feature aggregation ("weighted average") | Aggregation is a binary-visibility equal-weight mean (`sum / visible_count`): a view that sees the point weighs 1, others 0. The paper does not publish its weight formula. | **Pinned-by-us.** Do not claim the paper confirms the absence of e.g. view-angle weights. |
 | Retain raw query points visible in at least `V=18` views | Faithful pins set `POPOE_QUERY_MIN_VIEWS=18`; filtering is implemented in `src/popoe/freeze/feature_extractor.py`. | **Match.** |
 | Render at 480×480 with the object occupying approximately 50% of width/height | Faithful pins use `POPOE_QUERY_CANON=476`, `POPOE_QUERY_FILL=0.5` and `POPOE_QUERY_FILL_MODE=effective`. 476 is the local DINO patch-grid-compatible substitute. The fill knob was historically INERT (mesh pre-scale and camera radius cancelled, leaving a constant ~0.58 frame fraction for the 60° camera — audit P2); `effective` mode sets the camera radius so the largest side actually spans `fill` of the canvas. Legacy mode remains the tuned/historical identity. | **Approximation.** Always disclose 476/0.5-effective, not “exact 480×480”. |
@@ -57,22 +63,21 @@ not implemented by the formal runner.
 | Dense target point set 3k | Faithful recipes pin `POPOE_TARGET_DENSE=3000` alongside `--icp-dense --icp-dense-max 3000`: the GeDi neighbourhood and the ICP cloud subsample through the same fixed-seed rule (`adapters.fixed_seed_subsample`) over the same index space, reaching the identical 3k cloud. | **Match** (one shared `P_T^dense`, as the paper describes). |
 | Sparse target point set at most 256 | Faithful recipes pin `POPOE_TARGET_PAPER_GRID=1`: minimal axis-aligned SQUARE bbox, sparse targets = its 16x16 patch CENTRES, per-patch direct feature assignment (no bilinear), off-object centres dropped with no fallback. Legacy rectangular-grid/bilinear remains the tuned identity. | **Match on the faithful path.** |
 | Top-`k=10` feature correspondences | Faithful recipes run `--solver gpu-feat`, whose `GPURansacSolver` samples from top-`k=10` feature correspondences natively (`k=10` is the solver default, pinned in code). `--corr-topk` is an o3d-only knob and is NOT passed — `_build_solver` refuses it on non-o3d solvers. | **Match.** |
-| Localization keeps `M=N+1` proposals | `examples/bop_eval.py` floors the per-(source, label) mask budget PER TARGET (`floored_topk`, passed at each `segment()` call). The CLI default `--mask-m n1` is the paper's `N+1`; the FROZEN recipes pass `--mask-m 2n` (= `max(--topk, 2·inst_count)`) per decision 13's v2.1 alignment — at N=1 the two floors coincide (both 2), so the executed path deviates from §IV-A's `N+1` only on multi-instance targets. | **Deliberate deviation in the frozen recipes** (v2.1 `M=2N`, decision 13; see the v2.1-only deltas table). The base `N+1` path remains the default and is byte-identical on single-instance targets. |
+| Localization keeps `M=N+1` proposals | `examples/bop_eval.py` floors the per-(source, label) mask budget PER TARGET (`floored_topk`, passed at each `segment()` call). The CLI default `--mask-m n1` is the paper's `N+1`; the FROZEN recipes pass `--mask-m 2n` (= `max(--topk, 2·inst_count)`) to match FreeZeV2.1 (`M=2N`) — at N=1 the two floors coincide (both 2), so the executed path deviates from §IV-A's `N+1` only on multi-instance targets. | **Deliberate deviation in the frozen recipes** (v2.1 `M=2N`; see the v2.1-only deltas table). The base `N+1` path remains the default and is byte-identical on single-instance targets. |
 | Detection uses `M=100` and discards masks below `tau_mask=0.4` | The formal runner consumes BOP `test_targets_bop19.json` and exposes neither this detection-mode proposal count nor the paper confidence cutoff. | **Missing.** Current formal runs are localization-protocol runs. |
 | Two-scale GeDi: 32D per scale, neighborhoods at 30% and 40% of object diameter | `_TwoScaleGeDi` concatenates two 32D descriptors; faithful diameter normalization makes radii 0.3 and 0.4 object diameter. | **Match.** |
 | PCA/fusion output dimension 128 | Two-scale geometry is 64D; visual PCA defaults to 64D; normalized concatenation produces 128D. | **Match.** |
 | RANSAC inlier and ICP thresholds are 3% of object diameter | Faithful recipes pass `--tau-diameter`; the threshold is 3% of the BOP `models_info` diameter, loaded once in `bop_eval` and fed as ONE basis to RANSAC tau_inlier, ICP tau_ICP and the feature-score radius. (The canonical frame's diameter normalisation is a separate path serving the GeDi radii, not the source of tau.) | **Match.** |
 | Parallel GPU RANSAC, 10,000 iterations, selected with the feature-aware score | Faithful recipes run `--solver gpu-feat`: `GPURansacSolver` with `fitness="feature"`, the fixed-denominator Eq. 5 hypothesis selection, at 10,000 iterations (two further local pins the paper does not state: `min_inliers=6` and the 0.9 relative-edge-length triplet check). Tuned recipes keep `--solver o3d` (CPU Open3D geometry RANSAC) as a declared tuning choice — it measured +6-8 pt over the gpu path historically and is NOT the paper's selector. | **Match on the hypothesis selector; incomplete on triplet pruning**. See the row below. |
 | Query-view rendering appearance: the paper specifies WHAT is rendered (multi-view renders of the CAD model, DINOv2 patch features) but **not how the pixels are produced** | Five values pinned by us, none stated in the paper, all in `freeze/feature_extractor.py`: **untextured albedo `(180,160,140)/255`** (L473), **background `(200,200,200)/255`** (L475), **Lambertian floor `0.1`** with a headlight source at the camera (L446-448), **occlusion tolerance `0.05 × max extent`** (L757), **FOV `60°`** (L613, L414). | **Pinned by us — five unregistered degrees of freedom, logged 2026-08-10.** ⚠️ **These determine every pixel of the DINOv2 query half.** The table previously logged canvas size and fill ratio but not the values that decide the pixel content itself. Not priced: isolating them needs a re-encode (the cache key covers them via `enc_cfg`, so a change would invalidate the cache rather than silently reuse it — that part is sound). Registered so that "how do you rule out the gap coming from rendering conventions?" has an entry to point at, rather than a gap in the ledger. |
-| Triplet pruning before transformation estimation: *"reject triplets in which the distances between matched points exceed a geometric threshold **or** relative edge lengths … are inconsistent"* (v1 paper Sec. III) | The `or` joins **two independent** rejection conditions. `gpu_ransac.py` L90-95 implements **only** the relative-edge-length ratio (`_EDGE_RATIO = 0.9`, a value the paper does not state, borrowed from the Open3D default). The **geometric-distance** condition is **not implemented** on the gpu path; the distance test only happens after Kabsch, on the full correspondence pool (L90-117), which is inlier counting, not sample pruning. Open3D's path does have it as `CorrespondenceCheckerBasedOnDistance(tau_inlier)`. | **Deviation — implementation incomplete relative to the paper.** This is distinct from the deliberate `o3d` tuning choice above: the paper states the step, and the faithful path does not perform it. **Priced 2026-08-09**: the isolation arm (`--solver gpu-feat-dist`, LM-O full, everything else byte-identical to the faithful recipe) scores 0.5616 against the 0.5656 baseline — **−0.40 pt, i.e. adding the paper's missing condition makes the faithful arm slightly WORSE**, consistently across all three legs. Above the 0.19 pt noise floor, so not noise, but small. The gap is therefore a genuine fidelity deviation that explains **none** of the +5.36 pt solver-substitution recovery, and the natural guess that the faithful arm is depressed by this omission is **refuted**. |
+| Triplet pruning before transformation estimation: *"reject triplets in which the distances between matched points exceed a geometric threshold **or** relative edge lengths … are inconsistent"* (v1 paper Sec. III) | The `or` joins **two independent** rejection conditions. `gpu_ransac.py` L90-95 implements **only** the relative-edge-length ratio (`_EDGE_RATIO = 0.9`, a value the paper does not state, borrowed from the Open3D default). The **geometric-distance** condition is **not implemented** on the gpu path; the distance test only happens after Kabsch, on the full correspondence pool (L90-117), which is inlier counting, not sample pruning. Open3D's path does have it as `CorrespondenceCheckerBasedOnDistance(tau_inlier)`. | **Deviation — implementation incomplete relative to the paper.** This is distinct from the deliberate `o3d` tuning choice above: the paper states the step, and the faithful path does not perform it. **Priced 2026-08-09**: the isolation run (`--solver gpu-feat-dist`, LM-O full, everything else byte-identical to the faithful recipe) scores 0.5616 against the 0.5656 baseline — **−0.40 pt, i.e. adding the paper's missing condition makes the faithful arm slightly WORSE**, consistently across all three legs. Above the 0.19 pt noise floor, so not noise, but small. The gap is therefore a genuine fidelity deviation that explains **none** of the +5.36 pt solver-substitution recovery, and the natural guess that the faithful arm is depressed by this omission is **refuted**. |
 | Timing hardware: NVIDIA A40 and Xeon Silver 4316 @ 2.30 GHz | Recorded project runs use the lab 4×RTX 4090 host or other stated infrastructure; recipes do not assert the paper CPU/GPU model. | **Hardware mismatch.** Accuracy results may still be compared with full disclosure; runtime/FPS must not be presented as paper-hardware parity. |
 
 Additional algorithmic variables: BOTH arms enable `--render-rerank
---render-score --mask-m 2n` (decision 13, 2026-08-07 — the three v2.1
+--render-score --mask-m 2n` (2026-08-07 — the three v2.1
 components, same-knob across arms; none is specified in §IV-A, and all three
-are pinned-by-us approximations reported as such — see the v2.1-only deltas
-table below). Decision 9's revision (faithful carries no rerank, triage D5)
-is superseded by decision 13.
+are local approximations reported as such — see the v2.1-only deltas
+table below).
 
 ### v2.1-only deltas (Table II Row 19 = FreeZeV2-Accurate = `method_info/905`)
 
@@ -98,9 +103,9 @@ they must not be collapsed into one "missing":
 
 | v2.1 delta | Status | Reason / what it would take |
 |---|---|---|
-| `M = 2N` masks per segmentation model | **Implemented (2026-08-07, `31d277e`): `--mask-m 2n`**, per-target floor `max(--topk, 2·inst_count)`; at N=1 identical to N+1, so single-instance targets are byte-same across modes. In BOTH arms' frozen recipes per decision 13. | **Two distinct sources, do not conflate.** (a) *Where `2N` is stated*: §IV-D prose on Row 19 only — "increases the number of processed masks up to `M = 2N`". No ablation, no per-set numbers, no timing for `2N` anywhere in the report. (b) *What Table V actually ablates*: `M ∈ {N, N+1, N+2}` for the **base FreeZeV2** localization protocol (73.7 / 75.4 / 75.6 mean AR at 1.2 / 1.5 / 1.7 s), establishing that `N+1` is the paper's default and that returns are already flattening by `N+2` (+0.2). Table V therefore **does not validate `2N`** — it neither measures it nor bounds it; the `N+2` trend is only weak evidence that `2N`'s gain is small and its cost is not. What makes `2N` alignable is that the *quantity* `M` is public and parameter-free, not that it was ablated. The per-target `N+1` prerequisite is in place (`floored_topk`), and the coefficient change landed as `--mask-m 2n`; report any `2N` run as our own measurement, since the paper gives no `2N` number to compare against. |
-| Symmetry-Aware Refinement (SAR) | **Approximation ceiling: implementable, not verifiable as equivalent.** | §IV-D only says v2.1 "integrates Symmetry-Aware Refinement (SAR) [9]" — ref [9] is FreeZe v1 (`2312.00947v3` §3.6, "based on rendering and visual features"). So the spec lives in a *different* paper and there is no public code. popoe's `--render-rerank` reorders a fixed PCA-axis variant set only (champion + three 180-degree flips + az90/az270; see the tuned recipes' Cautions rows). That is our own symmetry enumeration, not a port of v1 SAR. Any implementation must be disclosed as an approximation of SAR, never as SAR. Decision 13 (2026-08-07) puts `--render-rerank` in BOTH arms' frozen recipes (previously tuned-only after the decision-9 revision). |
-| Improved scoring by comparing visual features of input image vs rendered pose | **Implemented as a pinned-by-us approximation (2026-08-07, `31d277e`): `--render-score`** — champion selection multiplies in the clamped `sar_ti` (input-vs-render DINOv2 patch cosine) the rerank stage leaves on every candidate; zero extra renders. In BOTH arms' frozen recipes per decision 13. | §IV-D gives one prose sentence, no equation and no parameters — the factor form (unit-exponent multiplicative, clamped at 0, the `use_s_coarse` arbitration shape) is our own choice and must be disclosed as such, never as the official component. Not reconstructible to a verifiable spec from the public text. |
+| `M = 2N` masks per segmentation model | **Implemented (2026-08-07, `31d277e`): `--mask-m 2n`**, per-target floor `max(--topk, 2·inst_count)`; at N=1 identical to N+1, so single-instance targets are byte-same across modes. In BOTH arms' frozen recipes. | **Two distinct sources, do not conflate.** (a) *Where `2N` is stated*: §IV-D prose on Row 19 only — "increases the number of processed masks up to `M = 2N`". No ablation, no per-set numbers, no timing for `2N` anywhere in the report. (b) *What Table V actually ablates*: `M ∈ {N, N+1, N+2}` for the **base FreeZeV2** localization protocol (73.7 / 75.4 / 75.6 mean AR at 1.2 / 1.5 / 1.7 s), establishing that `N+1` is the paper's default and that returns are already flattening by `N+2` (+0.2). Table V therefore **does not validate `2N`** — it neither measures it nor bounds it; the `N+2` trend is only weak evidence that `2N`'s gain is small and its cost is not. What makes `2N` alignable is that the *quantity* `M` is public and parameter-free, not that it was ablated. The per-target `N+1` prerequisite is in place (`floored_topk`), and the coefficient change landed as `--mask-m 2n`; report any `2N` run as our own measurement, since the paper gives no `2N` number to compare against. |
+| Symmetry-Aware Refinement (SAR) | **Approximation ceiling: implementable, not verifiable as equivalent.** | §IV-D only says v2.1 "integrates Symmetry-Aware Refinement (SAR) [9]" — ref [9] is FreeZe v1 (`2312.00947v3` §3.6, "based on rendering and visual features"). So the spec lives in a *different* paper and there is no public code. popoe's `--render-rerank` reorders a fixed PCA-axis variant set only (champion + three 180-degree flips + az90/az270; see the tuned recipes' Cautions rows). That is our own symmetry enumeration, not a port of v1 SAR. Any implementation must be disclosed as an approximation of SAR, never as SAR. Frozen recipes on both arms enable `--render-rerank` (2026-08-07). |
+| Improved scoring by comparing visual features of input image vs rendered pose | **Implemented as a pinned-by-us approximation (2026-08-07, `31d277e`): `--render-score`** — champion selection multiplies in the clamped `sar_ti` (input-vs-render DINOv2 patch cosine) the rerank stage leaves on every candidate; zero extra renders. In BOTH arms' frozen recipes. | §IV-D gives one prose sentence, no equation and no parameters — the factor form (unit-exponent multiplicative, clamped at 0, the `use_s_coarse` arbitration shape) is our own choice and must be disclosed as such, never as the official component. Not reconstructible to a verifiable spec from the public text. |
 
 **Four-source masks including MUSE are NOT a v2.1-only delta** — Rows 18 and 19
 use the same four sources, so MUSE belongs to the shared §IV-A setup row above,
@@ -173,12 +178,12 @@ therefore keeps its original role — evidence that the method can be
 reimplemented from the paper, not a replacement for official masks in pose
 runs.
 
-Consequence for the dissertation: all three components now run in both arms
-(decision 13: rerank≈SAR, `--mask-m 2n`, `--render-score`), but exact Row 19
+Consequence: all three v2.1 extras now run in both arms
+(rerank≈SAR, `--mask-m 2n`, `--render-score`), but exact Row 19
 recipe parity remains unverifiable because SAR and render scoring are
 underspecified — our versions are pinned-by-us approximations, not ports. The
 distance to 905 stays confounded by those three implementation deviations —
-label them whenever a triple is written against it. The detection-matched residual lives at A/four-way vs
+label them whenever a triple is written against it. The detection-matched residual lives at paper-faithful four-way vs
 FreeZeV2.1(905): matched in **detection composition** (the same four sources),
 but `--render-rerank` (a popoe-scoped variant of the official SAR: it
 reorders a fixed PCA-axis variant set only) means the *pose stage* is still not fully
@@ -210,7 +215,7 @@ Required follow-up before claiming exact setup parity:
 ## Two-line formal recipes
 
 > Formal score = BOP evaluation server only. Local full AR in
-> `AR_SUMMARY.md` is a development self-check, not the dissertation score.
+> `AR_SUMMARY.md` is a development self-check, not the official BOP score.
 > Code identity is **FROZEN**: tag `eighteen-run-freeze-20260807`; each
 > script refuses to run unless `POPOE_PIN` is the tag's dereferenced full
 > sha. `RUN_ROOT` is required (no default). Do not quote numbers from the
@@ -221,7 +226,7 @@ Required follow-up before claiming exact setup parity:
 > before a re-run or every target is declared done with the bad data.
 >
 > Values marked **pinned-by-us** are frozen project choices where the
-> public recipe is silent: `--seed 42`, A-line Eq.7 unit exponents
+> public recipe is silent: `--seed 42`, paper-faithful Eq.7 unit exponents
 > (`alpha=beta=gamma=1`) for `--use-s-coarse`, `POPOE_QUERY_CANON=476`
 > (paper names 480²/50%), and `--trans-nms 0.05` (Sec. III-F names
 > translation NMS but no radius). `--render-rerank` is score-affecting,
@@ -254,8 +259,8 @@ $RUN_ROOT/{recipe}/{dataset}/
   submission.csv   # DERIVED · time-normalized CSV actually uploaded to BOP
   AR_SUMMARY.md    # DERIVED · local full AR + MSSD/MSPD/VSD self-check only
   bop_server.md    # DERIVED · official BOP server score + submission id
-  grasp_summary.md # DERIVED · ADD(-S); Phase D LM-O/YCB-V only (not Phase E)
-  replays/         # DERIVED · Ch5 replay outputs, when this run carries any
+  grasp_summary.md # DERIVED · ADD(-S); LM-O/YCB-V only on the paper-faithful recipes
+  replays/         # DERIVED · scoring-rule replay outputs, when this run carries any
 ```
 
 Sharding: shard directories are **siblings** named `{dataset}_s{A,B,C}`; the merged
@@ -281,14 +286,14 @@ no `POPOE_PIN`) and were removed.
 
 | Field | Frozen value |
 |---|---|
-| Report point | A / single-source |
-| Code | **FROZEN** — tag `eighteen-run-freeze-20260807`; the operator supplies `POPOE_PIN=<its dereferenced full sha>` at run time (script refuses without it) and RUN_SPEC requires HEAD == PIN == tag^{commit}; the retired pin `twoline-rerank-fix-20260731` @ `509072e` predates the 2026-08-06 fix wave and identifies the voided runs only |
+| Report point | paper-faithful / single-source |
+| Code | **FROZEN** — tag `eighteen-run-freeze-20260807`; the operator supplies `POPOE_PIN=<its dereferenced full sha>` at run time (script refuses without it) and the freeze requires HEAD == PIN == tag^{commit}; the retired pin `twoline-rerank-fix-20260731` @ `509072e` predates the 2026-08-06 fix wave and identifies the voided runs only |
 | Datasets | LM-O + YCB-V; one full BOP test run each |
 | Detection inputs | CNOS only: `data/detections/cnos/cnos-fastsam_lmo-test.json`, `data/detections/cnos/cnos-fastsam_ycbv-test.json` |
 | Scoring | Paper Eq.7 three-term form with `--use-s-coarse` and `--eq5-terms` (both feature terms in the Eq.5 formulation: target->query top-k pool, fixed \|P_T^sparse\| denominator); Eq.7 exponents are **pinned-by-us** to unit exponents |
-| Leaderboard comparator | A / single-source -> FreeZe(CNOS) LM-O/YCB-V = 0.689 / 0.853 |
+| Leaderboard comparator | paper-faithful / single-source -> FreeZe(CNOS) LM-O/YCB-V = 0.689 / 0.853 |
 | Artifacts | `$RUN/{lmo,ycbv}/` each contains `poses.csv`, `cand.csv`, `RECIPE.md`, `AR_SUMMARY.md`, `bop_server.md`, `grasp_summary.md` |
-| Cautions | **Rerank + render score + M=2N carried (decision 13)**: the faithful arms align to v2.1 (Row 19), which carries SAR, M=2N and render scoring — popoe's `--render-rerank --render-score --mask-m 2n` are pinned-by-us approximations of those three (see the v2.1-only deltas table), disclosed as such, never as the official components. Dense resampling uses `rng(0)` where invoked and is independent of `--seed`. Encoding degradation is explicit in logs as `DEGRADE`. These runs are not bit/row comparable to historical anchors because seed and implementation fixes are new variables; the pre-decision-13 dev anchors (faithful 0.7314 / tuned 0.8174) are void — superseded by the 2026-08-07 re-anchor @ `efe97ab`: faithful-4way v4 **0.7369** / tuned-4way r3 **0.8243** AR(2/3) (LM-O obj-1 smoke, official-441 four-way). |
+| Cautions | **Rerank + render score + M=2N carried**: the faithful arms align to v2.1 (Row 19), which carries SAR, M=2N and render scoring — popoe's `--render-rerank --render-score --mask-m 2n` are pinned-by-us approximations of those three (see the v2.1-only deltas table), disclosed as such, never as the official components. Dense resampling uses `rng(0)` where invoked and is independent of `--seed`. Encoding degradation is explicit in logs as `DEGRADE`. These runs are not bit/row comparable to historical anchors because seed and implementation fixes are new variables; earlier smoke anchors (faithful 0.7314 / tuned 0.8174) are void — superseded by the 2026-08-07 re-anchor @ `efe97ab`: faithful-4way v4 **0.7369** / tuned-4way r3 **0.8243** AR(2/3) (LM-O obj-1 smoke, official-441 four-way). |
 
 ```bash
 set -euo pipefail
@@ -303,15 +308,15 @@ SEED=42
 
 cd "$POPOE"
 # Code identity: tag eighteen-run-freeze-20260807. The operator supplies its
-# dereferenced full sha explicitly — never a bare tag name (stale-tag guard,
-# RUN_SPEC). The old pin (twoline-rerank-fix-20260731 @ 509072e) predates the
+# dereferenced full sha explicitly — never a bare tag name (stale-tag guard).
+# The old pin (twoline-rerank-fix-20260731 @ 509072e) predates the
 # 2026-08-06 fix wave and identifies the voided runs only.
 : "${POPOE_PIN:?set POPOE_PIN=<dereferenced full sha of tag eighteen-run-freeze-20260807>}"
 if [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
   echo "wrong popoe checkout; need POPOE_PIN=$POPOE_PIN (got HEAD=$(git rev-parse HEAD))" >&2
   exit 1
 fi
-# Rerank file guard — faithful re-carries rerank per decision 13 (2026-08-07):
+# Rerank file guard — paper-faithful recipes carry --render-rerank:
 for req in scripts/check_rerank_symmetry.py scripts/sar_render_compare.py; do
 if [ ! -f "$req" ]; then
   echo "missing $req — stale tag tip (render_rerank loads sar_render_compare at RUNTIME); fetch --tags --force" >&2
@@ -388,14 +393,14 @@ done
 
 | Field | Frozen value |
 |---|---|
-| Report point | A / four-way |
-| Code | **FROZEN** — tag `eighteen-run-freeze-20260807`; the operator supplies `POPOE_PIN=<its dereferenced full sha>` at run time (script refuses without it) and RUN_SPEC requires HEAD == PIN == tag^{commit}; the retired pin `twoline-rerank-fix-20260731` @ `509072e` predates the 2026-08-06 fix wave and identifies the voided runs only |
+| Report point | paper-faithful / four-way |
+| Code | **FROZEN** — tag `eighteen-run-freeze-20260807`; the operator supplies `POPOE_PIN=<its dereferenced full sha>` at run time (script refuses without it) and the freeze requires HEAD == PIN == tag^{commit}; the retired pin `twoline-rerank-fix-20260731` @ `509072e` predates the 2026-08-06 fix wave and identifies the voided runs only |
 | Datasets | LM-O + YCB-V; one full BOP test run each |
 | Detection inputs | CNOS + SAM6D (official 441) + NIDS + MUSE official JSONs under `data/detections/` — the four-source composition of the paper's rows-18/19 merged segmentation cell. The paper-style UNFILTERED union comes from `--min-mask-pixels 0` + `--mask-iou-dedupe 1.1` (cross-source masks are never deduped by design); `--merge none` separately disables the YCB-V clamp-pair label pooling (a no-op on LM-O) |
 | Scoring | Paper Eq.7 three-term form with `--use-s-coarse` and `--eq5-terms` (both feature terms in the Eq.5 formulation: target->query top-k pool, fixed \|P_T^sparse\| denominator); Eq.7 exponents are **pinned-by-us** to unit exponents |
-| Leaderboard comparator | A / four-way -> FreeZeV2.1(905) LM-O/YCB-V = 0.771 / 0.915 — **detection-matched** (same four sources; same *composition*, NOT the same files — see the MUSE vintage caveat in the §IV-A setup section); label the SAR + `M=2N` + render-scoring confounds. Paper Row 18 (75.9 / 91.3, four-way no SAR, self-reported, no leaderboard row) is auxiliary reference only |
+| Leaderboard comparator | paper-faithful / four-way -> FreeZeV2.1(905) LM-O/YCB-V = 0.771 / 0.915 — **detection-matched** (same four sources; same *composition*, NOT the same files — see the MUSE vintage caveat in the §IV-A setup section); label the SAR + `M=2N` + render-scoring confounds. Paper Row 18 (75.9 / 91.3, four-way no SAR, self-reported, no leaderboard row) is auxiliary reference only |
 | Artifacts | `$RUN/{lmo,ycbv}/` each contains `poses.csv`, `cand.csv`, `RECIPE.md`, `AR_SUMMARY.md`, `bop_server.md`, `grasp_summary.md` |
-| Cautions | **Rerank + render score + M=2N carried (decision 13)**: the faithful arms align to v2.1 (Row 19), which carries SAR, M=2N and render scoring — popoe's `--render-rerank --render-score --mask-m 2n` are pinned-by-us approximations of those three (see the v2.1-only deltas table), disclosed as such, never as the official components. Dense resampling uses `rng(0)` where invoked and is independent of `--seed`. Encoding degradation is explicit in logs as `DEGRADE`. These runs are not bit/row comparable to historical anchors because seed and implementation fixes are new variables; the pre-decision-13 dev anchors (faithful 0.7314 / tuned 0.8174) are void — superseded by the 2026-08-07 re-anchor @ `efe97ab`: faithful-4way v4 **0.7369** / tuned-4way r3 **0.8243** AR(2/3) (LM-O obj-1 smoke, official-441 four-way). |
+| Cautions | **Rerank + render score + M=2N carried**: the faithful arms align to v2.1 (Row 19), which carries SAR, M=2N and render scoring — popoe's `--render-rerank --render-score --mask-m 2n` are pinned-by-us approximations of those three (see the v2.1-only deltas table), disclosed as such, never as the official components. Dense resampling uses `rng(0)` where invoked and is independent of `--seed`. Encoding degradation is explicit in logs as `DEGRADE`. These runs are not bit/row comparable to historical anchors because seed and implementation fixes are new variables; earlier smoke anchors (faithful 0.7314 / tuned 0.8174) are void — superseded by the 2026-08-07 re-anchor @ `efe97ab`: faithful-4way v4 **0.7369** / tuned-4way r3 **0.8243** AR(2/3) (LM-O obj-1 smoke, official-441 four-way). |
 
 ```bash
 set -euo pipefail
@@ -410,15 +415,15 @@ SEED=42
 
 cd "$POPOE"
 # Code identity: tag eighteen-run-freeze-20260807. The operator supplies its
-# dereferenced full sha explicitly — never a bare tag name (stale-tag guard,
-# RUN_SPEC). The old pin (twoline-rerank-fix-20260731 @ 509072e) predates the
+# dereferenced full sha explicitly — never a bare tag name (stale-tag guard).
+# The old pin (twoline-rerank-fix-20260731 @ 509072e) predates the
 # 2026-08-06 fix wave and identifies the voided runs only.
 : "${POPOE_PIN:?set POPOE_PIN=<dereferenced full sha of tag eighteen-run-freeze-20260807>}"
 if [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
   echo "wrong popoe checkout; need POPOE_PIN=$POPOE_PIN (got HEAD=$(git rev-parse HEAD))" >&2
   exit 1
 fi
-# Rerank file guard — faithful re-carries rerank per decision 13 (2026-08-07):
+# Rerank file guard — paper-faithful recipes carry --render-rerank:
 for req in scripts/check_rerank_symmetry.py scripts/sar_render_compare.py; do
 if [ ! -f "$req" ]; then
   echo "missing $req — stale tag tip (render_rerank loads sar_render_compare at RUNTIME); fetch --tags --force" >&2
@@ -495,12 +500,12 @@ done
 
 | Field | Frozen value |
 |---|---|
-| Report point | B / single-source |
-| Code | **FROZEN** — tag `eighteen-run-freeze-20260807`; the operator supplies `POPOE_PIN=<its dereferenced full sha>` at run time (script refuses without it) and RUN_SPEC requires HEAD == PIN == tag^{commit}; the retired pin `twoline-rerank-fix-20260731` @ `509072e` predates the 2026-08-06 fix wave and identifies the voided runs only |
+| Report point | tuned / single-source |
+| Code | **FROZEN** — tag `eighteen-run-freeze-20260807`; the operator supplies `POPOE_PIN=<its dereferenced full sha>` at run time (script refuses without it) and the freeze requires HEAD == PIN == tag^{commit}; the retired pin `twoline-rerank-fix-20260731` @ `509072e` predates the 2026-08-06 fix wave and identifies the voided runs only |
 | Datasets | LM-O + YCB-V; one full BOP test run each |
 | Detection inputs | CNOS only: `data/detections/cnos/cnos-fastsam_lmo-test.json`, `data/detections/cnos/cnos-fastsam_ycbv-test.json` |
-| Scoring | Campaign2 tuned ChampionScorer: grid32, weights `1.0,0.7,0.5,0.3,0.2`; YCB-V uses `--merge ycbv --use-s-coarse`, LM-O uses `--merge none` and no `--use-s-coarse` |
-| Leaderboard comparator | B / single-source -> FreeZe(CNOS) LM-O/YCB-V = 0.689 / 0.853 |
+| Scoring | Tuned ChampionScorer: grid32, weights `1.0,0.7,0.5,0.3,0.2`; YCB-V uses `--merge ycbv --use-s-coarse`, LM-O uses `--merge none` and no `--use-s-coarse` |
+| Leaderboard comparator | tuned / single-source -> FreeZe(CNOS) LM-O/YCB-V = 0.689 / 0.853 |
 | Artifacts | `$RUN/{lmo,ycbv}/` each contains `poses.csv`, `cand.csv`, `RECIPE.md`, `AR_SUMMARY.md`, `bop_server.md`, `grasp_summary.md` |
 | Cautions | Rerank scope differs from official SAR: popoe only reorders PCA flip variants. Dense resampling uses `rng(0)` where invoked and is independent of `--seed`. Encoding degradation is explicit in logs as `DEGRADE`. These runs are not bit/row comparable to historical anchors because seed, rerank and implementation fixes are new variables. |
 
@@ -517,8 +522,8 @@ SEED=42
 
 cd "$POPOE"
 # Code identity: tag eighteen-run-freeze-20260807. The operator supplies its
-# dereferenced full sha explicitly — never a bare tag name (stale-tag guard,
-# RUN_SPEC). The old pin (twoline-rerank-fix-20260731 @ 509072e) predates the
+# dereferenced full sha explicitly — never a bare tag name (stale-tag guard).
+# The old pin (twoline-rerank-fix-20260731 @ 509072e) predates the
 # 2026-08-06 fix wave and identifies the voided runs only.
 : "${POPOE_PIN:?set POPOE_PIN=<dereferenced full sha of tag eighteen-run-freeze-20260807>}"
 if [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
@@ -586,12 +591,12 @@ done
 
 | Field | Frozen value |
 |---|---|
-| Report point | B / four-way |
-| Code | **FROZEN** — tag `eighteen-run-freeze-20260807`; the operator supplies `POPOE_PIN=<its dereferenced full sha>` at run time (script refuses without it) and RUN_SPEC requires HEAD == PIN == tag^{commit}; the retired pin `twoline-rerank-fix-20260731` @ `509072e` predates the 2026-08-06 fix wave and identifies the voided runs only |
+| Report point | tuned / four-way |
+| Code | **FROZEN** — tag `eighteen-run-freeze-20260807`; the operator supplies `POPOE_PIN=<its dereferenced full sha>` at run time (script refuses without it) and the freeze requires HEAD == PIN == tag^{commit}; the retired pin `twoline-rerank-fix-20260731` @ `509072e` predates the 2026-08-06 fix wave and identifies the voided runs only |
 | Datasets | LM-O + YCB-V; one full BOP test run each |
 | Detection inputs | CNOS + SAM6D + NIDS + official MUSE JSONs under `data/detections/`; `muse` means downloaded official artefacts, not `muse-repro` |
-| Scoring | Campaign2 tuned ChampionScorer: grid32, weights `1.0,0.7,0.5,0.3,0.2`; YCB-V uses `--merge ycbv --use-s-coarse`, LM-O uses `--merge none` and no `--use-s-coarse` |
-| Leaderboard comparator | B / four-way -> FreeZeV2.1(905) LM-O/YCB-V = 0.771 / 0.915 — detection-matched (same four sources; same *composition*, NOT the same files — see the MUSE vintage caveat in the §IV-A setup section); label the SAR + `M=2N` + render-scoring confounds. A/four-way -> B/four-way is the clean improvement-package column (identical detection inputs) |
+| Scoring | Tuned ChampionScorer: grid32, weights `1.0,0.7,0.5,0.3,0.2`; YCB-V uses `--merge ycbv --use-s-coarse`, LM-O uses `--merge none` and no `--use-s-coarse` |
+| Leaderboard comparator | tuned / four-way -> FreeZeV2.1(905) LM-O/YCB-V = 0.771 / 0.915 — detection-matched (same four sources; same *composition*, NOT the same files — see the MUSE vintage caveat in the §IV-A setup section); label the SAR + `M=2N` + render-scoring confounds. paper-faithful four-way vs tuned four-way is the clean improvement-package column (identical detection inputs) |
 | Artifacts | `$RUN/{lmo,ycbv}/` each contains `poses.csv`, `cand.csv`, `RECIPE.md`, `AR_SUMMARY.md`, `bop_server.md`, `grasp_summary.md` |
 | Cautions | Rerank scope differs from official SAR: popoe only reorders PCA flip variants. Dense resampling uses `rng(0)` where invoked and is independent of `--seed`. Encoding degradation is explicit in logs as `DEGRADE`. These runs are not bit/row comparable to historical anchors because seed, rerank and implementation fixes are new variables. |
 
@@ -608,8 +613,8 @@ SEED=42
 
 cd "$POPOE"
 # Code identity: tag eighteen-run-freeze-20260807. The operator supplies its
-# dereferenced full sha explicitly — never a bare tag name (stale-tag guard,
-# RUN_SPEC). The old pin (twoline-rerank-fix-20260731 @ 509072e) predates the
+# dereferenced full sha explicitly — never a bare tag name (stale-tag guard).
+# The old pin (twoline-rerank-fix-20260731 @ 509072e) predates the
 # 2026-08-06 fix wave and identifies the voided runs only.
 : "${POPOE_PIN:?set POPOE_PIN=<dereferenced full sha of tag eighteen-run-freeze-20260807>}"
 if [ "$(git rev-parse HEAD)" != "$POPOE_PIN" ]; then
@@ -677,18 +682,18 @@ done
 
 > **2026-07-26 pipeline verify COMPLETE** — popoe **`75553a1`**.
 > Artifacts: `outputs/pipeline_verify_20260726/`. Full AR = mean(MSSD, MSPD, VSD).  
-> **Δ exceeds ±0.003** on full AR; all six rows land **above** the historical script-line figures. Do **not** rewrite those headlines; cite this as the popoe parity measurement (dual-track). Promotion line remains 0.8201 / 0.6896.
+> **Δ exceeds ±0.003** on full AR; all six rows land **above** the historical archive figures. Do **not** rewrite those headlines; cite this as a popoe parity measurement, independent of the promotion line 0.8201 / 0.6896.
 >
-> **Calibre note (2026-07-29, post PR #23)**: every locally scored AR in this ledger is **legacy per-object calibre** (the pre-#23 scorer averaged objects with equal weight). BOP flat (per-instance) calibre, recomputed from the same CSVs: **#1 = 0.7892** (vs 0.7781), **#2 = 0.6844** (vs 0.6792); the historical script-line figures in flat calibre are 0.7766 / 0.6777. The promotion-line figures above are also legacy calibre (fourway flat: 0.8444 / 0.7106). Grasp rows #5/#6 use per-object-median statistics, unchanged. From #23 onward `popoe.metrics` reports flat calibre by default (legacy value kept as a trailing diagnostic line).
+> **Calibre note (2026-07-29, post PR #23)**: every locally scored AR in this ledger is **legacy per-object calibre** (the pre-#23 scorer averaged objects with equal weight). BOP flat (per-instance) calibre, recomputed from the same CSVs: **#1 = 0.7892** (vs 0.7781), **#2 = 0.6844** (vs 0.6792); the historical archive figures in flat calibre are 0.7766 / 0.6777. The promotion-line figures above are also legacy calibre (fourway flat: 0.8444 / 0.7106). Grasp rows #5/#6 use per-object-median statistics, unchanged. From #23 onward `popoe.metrics` reports flat calibre by default (legacy value kept as a trailing diagnostic line).
 
-| # | Experiment | Archive number (source) | popoe entrypoint | Class | Reproduced | popoe commit / pod / date | Status |
+| # | Experiment | Archive number (source) | popoe entrypoint | Class | Reproduced | popoe commit / date | Status |
 |---|---|---|---|---|---|---|---|
-| 1 | YCB-V full BOP AR | **0.7668** — `score_rules_ycbvg32m`; recipe: CNOS-FastSAM TOPK2 + gripper label pooling + grid-32 + O3D + fit×s_feat_1(×metric) | `examples/bop_eval.py --bop $BOP/ycbv --detections data/detections/cnos/cnos-fastsam_ycbv-test.json --merge ycbv --topk 2 --grid 32 --solver o3d --weights 1.0,0.7,0.5,0.3,0.2 --render-backend nvdiffrast --out … --cache … --cand-csv …` | **GPU-POD** | **0.7781** (MSSD 0.7934 / MSPD 0.7414 / VSD 0.7995) | `75553a1` / 2026-07-26 | ☑ Δ=+0.0113 |
-| 2 | LM-O full BOP AR | **0.6726** — `lmog32`; CNOS∪SAM6D union detections + same pipeline | `examples/bop_eval.py --bop $BOP/lmo --sources cnos=…/cnos-fastsam_lmo-test.json,sam6d=…/sam6d_ism_lmo.json --merge none --topk 2 --grid 32 --solver o3d …` | **GPU-POD** | **0.6792** (MSSD 0.7242 / MSPD 0.7566 / VSD 0.5568) | same campaign | ☑ Δ=+0.0066 |
-| 3 | YCB-V AR(2/3) | 0.7528 (same run as #1) | same pose CSV as #1; score with `python -m popoe.metrics.ar` | **LOCAL-CPU** (post #1) | **0.7674** | same | ☑ Δ=+0.0146 |
-| 4 | LM-O AR(2/3) | 0.7324 (same run as #2) | same pose CSV as #2; same AR scorer as #3 | **LOCAL-CPU** (post #2) | **0.7404** | same | ☑ Δ=+0.0080 |
-| 5 | YCB-V grasp ADD(-S)@0.1d | **0.8173** (median 2.5 mm / 6.6°) | `python -m popoe.metrics.grasp` on #1 CSV | **LOCAL-CPU** (post #1) | **0.8240** (@0.05d 0.7716; med 2.5 mm / 11.9°) | same | ☑ Δ=+0.0067 |
-| 6 | LM-O grasp ADD(-S)@0.1d | **0.7617** (7.2 mm / 5.8°) | same as #5 on #2 CSV | **LOCAL-CPU** (post #2) | **0.7706** (@0.05d 0.5146; med 7.1 mm / 5.9°) | same | ☑ Δ=+0.0089 |
+| 1 | YCB-V full BOP AR | **0.7668** — `score_rules_ycbvg32m`; recipe: CNOS-FastSAM TOPK2 + gripper label pooling + grid-32 + O3D + fit×s_feat_1(×metric) | `examples/bop_eval.py --bop $BOP/ycbv --detections data/detections/cnos/cnos-fastsam_ycbv-test.json --merge ycbv --topk 2 --grid 32 --solver o3d --weights 1.0,0.7,0.5,0.3,0.2 --render-backend nvdiffrast --out … --cache … --cand-csv …` | **GPU** | **0.7781** (MSSD 0.7934 / MSPD 0.7414 / VSD 0.7995) | `75553a1` / 2026-07-26 | ☑ Δ=+0.0113 |
+| 2 | LM-O full BOP AR | **0.6726** — `lmog32`; CNOS∪SAM6D union detections + same pipeline | `examples/bop_eval.py --bop $BOP/lmo --sources cnos=…/cnos-fastsam_lmo-test.json,sam6d=…/sam6d_ism_lmo.json --merge none --topk 2 --grid 32 --solver o3d …` | **GPU** | **0.6792** (MSSD 0.7242 / MSPD 0.7566 / VSD 0.5568) | same campaign | ☑ Δ=+0.0066 |
+| 3 | YCB-V AR(2/3) | 0.7528 (same run as #1) | same pose CSV as #1; score with `python -m popoe.metrics.ar` | **CPU** (post #1) | **0.7674** | same | ☑ Δ=+0.0146 |
+| 4 | LM-O AR(2/3) | 0.7324 (same run as #2) | same pose CSV as #2; same AR scorer as #3 | **CPU** (post #2) | **0.7404** | same | ☑ Δ=+0.0080 |
+| 5 | YCB-V grasp ADD(-S)@0.1d | **0.8173** (median 2.5 mm / 6.6°) | `python -m popoe.metrics.grasp` on #1 CSV | **CPU** (post #1) | **0.8240** (@0.05d 0.7716; med 2.5 mm / 11.9°) | same | ☑ Δ=+0.0067 |
+| 6 | LM-O grasp ADD(-S)@0.1d | **0.7617** (7.2 mm / 5.8°) | same as #5 on #2 CSV | **CPU** (post #2) | **0.7706** (@0.05d 0.5146; med 7.1 mm / 5.9°) | same | ☑ Δ=+0.0089 |
 
 ## BOP-Classic-Core seven-set ledger (2026-07-27, OFFICIAL SERVER SCORES)
 
@@ -744,7 +749,7 @@ support either.
 
 Settling this needs GT-based per-instance analysis — separating "wrong mask
 or wrong object" from "right mask, poor registration" — which requires the
-GT trees on the pod volume for the five datasets not held locally. Until
+GT trees for the five datasets not held locally. Until
 then the spread is recorded as unexplained rather than narrated.
 
 > **2026-07-28 — every LM-O number above and below predates the shading fix.**
@@ -773,10 +778,10 @@ then the spread is recorded as unexplained rather than narrated.
 
 | Experiment | Archive result | popoe entrypoint | Class | Status |
 |---|---|---|---|---|
-| Adaptive visual weight | beats best-fixed on all 4 datasets | Built into `bop_eval.py --weights 1.0,0.7,0.5,0.3,0.2` (ChampionScorer per-target argmax over w). Cross-dataset 4-set claim still needs TUD-L / IC-BIN BOP data + GPU runs (not in this repo). | **GPU-POD** (YCB-V/LM-O covered by #1/#2); **GAP** for TUD-L/IC-BIN data | ☐ |
-| Canonical-space scoring | 26-rule ablation; champion rule constant across datasets | Live rule = `ChampionScorer` (`s_icp * max(s_feat_1,0) * metric_fit?`). Offline re-sweep: `examples/rule_replay.py <cand.csv> --target-csv <poses.csv> --rule "s_icp*s_feat_1" --rule "s_icp*s_feat_1*metric_fit" --out-dir …` on a `--cand-csv` dump from #1/#2. `--target-csv` defines the full target universe and zero-pads detector misses; without it, output AR is a candidate-bearing ceiling. | **LOCAL-CPU** (once cand-csv exists) | ☐ |
-| Gripper label pooling + metric_fit | obj20 +33.6 pt; 2×2 ablation | `bop_eval.py --merge ycbv` (pools 19:20, size_aware metric_fit) vs `--merge none` on YCB-V objs 19,20 (`--objs 19,20`). Live scorer: `ChampionScorer(size_aware=True)` for pooled pairs. | **GPU-POD** (subset ablation) | ☐ |
-| Multi-mask / detection union (LM-O) | CNOS∪SAM6D +2.8 pt | Smoke (no GPU): `examples/union_smoke.py --dataset lmo --source sam6d=data/detections/sam6d/sam6d_ism_lmo.json`. Full AR: same as headline #2 (`--sources cnos=…,sam6d=…`). CNOS-only control: `--detections …/cnos-fastsam_lmo-test.json`. | **LOCAL-CPU** smoke + **GPU-POD** full | ☑ full-AR via #2 (2026-07-26); no separate CNOS-only control re-run |
+| Adaptive visual weight | beats best-fixed on all 4 datasets | Built into `bop_eval.py --weights 1.0,0.7,0.5,0.3,0.2` (ChampionScorer per-target argmax over w). Cross-dataset 4-set claim still needs TUD-L / IC-BIN BOP data + GPU runs (not in this repo). | **GPU** (YCB-V/LM-O covered by #1/#2); **GAP** for TUD-L/IC-BIN data | ☐ |
+| Canonical-space scoring | 26-rule ablation; champion rule constant across datasets | Live rule = `ChampionScorer` (`s_icp * max(s_feat_1,0) * metric_fit?`). Offline re-sweep: `examples/rule_replay.py <cand.csv> --target-csv <poses.csv> --rule "s_icp*s_feat_1" --rule "s_icp*s_feat_1*metric_fit" --out-dir …` on a `--cand-csv` dump from #1/#2. `--target-csv` defines the full target universe and zero-pads detector misses; without it, output AR is a candidate-bearing ceiling. | **CPU** (once cand-csv exists) | ☐ |
+| Gripper label pooling + metric_fit | obj20 +33.6 pt; 2×2 ablation | `bop_eval.py --merge ycbv` (pools 19:20, size_aware metric_fit) vs `--merge none` on YCB-V objs 19,20 (`--objs 19,20`). Live scorer: `ChampionScorer(size_aware=True)` for pooled pairs. | **GPU** (subset ablation) | ☐ |
+| Multi-mask / detection union (LM-O) | CNOS∪SAM6D +2.8 pt | Smoke (no GPU): `examples/union_smoke.py --dataset lmo --source sam6d=data/detections/sam6d/sam6d_ism_lmo.json`. Full AR: same as headline #2 (`--sources cnos=…,sam6d=…`). CNOS-only control: `--detections …/cnos-fastsam_lmo-test.json`. | **CPU** smoke + **GPU** full | ☑ full-AR via #2 (2026-07-26); no separate CNOS-only control re-run |
 
 ## Ledger rules
 
@@ -790,8 +795,8 @@ then the spread is recorded as unexplained rather than narrated.
 ## Segmentation AP ledger (2026-07-26)
 
 > **Status**: official-source offline measurements from
-> `outputs/seg_ap_20260725T223014Z/`; `muse-repro` G3 rows from the
-> 2026-07-26 default-promotion campaign.
+> `outputs/seg_ap_20260725T223014Z/`; `muse-repro` mask-rgb rows from the
+> 2026-07-26 default-promotion run.
 > **Not** a pose parity row. Pose headline #1/#2 filled above from the same day's campaign.  
 > PRs #3/#4/#5/#6 are merged; evaluator semantics from #5 apply to future re-scores.
 
@@ -799,7 +804,8 @@ then the spread is recorded as unexplained rather than narrated.
 
 Local evaluator: popoe `examples/bop_seg_eval.py` + PyPI `pycocotools 2.0.11`,
 except where noted. Public rows from BOP segmentation-unseen leaderboards.
-Detail: `outputs/seg_ap_20260725T223014Z/LEADERBOARD_ALIGNMENT.md`.
+Public AP is the BOP `sub_info` row; local AP is `examples/bop_seg_eval.py`
+with PyPI `pycocotools 2.0.11` (see `data/detections/*/PROVENANCE.md`).
 
 | Dataset | Source tag | Local AP | Public AP | Δ AP | Verdict |
 |---|---|---:|---:|---:|---|
@@ -812,25 +818,25 @@ Detail: `outputs/seg_ap_20260725T223014Z/LEADERBOARD_ALIGNMENT.md`.
 | LM-O | `sam6d` (local ISM) | 0.4411 | — | — | local file |
 | LM-O | `muse` (official BOP sub 29108) | 0.4713 | 0.4770 | −0.0057 | same residual class |
 
-### `muse-repro` G3 AP (default-promotion evidence)
+### `muse-repro` mask-rgb AP (default-promotion evidence)
 
 These are **reimplementation** rows (`source='muse-repro'`), not official
 `muse` artefacts and not a pose-promotion line. Recipe:
 `--mask-rgb --gem-tokens all`, default depth gate, default similarity
 `(class_sim=cosine, patch_sim=tanimoto)`, full test split.
 
-| Dataset | Official `muse` AP | Pre-G3 `muse-repro` AP | G3 `muse-repro` AP | Δ vs official | popoe commit | Artefacts | Verdict |
+| Dataset | Official `muse` AP | Pre-mask-rgb `muse-repro` AP | mask-rgb `muse-repro` AP | Δ vs official | popoe commit | Artefacts | Verdict |
 |---|---:|---:|---:|---:|---|---|---|
 | LM-O | 0.471 | 0.228 | **0.388** | −0.083 | `e57cf03` | `outputs/g3_muse_mask_rgb_20260726/` | recovers most of the AP gap; residual remains |
 | YCB-V | 0.690 | 0.326 | **0.684** | −0.006 | `b8614c1` | `outputs/g3_muse_ycbv_mask_rgb_20260726/` | parity-level with official |
 
-PR #10 promotes this G3 recipe as the default for `build_muse_segmentor`,
+This mask-rgb recipe is the default for `build_muse_segmentor`,
 `popoe-muse`, and `popoe-bop-muse`. Historical reproduction remains available
 with `--no-mask-rgb --gem-tokens fg`.
 
 With BOP toolkit's declared COCO fork, YCB-V CNOS/NIDS match public AP to
 machine precision; LM-O sits ~0.006 **above** public (ignore-threshold
-sensitivity — see `LEADERBOARD_ALIGNMENT.md` ignore sweep).
+sensitivity — pycocotools vs the BOP-toolkit cocoapi fork).
 
 ### Naming (do not mix)
 
@@ -893,7 +899,7 @@ sets. Detection inputs are official BOP artefacts; SHA256 pins are in the
 tables below and in `data/detections/*/PROVENANCE.md`.
 
 Every run supplies the tag's dereferenced full sha as `POPOE_PIN` and
-records it in `RECIPE.md`. Decision-13 dev anchors: faithful-4way v4
+records it in `RECIPE.md`. Smoke anchors: faithful-4way v4
 0.7369 / tuned-4way r3 0.8243 AR(2/3) on LM-O obj-1 smoke. Every arm
 passes `--trans-nms 0.05`
 — paper §III-F translation NMS on refined poses; the paper names the mechanism
@@ -905,8 +911,8 @@ freezes. `--trans-nms 0` disables and must be recorded as a deviation.
 **Server-only acceptance for the four itodd/hb runs.** Their test GT
 is withheld by BOP, so `ar_flat.py` has nothing to score and there is NO local
 AR gate — deciding what to do about that mid-run is how accidents happen, so
-the criteria are fixed here in advance. Acceptance for E-cnos/itodd, E-cnos/hb,
-E-4way/itodd, E-4way/hb is: (a) the row-count completion invariant holds
+the criteria are fixed here in advance. Acceptance for tuned-cnos/itodd, tuned-cnos/hb,
+tuned-4way/itodd, tuned-4way/hb is: (a) the row-count completion invariant holds
 exactly; (b) DEGRADE counts and per-source candidate counts are the same order
 as the neighbouring sets' runs; (c) submit private to the BOP server directly —
 the server return is the ONLY score. Do not wire `--probe-corr` there (needs
@@ -916,9 +922,9 @@ downloaded 2026-08-07) and is a post-run activity, never an acceptance gate.
 Detection inputs are real bytes (no symlinks, file or directory) bound to
 their paths by `data/detections/MANIFEST.sha256` (tracked; path+hash — a
 registered file at the wrong path fails) and registered in the per-source
-`PROVENANCE.md`; `scripts/freeze_detections.py` enforces both. Pods run it
+`PROVENANCE.md`; `scripts/freeze_detections.py` enforces both. Run it
 before any eval as `--check --need <the run's relative paths>` — `--need`
-is the per-run completeness gate (a lost rsync fails loudly instead of
+is the per-run completeness gate (a missing file fails loudly instead of
 reading as an empty-but-clean tree).
 
 **Preflight — per host, per dataset, before any full run:**
@@ -953,12 +959,10 @@ Common pins (both lines): `--topk 2 --grid 32 --solver o3d --seed 42
 YCB-V uses `--merge ycbv --use-s-coarse`; all other datasets `--merge none`,
 no `--use-s-coarse`. OMP/host/sharding are runtime provenance only.
 
-### E-cnos (`tuned-cnos` x 7)
+### `tuned-cnos` × 7
 
-Comparator: FreeZe(CNOS) per-set (same detection input). LM-O + YCB-V were to
-serve as Phase D B-single results as well: under the unified 18-run table they
-are the same runs, not a later reuse or a second identity. All seven rows are
-run under the new frozen pin.
+Comparator: FreeZe(CNOS) per-set (same detection input). All seven rows are
+run under the frozen pin.
 
 | Dataset | Detection input | SHA256 |
 |---|---|---|
@@ -970,7 +974,7 @@ run under the new frozen pin.
 | hb | `data/detections/cnos/cnos-fastsam_hb-test.json` | `7eb39ad0d82783dc59a49cd2f6654c99b63d3b3ef3f051f3368056755e94e6b0` |
 | ycbv | `data/detections/cnos/cnos-fastsam_ycbv-test.json` | `fdec15729676e15876302fc620f752cc5290ee28da5fc3c7e17da1072fd4f422` |
 
-### E-4way (`tuned-4way`-official x 7)
+### `tuned-4way` (official detections) × 7
 
 Comparator: FreeZeV2.1(905) per-set — confounded by SAR + M=2N +
 render-scoring, label every reading; secondary 756. **SAM6D = official BOP
@@ -978,9 +982,8 @@ submissions for ALL SEVEN sets, method 441 "SAM6D"** (441 is the
 strongest official SAM6D variant, mean seg AP 0.481 vs 546's 0.428, board
 family spread 5.3pt; seg batch 6965-6971, 2023-12-05; 441's method page mixes
 THREE tasks — seg, 2D detection, and 6D localization batches — the seg batch
-was identified by matching per-set AP against the leaderboard row). The
-LM-O/YCB-V rows are simultaneously Phase D B-four and Phase E E-4way rows;
-there is no local-ISM Phase D identity in the unified table.
+was identified by matching per-set AP against the leaderboard row). The LM-O/YCB-V rows in this table are the same runs as the four-way tuned
+recipe above; there is no separate local-ISM identity.
 
 | Dataset | Source | Detection input | SHA256 |
 |---|---|---|---|

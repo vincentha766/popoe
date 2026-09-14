@@ -7,7 +7,7 @@ ran.
 Installation (SAM2 paths):
     pip install git+https://github.com/facebookresearch/sam2.git
     wget https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_small.pt \
-         -P /workspace/sam2_checkpoints/
+         -P /path/to/sam2_checkpoints/
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ def default_ckpt_dir() -> str:
     """Read POPOE_SAM2_CKPT at CALL time, not import time — a module-level
     constant freezes whatever the env happened to be when popoe was first
     imported, which is invisible and untestable."""
-    return os.environ.get('POPOE_SAM2_CKPT', '/workspace/sam2_checkpoints')
+    return os.environ.get('POPOE_SAM2_CKPT', '')
 
 
 class SegmentorUnavailable(BackendUnavailable):
@@ -75,6 +75,11 @@ def build_sam2_model(model_size: str = 'small', device: str = 'cuda',
             "facebookresearch/sam2.git") from e
 
     ckpt_dir = ckpt_dir or default_ckpt_dir()
+    if not ckpt_dir:
+        raise SegmentorUnavailable(
+            "SAM2 checkpoint directory not set. Export POPOE_SAM2_CKPT to the "
+            "directory that holds sam2.1_hiera_*.pt "
+            "(https://dl.fbaipublicfiles.com/segment_anything_2/092824/).")
     cfg, ckpt_name = SAM2_CONFIGS[model_size]
     ckpt_path = os.path.join(ckpt_dir, ckpt_name)
     if not os.path.exists(ckpt_path):

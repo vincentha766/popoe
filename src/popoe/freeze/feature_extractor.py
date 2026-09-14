@@ -1,7 +1,7 @@
 """
 FreeZeV2 feature extraction module.
 Visual features: DINOv2 (frozen)
-Geometric features: GeDi from /workspace/gedi
+Geometric features: GeDi (POPOE_GEDI_PATH)
 """
 
 import sys
@@ -17,15 +17,18 @@ from popoe.interfaces import CanonFrame
 # cuDNN fails to initialize on this host; fall back to native CUDA kernels
 torch.backends.cudnn.enabled = False
 
-sys.path.insert(0, os.environ.get('POPOE_GEDI_PATH', '/workspace/gedi'))
+_GEDI_ROOT = os.environ.get('POPOE_GEDI_PATH')
+if _GEDI_ROOT:
+    sys.path.insert(0, _GEDI_ROOT)
 try:
     from gedi import GeDi
-except ImportError as _gedi_import_error:  # pragma: no cover - pod always has it
-    # Deferred, not silenced. The GeDi checkout is a pod-side dependency, but
-    # this module also holds pure-CPU logic (the renderer's shading resolver and
-    # its cache-key parts) that must be importable and testable on a box without
-    # it. _make_gedi_single re-raises on first use, so a real run still fails
-    # loudly at load time rather than producing features from nothing.
+except ImportError as _gedi_import_error:  # pragma: no cover
+    # Deferred, not silenced. GeDi is an external checkout (POPOE_GEDI_PATH),
+    # but this module also holds pure-CPU logic (the renderer's shading
+    # resolver and its cache-key parts) that must be importable and testable
+    # without it. _make_gedi_single re-raises on first use, so a real run
+    # still fails loudly at load time rather than producing features from
+    # nothing.
     GeDi = None
     _GEDI_IMPORT_ERROR = _gedi_import_error
 else:
@@ -117,16 +120,22 @@ def _make_gedi_single(r_lrf):
     if GeDi is None:
         raise ImportError(
             "the GeDi checkout is not importable, so the geometric branch "
-            "cannot be built. Set POPOE_GEDI_PATH to it (default "
-            "/workspace/gedi)."
+            "cannot be built. Clone https://github.com/fabiopoiesi/gedi and "
+            "set POPOE_GEDI_PATH to that directory (needs "
+            "data/chkpts/3dmatch/chkpt.tar)."
         ) from _GEDI_IMPORT_ERROR
+    root = os.environ.get('POPOE_GEDI_PATH')
+    if not root:
+        raise ImportError(
+            "set POPOE_GEDI_PATH to a fabiopoiesi/gedi checkout "
+            "(needs data/chkpts/3dmatch/chkpt.tar)")
     cfg = {
         'dim': GEO_DIM,
         'samples_per_batch': 500,
         'samples_per_patch_lrf': 4000,
         'samples_per_patch_out': 512,
         'r_lrf': r_lrf,
-        'fchkpt_gedi_net': os.environ.get('POPOE_GEDI_PATH', '/workspace/gedi') + '/data/chkpts/3dmatch/chkpt.tar',
+        'fchkpt_gedi_net': root + '/data/chkpts/3dmatch/chkpt.tar',
     }
     return _NoSingletonGeDiBatches(GeDi(cfg), cfg['samples_per_batch'])
 
@@ -845,7 +854,7 @@ class TargetFeatureExtractor:
         paper_grid = os.environ.get("POPOE_TARGET_PAPER_GRID", "0") != "0"
         pg_rows = pg_cols = pg_box = None
         if paper_grid:
-            # Paper Sec. III-D target protocol (triage D3): minimal SQUARE
+            # Paper Sec. III-D target protocol: minimal SQUARE
             # bbox, sparse targets = the grid's PATCH CENTRES, features
             # assigned per patch directly (no bilinear), centres off the
             # object simply DROPPED — no random-pixel fallback.
@@ -955,8 +964,8 @@ class TargetFeatureExtractor:
     def _extract_dino_patch_grid(self, rgb, box, grid_size):
         """DINOv2 features of the SQUARE crop ``box`` = (bx0, by0, side), one
         feature per patch of the grid_size x grid_size tiling — direct patch
-        assignment, no bilinear upsampling (paper Sec. III-D target protocol,
-        triage D3). The crop is resized to grid_size*14 so ViT patches and
+        assignment, no bilinear upsampling (paper Sec. III-D target protocol).
+        The crop is resized to grid_size*14 so ViT patches and
         the tiling coincide 1:1; PIL zero-pads out-of-image regions, keeping
         the geometry of the tiling exact. POPOE_TARGET_CANON/_FILL do not
         apply here — the crop IS the minimal square bbox."""

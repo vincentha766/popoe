@@ -53,7 +53,7 @@ stops these numbers being read as an exact replication):
   cascade is the paper's single largest ablation lever and should not need it.
 * Matching defaults to cosine(class token) + Tanimoto(GeM patch). Paper
   Eqs. (2)–(3) write cosine for both streams (prose also names Tanimoto);
-  use ``patch_sim="cosine"`` for the paper-equation A/B (G2).
+  use ``patch_sim="cosine"`` for the paper-equation comparison.
 
 The scoring core is numpy-only and unit-tested; every heavy component (Grounding
 DINO, SAM2, DINOv2, template PNGs) is lazy, injected, and raises
@@ -222,7 +222,7 @@ def absolute_score(cls_q: np.ndarray, gem_q: np.ndarray,
     `cls_bank` / `gem_bank` are ``(T, d)`` stacks over that class's templates.
     Defaults keep historical behaviour (cosine class + Tanimoto GeM). Paper
     Eqs. (2)–(3) write cosine for **both** streams — use
-    ``patch_sim="cosine"`` for that A/B (G2).
+    ``patch_sim="cosine"`` for that comparison.
     """
     cls_bank = np.atleast_2d(np.asarray(cls_bank, dtype=np.float64))
     gem_bank = np.atleast_2d(np.asarray(gem_bank, dtype=np.float64))
@@ -431,7 +431,7 @@ class DinoV2ClsGemEmbedder:
 
     Paper setup (sec 4.1): "only the object region inside the box is preserved"
     before matching. Historical default keeps the full square crop and pools
-    **foreground** patches only. G3 knobs:
+    **foreground** patches only. Current defaults:
       * ``mask_rgb=True`` — zero RGB outside the mask before the backbone
       * ``gem_tokens="all"`` — GeM over every patch token (not just FG)
     """
@@ -874,8 +874,8 @@ def build_muse_segmentor(classes: Sequence[MuseClass],
 
     ``size_gate_enabled=False`` keeps every non-empty SAM mask (paper / BOP RGB
     proposal regime). Relaxed ratios only apply when the gate is enabled.
-    Defaults (G3 2026-07-26): ``mask_rgb=True`` + ``gem_tokens="all"`` —
-    paper sec 4.1 object-region embedding; lifts LMO AP 0.23→0.39, YCB-V→0.68.
+    Defaults: ``mask_rgb=True`` + ``gem_tokens="all"`` — paper sec 4.1
+    object-region embedding; lifts LMO AP 0.23→0.39, YCB-V→0.68.
 
     ``embedder``/``refiner`` accept prebuilt components so their heavy models
     can be shared across segmentors (popoe.assembly). A given embedder also

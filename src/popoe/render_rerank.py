@@ -1,4 +1,4 @@
-"""Render-appearance re-rank of pose hypotheses (knife-4 / FreeZe SAR core).
+"""Render-appearance re-rank of pose hypotheses (FreeZe SAR-style).
 
 Offline measurement (2026-07-29): re-selecting among PCA-axis
 rotational variants by DINOv2 render-vs-scene patch cosine (`sar_ti`) lifts
@@ -237,7 +237,7 @@ class RenderAppearanceReranker:
         # pose both ways and taking the higher mask-IoU vs a numpy pinhole
         # projection; on a degenerate pose (empty or garbage render) both
         # IoUs are ~0 and the argmax is noise — latching it silently mirrors
-        # every later render for the whole run (triage B1-F3). Gate at 0.3
+        # every later render for the whole run. Gate at 0.3
         # (a sane pose scores well above; the wrong sign scores ~0), retry on
         # the next candidate, and always log the outcome.
         if not getattr(self._pose_renderer, "_calibrated", False):
@@ -331,7 +331,7 @@ class RenderAppearanceReranker:
         # pose below so ChampionScorer's S_coarse measures the orientation
         # family actually being scored — leaving the pre-flip R_coarse there
         # made the arbitration factor penalise exactly the flips this stage
-        # exists to rescue (s_coarse × rerank ordering, triage B1-F2).
+        # exists to rescue (s_coarse × rerank ordering).
         flip_delta = (None if name == "champion"
                       else np.asarray(pose.R, float).T @ np.asarray(R_best, float))
 

@@ -113,9 +113,9 @@ def test_a_missing_hub_cache_is_still_unavailability(monkeypatch):
 def test_cuda_availability_errors_stay_routable():
     """Narrowness matters as much as breadth. Most `CUDA error: ...` messages
     are unavailability, not a runtime fault — including the arch mismatch this
-    project actually hits when a pod comes up on a card the kernels were not
-    compiled for. Treating them as fatal would break the chain on exactly the
-    boxes it exists for."""
+    project actually hits when a machine comes up on a card the kernels were
+    not compiled for. Treating them as fatal would break the chain on exactly
+    the boxes it exists for."""
     from popoe.interfaces import is_runtime_failure
 
     for msg in ("CUDA error: invalid device ordinal",

@@ -177,7 +177,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         "--min-pixels",
         type=int,
         default=100,
-        help="DepthSizeGate min_pixels (BOP 640×480: 100; real-scene match3 used 8000)",
+        help="DepthSizeGate min_pixels (BOP 640×480: 100; a larger real-scene gate used 8000)",
     )
     ap.add_argument("--min-extent-ratio", type=float, default=0.25)
     ap.add_argument("--max-extent-ratio", type=float, default=1.1)

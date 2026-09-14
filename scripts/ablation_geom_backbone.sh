@@ -22,7 +22,7 @@
 # nogeom or gedi first, then the other, then fpfh.
 #
 # Usage:
-#   BOP=/workspace/bop_data DET=data/detections OUT=out/geomablation \
+#   BOP=/path/to/bop_data DET=data/detections OUT=out/geomablation \
 #     scripts/ablation_geom_backbone.sh
 #   DATASETS=lmo ARMS="gedi fpfh" OBJS=--objs=1,5,6 scripts/ablation_geom_backbone.sh
 #
@@ -96,9 +96,9 @@ cat <<EOF
 
 Done. Ledger: $LEDGER
 
-Next (LOCAL-CPU, no GPU needed):
-  1. AR per arm:  python -m popoe.metrics.ar <csv>
-     (full BOP AR additionally needs python -m popoe.metrics.vsd)
+Next (CPU, no GPU needed):
+  1. AR per arm:  BOP_PATH=<dataset-root> python -m popoe.metrics.ar <csv>
+     (full BOP AR additionally needs python -m popoe.metrics.vsd <csv> <dataset-root>)
   2. PAIRED comparison, not just the AR delta — same targets, same detections,
      so build the contingency table (ours-ok/theirs-ok per target) the way the
      FreeZeV2.2 bad-case pass did. A 2-point AR gap with 200 wins and 180

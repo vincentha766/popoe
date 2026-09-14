@@ -14,18 +14,19 @@
 # times in the log should all read ~0s; anything else is a miss.
 #
 # The run is seeded (Open3D's RANSAC is otherwise unseeded), and the baseline it
-# is compared against is the seed-1234 run of commit c7306a5 in
-# /workspace/results/icp_ab_20260728 — same detections, same cache, same solver.
+# is compared against is the seed-1234 run of commit c7306a5 —
+# same detections, same cache, same solver.
 #
-# Usage (pod, fresh clone, ONE job per ssh — see RUNPOD.md on truncation):
-#   nohup bash scripts/fidelity_ab_run.sh lmo_cnos dense > .../lmo_dense.log 2>&1 &
+# Usage:
+#   OUT=/path/to/out CACHE_ROOT=/path/to/cache BOP=/path/to/bop_data \
+#     bash scripts/fidelity_ab_run.sh lmo_cnos dense
 set -euo pipefail
 
 DS="${1:?usage: fidelity_ab_run.sh <lmo_cnos|lmo|ycbv> <base|dense|tau|both>}"
 VAR="${2:?usage: fidelity_ab_run.sh <dataset> <base|dense|tau|both>}"
-OUT="${OUT:-/workspace/results/fidelity_ab_20260728}"
-CACHE_ROOT="${CACHE_ROOT:-/workspace/results/pipeline_verify_20260726}"
-BOP="${BOP:-/workspace/bop_data}"
+OUT="${OUT:?set OUT to the output directory}"
+CACHE_ROOT="${CACHE_ROOT:?set CACHE_ROOT to the feature-cache root}"
+BOP="${BOP:?set BOP to the bop_data root}"
 DET="${DET:-$PWD/data/detections}"
 PY="${PY:-python}"
 SEED="${SEED:-1234}"

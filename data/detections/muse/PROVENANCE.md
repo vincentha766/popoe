@@ -4,11 +4,10 @@ BOP `method_info/873`, task "Model-based 2D segmentation of unseen objects".
 **Nothing in popoe writes this name** — popoe's own reimplementation writes
 `source="muse-repro"` and stays a separate path.
 
-LM-O + YCB-V downloaded 2026-07-26; the remaining five BOP-Classic-Core sets
-downloaded **2026-08-06**, all from the same authored batch (2025-08-26
-05:14–05:16 UTC). MUSE has no public code, but every core-set mask file is
-publicly downloadable — an earlier note claiming "no downloadable masks" and
-another claiming "the authors only published LM-O and YCB-V" were both wrong.
+All seven BOP-Classic-Core mask files are from the same authored batch
+(2025-08-26 05:14–05:16 UTC). MUSE has no public code, but every core-set
+mask file is publicly downloadable from the `sub_info` page ("Download
+submission"). Save as `muse-full_<ds>-test.json` in this directory.
 
 | Dataset | BOP submission | Batch (UTC) | Records | Scenes | Objs | SHA256 |
 |---|---|---|---:|---:|---:|---|
@@ -20,15 +19,11 @@ another claiming "the authors only published LM-O and YCB-V" were both wrong.
 | HB | [29063](https://bop.felk.cvut.cz/sub_info/29063/) | 2025-08-26 05:15 | 6440 | 3 | 33 | `c0e0802a3db1e2394507099098ed5000208d93e1701f8b19850d6cd6d7d59d1d` |
 | YCB-V | [29113](https://bop.felk.cvut.cz/sub_info/29113/) | 2025-08-26 05:16 | 16902 | 12 | 21 | `b4703a218d13f707d47556b2733eeddc38fea7d89bf927d113da25349c74f497` |
 
-All seven are symlinks into
-`outputs/seg_ap_20260725T223014Z/official_submissions/`. Every record carries
-`scene_id, image_id, category_id, bbox, score, time, segmentation` (verified
-2026-08-06). LM-O and YCB-V hashes are unchanged from the 2026-07-26 download —
-see `OFFICIAL_JSON_ACQUISITION.md` in that directory.
-
-Download URL pattern: the `sub_info` page carries a "Download submission" link
-to `/media/subs/muse_<dataset>-test_<uuid>.json`. The UUIDs are not derivable —
-scrape the page.
+Every record carries `scene_id, image_id, category_id, bbox, score, time,
+segmentation`. Download URL pattern: the `sub_info` page carries a
+"Download submission" link to `/media/subs/muse_<dataset>-test_<uuid>.json`.
+The UUIDs are not derivable — follow the page, then
+`python scripts/freeze_detections.py --check`.
 
 ## Two traps if these are ever re-fetched
 
@@ -55,12 +50,9 @@ scrape the page.
    | HB | 0.635 (`29063`) | 0.616 (`29121`) |
    | YCB-V | 0.690 (`29113`) | 0.684 (`29120`) |
 
-   The two detection files fetched for comparison are archived as
-   `muse-full_{lmo,ycbv}-test_official_b2.json` in
-   `outputs/seg_ap_20260725T223014Z/official_submissions/` and are deliberately
-   **not** symlinked here. LM-O det/seg carry identical `bbox`, `score`,
-   `category_id` and record count (7146) — the detection file is the
-   segmentation file with masks stripped.
+   LM-O det/seg carry identical `bbox`, `score`, `category_id` and record
+   count (7146) — the detection file is the segmentation file with masks
+   stripped. Do not put the 05:47–05:48 files in this directory.
 
 Also on 873 but outside BOP-Classic-Core (not fetched): IPD `29104`,
 XYZ-IBD `29114`, HOPEv2 `29122`, HOT3D `29123`, HANDAL `29124`.
@@ -69,9 +61,9 @@ XYZ-IBD `29114`, HOPEv2 `29122`, HOT3D `29123`, HANDAL `29124`.
 
 The **public row** AP is what appears on the `sub_info` page (LM-O 0.477,
 YCB-V 0.690). Local re-evaluation of the same file differs by evaluator:
-`LEADERBOARD_ALIGNMENT.md` measures LM-O MUSE at **0.4713** under PyPI
-`pycocotools 2.0.11` and **0.4832** under the BOP-toolkit cocoapi fork, vs
-public 0.4770 — a ±0.006 evaluator spread that affects LM-O but essentially not
-YCB-V (0.6901 / 0.6902 / 0.6900). So "official LM-O MUSE = 0.471" is a *local
-PyPI* figure, not the public row; label it accordingly whenever it is used as a
-`muse-repro` baseline.
+PyPI `pycocotools 2.0.11` measured LM-O MUSE at **0.4713** and the
+BOP-toolkit cocoapi fork at **0.4832**, vs public 0.4770 — a ±0.006
+evaluator spread that affects LM-O but essentially not YCB-V
+(0.6901 / 0.6902 / 0.6900). So "official LM-O MUSE = 0.471" is a *local
+PyPI* figure, not the public row; label it accordingly whenever it is used
+as a `muse-repro` baseline.

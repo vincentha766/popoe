@@ -2,9 +2,11 @@
 
 BOP `method_info/601`, task "Model-based 2D segmentation of unseen objects".
 Single batch 2024-05-27 (8980–8986) — all seven sets are segmentation; no
-mixed-task trap here. LM-O/YCB-V were already in-tree and are byte-identical
-to the official downloads (cross-checked 2026-07-26 and again 2026-08-06);
-the other five downloaded 2026-08-06.
+mixed-task trap here. Download each submission from the `sub_info` page
+("Download submission") and save as `nids_wa_sappe_<ds>.json` in this
+directory. The UT Dallas Box dump linked from
+[`IRVLUTD/NIDS-Net`](https://github.com/IRVLUTD/NIDS-Net) is the same
+WA_Sappe variant; hashes below are the identity that popoe recipes pin.
 
 | Dataset | BOP submission | Records | SHA256 |
 |---|---|---|---|
@@ -16,6 +18,5 @@ the other five downloaded 2026-08-06.
 | HB | [8985](https://bop.felk.cvut.cz/sub_info/8985/) | 5589 | `1bac5e38fc97a6810c43adb6b733daa7ba533358a7e1c49773d543aff7f7a0d9` |
 | YCB-V | [8986](https://bop.felk.cvut.cz/sub_info/8986/) | 12019 | `6eb751b20898e5cc8f499922590e9a07c2a645cfb7d5d14f7c59cb0d51c8544a` |
 
-Files live in `outputs/seg_ap_20260725T223014Z/official_submissions/`;
-symlinked here as `nids_wa_sappe_<ds>.json` (same naming as the two the
-frozen Phase D recipes already reference).
+Place the files in this directory as `nids_wa_sappe_<ds>.json`. Verify with
+`python scripts/freeze_detections.py --check`.

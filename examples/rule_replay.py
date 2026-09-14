@@ -211,8 +211,8 @@ def main():
             print(f"WARNING: dump mixes {len(solvers)} solvers {solvers} — "
                   "champions are selected ACROSS solvers (a target may pick a "
                   "different solver than its neighbour). Filter the CSV to ONE "
-                  "solver for a clean per-solver comparison; the B layer is "
-                  "reported as an independent solver configuration.")
+                  "solver for a clean per-solver comparison; GPU feature-"
+                  "aware RANSAC is reported as an independent solver.")
 
     base_idx = champion_index(rows, [float(r[args.baseline_col]) for r in rows])
     n_targets = len(base_idx)

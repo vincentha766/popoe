@@ -144,8 +144,8 @@ def best_segmentor(detections_json: str | None = None, topk: int = 2,
         size_select=size_select,
         confusable_diameters=confusable_diameters,
         size_select_fallback=size_select_fallback,
-        # Paper Sec. III-C keeps the union UNFILTERED — faithful arms pass
-        # min_pixels=0 and iou_dedupe>1 to disable both (triage D2). The
+        # Paper Sec. III-C keeps the union UNFILTERED — paper-faithful
+        # recipes pass min_pixels=0 and iou_dedupe>1 to disable both. The
         # defaults keep the tuned identity byte-identical.
         min_pixels=min_pixels,
         iou_dedupe=iou_dedupe,
@@ -161,7 +161,7 @@ SOLVERS = ("o3d", "gpu", "gpu-feat", "gpu-feat-dist", "teaser")   # o3d is the e
 def _build_solver(name: str, tau: float, n_ransac: int, seed: int | None = None,
                   corr_topk: int = 0, n_restarts: int = 1):
     """o3d (default, mainline) | gpu (ported RANSAC, geometric fitness) |
-    gpu-feat (gpu with the Eq.5 feature-aware fitness — the B layer) |
+    gpu-feat (gpu with the Eq.5 feature-aware fitness) |
     teaser (TEASER++ certifiable registration; deterministic, so n_ransac
     does not apply — needs teaserpp_python, see popoe.solvers.teaser).
 
@@ -195,9 +195,9 @@ def _build_solver(name: str, tau: float, n_ransac: int, seed: int | None = None,
         kw = {} if seed is None else {"seed": seed}   # else keep its own default
         # gpu-feat-dist is gpu-feat plus the paper's second triplet-rejection
         # condition (matched-point distance), which this port never had. It is a
-        # SEPARATE NAME rather than a flag on gpu-feat so the arm is identifiable
-        # in solver_provenance and in every run log — an isolation arm whose
-        # identity lives in a boolean the log does not print is not isolable.
+        # SEPARATE NAME rather than a flag on gpu-feat so the configuration is
+        # identifiable in solver_provenance and in every run log — a boolean
+        # the log does not print is not isolable.
         return GPURansacSolver(tau_inlier=tau, iters=n_ransac,
                                fitness="geometric" if name == "gpu" else "feature",
                                distance_check=(name == "gpu-feat-dist"),
@@ -221,13 +221,12 @@ def solver_provenance(name: str, seed: int | None,
     all of them would put a false claim in the provenance of a cited run.
 
     Isolation knobs that change results without changing the solver *name*
-    MUST appear on this line — otherwise two arms look byte-identical in the
-    log and post-hoc audit fails. That happened 2026-08-08/09: C9
-    (``--solver o3d``) and C9b (``--solver o3d --corr-topk 10``) both printed
-    ``solver=o3d seed=42 (seeded)``, so the missing flag stayed invisible for
-    a day. Likewise gpu-feat vs gpu-feat-dist is partly carried by the name,
-    but the effective ``distance_check`` bit is still printed so a renamed
-    default cannot silently drop the condition.
+    MUST appear on this line — otherwise two configurations look identical
+    in the log. ``--solver o3d`` and ``--solver o3d --corr-topk 10`` used
+    to both print ``solver=o3d seed=42 (seeded)``. Likewise gpu-feat vs
+    gpu-feat-dist is partly carried by the name, but the effective
+    ``distance_check`` bit is still printed so a renamed default cannot
+    silently drop the condition.
     """
     if name == "teaser":
         return f"solver={name} seed=n/a (deterministic — TEASER++ has no RNG)"
@@ -239,7 +238,7 @@ def solver_provenance(name: str, seed: int | None,
         solver = _build_solver(name, tau=1.0, n_ransac=1, seed=seed)
     effective = getattr(solver, "seed", None)
 
-    # Extra fields that distinguish isolation arms with the same solver name
+    # Extra fields that distinguish configurations with the same solver name
     # (or pin the effective boolean when the name already encodes it).
     extras: list[str] = []
     if name == "o3d":
@@ -263,14 +262,14 @@ def solver_provenance(name: str, seed: int | None,
     # WITH the reranker (LM-O --objs 1, same machine, same warm cache, serial,
     # same seed, back-to-back): 75/175 targets = 43% move by >0.1mm or >0.1deg.
     # Do NOT use the 2026-07-28 numbers as an acceptance floor for a
-    # rerank-enabled run — an A/B against them reads any rerun as a behaviour
+    # rerank-enabled run — comparing against them reads any rerun as a behaviour
     # change. AR is the stable quantity: the same three runs land within 0.20 pt
-    # (0.7814 / 0.7820 / 0.7834), matching the SEED-VAR finding that this
+    # (0.7814 / 0.7820 / 0.7834), matching the seed-variance finding that this
     # pipeline moves many rows by amounts far below the MSSD threshold band.
     #
     # The distinction is not pedantry: provenance that reads "deterministic"
     # licenses treating a 0.0x pt difference between two runs as signal, and
-    # this project has already spent a pod run re-deriving a noise floor that
+    # this project has already spent a GPU run re-deriving a noise floor that
     # such a claim would have hidden.
     return f"solver={name} seed={effective} (seeded){extra}"
 
@@ -327,15 +326,15 @@ def stages_for_object(extent_m: float, size_aware: bool = False,
     ``score_feat_w``: additionally record the MATCHED-space feature score as
     ``breakdown["s_feat_w"]`` (diagnostic; the score is unchanged). Needed to
     compare the canonical-space rule family against the matched-space one on a
-    single frozen candidate pool — the campaign2-era dumps carry only s_feat_1,
-    and s_feat_w cannot be reconstructed from s_feat_1 and w.
+    single frozen candidate pool — older dumps carry only s_feat_1, and
+    s_feat_w cannot be reconstructed from s_feat_1 and w.
 
     ``render_rerank``: append :class:`popoe.render_rerank.RenderAppearanceReranker`
-    after ICP (knife-4 SAR-style DINOv2 render-vs-scene re-rank). Off by default
+    after ICP (SAR-style DINOv2 render-vs-scene re-rank). Off by default
     so the headline path stays byte-identical; enable for the measured YCB-V
     combo_sym full-AR lift (0.8275 → 0.8605 flat, offline).
 
-    ``render_score``: the v2.1 third component (decision 13) — the rerank
+    ``render_score``: FreeZeV2.1's third component — the rerank
     stage's winning ``sar_ti`` (input-vs-render DINOv2 appearance score, one
     per candidate) enters champion selection as a clamped multiplicative
     factor (``ChampionScorer(use_render_score=True)``). Zero extra renders:
@@ -368,6 +367,6 @@ def stages_for_object(extent_m: float, size_aware: bool = False,
                             # Paper Eq.7 form (faithful arms): both feature
                             # terms in the Eq.5 formulation. See ChampionScorer.
                             eq5_terms=eq5_terms,
-                            # v2.1 render-vs-input component (decision 13).
+                            # v2.1 render-vs-input component.
                             use_render_score=render_score)
     return solver, refiner, scorer

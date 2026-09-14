@@ -1,4 +1,4 @@
-"""GPURansacSolver (B layer) — the ported batched RANSAC, on CPU.
+"""GPURansacSolver — the ported batched RANSAC, on CPU.
 
 Block 1 covers the pure GEOMETRIC port: it recovers a known pose from synthetic
 correspondences, returns the Open3D-solver-shaped hypothesis, and agrees with
@@ -158,7 +158,7 @@ def _pool_scores(pts_q, pts_t, fq, ft, R, t, thr, k=10):
 
 
 def test_feature_fitness_fixed_denominator_not_hijacked():
-    """The ch3 lesson: clean synthetic features don't surface Eq.5 bugs — an
+    """Clean synthetic features don't surface Eq.5 bugs — an
     ADVERSARIAL similarity structure does. The solver (fixed |P_T|) must recover
     the MANY-true-correspondence pose, not the few-high-cosine-decoy pose."""
     pts_q, pts_t, fq, ft, (RA, tA), (RB, tB) = _adversarial_fixture(seed=3)

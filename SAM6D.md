@@ -37,11 +37,9 @@ for both ISM and PEM. Treat that as incompatible with the lighter popoe env.
 On a single 4090, serial execution is the normal shape: run ISM/PEM, let that
 process exit and release GPU memory, then run popoe.
 
-Common RunPod volume convention:
-
 ```bash
-export POPOE_SAM6D_PATH=/workspace/SAM-6D
-export POPOE_SAM6D_PYTHON=/workspace/envs/sam6d/bin/python
+export POPOE_SAM6D_PATH=/path/to/SAM-6D       # or this repo's external/SAM-6D
+export POPOE_SAM6D_PYTHON=/path/to/envs/sam6d/bin/python
 ```
 
 For source-pinned local development, the default path is `external/SAM-6D`.

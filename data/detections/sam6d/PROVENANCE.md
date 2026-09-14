@@ -1,23 +1,25 @@
 # Official SAM6D detections (source tag: `sam6d` official line)
 
-**E-4way source = method 441 "SAM6D"** (Vincent 2026-08-06, amended same day
-from 546 before any server score): the strongest official SAM6D variant
-(mean seg AP 0.481; family spread 441/545/466/546 = 5.3pt). Seg batch
-**6965-6971** (2023-12-05 07:46-07:50). ⚠️ 441's method page mixes THREE
-tasks — 6951-6957 is 2D detection (boxes), 7088-7094 and 7238-7244 are 6D
+Evaluated four-source recipes pin **method 441 "SAM6D"** (mean seg AP 0.481;
+family spread 441/545/466/546 = 5.3pt). Seg batch **6965-6971**
+(2023-12-05 07:46-07:50). ⚠️ 441's method page mixes THREE tasks —
+6951-6957 is 2D detection (boxes), 7088-7094 and 7238-7244 are 6D
 localization (poses). The seg batch was identified by matching per-set AP
 to the leaderboard row (LM-O 0.460). Always check the Task field.
 
-⚠️ **Three SAM6D provenances now exist — never conflate:**
-- `sam6d_ism_{lmo,ycbv}.json` — our local ISM runs (FastSAM proposals);
-  frozen Phase D recipes only. NOT byte-identical to any official file.
-- `sam6d_official_<ds>.json` (symlinks) — **now point to method 441 files**
-  (`sam6d-sam441_*-test_official.json`); the Phase E E-4way inputs.
-- 546 FastSAM(RGB) files (`sam6d-fastsamrgb_*-test_official.json`) — kept in
-  the archive dir as the public reference matching our ISM lineage; no longer
-  wired into `data/detections/`.
+Download each submission from the `sub_info` page ("Download submission")
+and save as `sam6d_official_<ds>.json` in this directory.
 
-## Method 441 seg batch (E-4way inputs)
+⚠️ **Three SAM6D provenances — never conflate:**
+- `sam6d_official_<ds>.json` — method 441 segmentation files; this is what
+  four-source recipes consume.
+- `sam6d_ism_{lmo,ycbv}.json` — local ISM runs (FastSAM proposals). NOT
+  byte-identical to any official file.
+- Method 546 FastSAM(RGB) (`sub_info` 8003-8009) — a public SAM-6D
+  segmentation batch matching the ISM lineage; hashes below for identity,
+  not wired as `sam6d_official_*`.
+
+## Method 441 seg batch (`sam6d_official_<ds>.json`)
 
 | Dataset | BOP submission | Records | SHA256 |
 |---|---|---|---|
@@ -41,7 +43,7 @@ to the leaderboard row (LM-O 0.460). Always check the Task field.
 | HB | [8008](https://bop.felk.cvut.cz/sub_info/8008/) | 13240 | `0b7fa39669bb9c7909930f8bd37a0bbef648b47d1bb43156d5452c79bb3feafc` |
 | YCB-V | [8009](https://bop.felk.cvut.cz/sub_info/8009/) | 30374 | `64f50fbbe61454ef99881ba09c060df3f1baf00589a751c21327cdd202513a13` |
 
-## Local ISM runs (frozen Phase D lineage, superseded — no arm uses these)
+## Local ISM runs (`sam6d_ism_{lmo,ycbv}.json`)
 
 | File | SHA256 |
 |---|---|
@@ -54,8 +56,8 @@ to the leaderboard row (LM-O 0.460). Always check the Task field.
 |---|---|
 | `union_cnos_sam6d_lmo.reference.json` (union-ingestion parity reference, `tests/test_union_reference_xval.py`) | `5c11cf2d5d98db241798f55976c7cdcff9561350cd87cc46040747e599a7c40b` |
 
-Files live in `outputs/seg_ap_20260725T223014Z/official_submissions/`;
-symlinked here as `sam6d_official_<ds>.json`. Schema per record:
-`scene_id, image_id, category_id, bbox, score, time, segmentation` (verified
-2026-08-06; an earlier truncated HB download was caught by JSON parse-check —
-always parse after download, size alone lies).
+Place method-441 files in this directory as `sam6d_official_<ds>.json`.
+Schema per record: `scene_id, image_id, category_id, bbox, score, time,
+segmentation` (an earlier truncated HB download was caught by JSON
+parse-check — always parse after download, size alone lies). Verify with
+`python scripts/freeze_detections.py --check`.

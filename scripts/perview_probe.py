@@ -22,11 +22,11 @@ must follow. PCA basis: fitted here on the mean features (per-object fit, the
 same procedure the pipeline uses), applied identically to all three rules, so
 the comparison is internal and self-consistent.
 
-Usage (pod, GPU):
-  python scripts/perview_probe.py --bop /workspace/bop_data/ycbv \
+Usage:
+  python scripts/perview_probe.py --bop /path/to/ycbv \
       --dataset ycbv --obj 10 \
-      --detections .../cnos-fastsam_ycbv-test.json \
-      --out /workspace/results/perview_banana.csv
+      --detections data/detections/cnos/cnos-fastsam_ycbv-test.json \
+      --out perview_banana.csv
 """
 from __future__ import annotations
 
@@ -40,7 +40,10 @@ from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, os.environ.get("POPOE_BOP_TOOLKIT", "/workspace/bop_toolkit"))
+_tk = os.environ.get("POPOE_BOP_TOOLKIT")
+if not _tk:
+    raise SystemExit("set POPOE_BOP_TOOLKIT to a thodan/bop_toolkit checkout")
+sys.path.insert(0, _tk)
 
 
 def main():

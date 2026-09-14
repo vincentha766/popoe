@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Materialize and verify the frozen detection inputs (B2-F2).
 
-The frozen run tables pin detection files by SHA256, but the working tree
-held 19 of them as ABSOLUTE-PATH symlinks — a clone or pod rsync gets
-FileNotFoundError (or silently empty inputs) the moment the link target is
-not there. Freezing therefore means these invariants, all enforced here:
+The frozen run tables pin detection files by SHA256. A clone that still has
+absolute-path symlinks into a machine-local archive gets FileNotFoundError
+(or silently empty inputs) the moment the link target is not there. Freezing
+therefore means these invariants, all enforced here:
 
   1. No symlinks under data/detections/ — neither files nor DIRECTORIES
      (default mode replaces file symlinks with real bytes, `cp -L`
@@ -28,7 +28,7 @@ not there. Freezing therefore means these invariants, all enforced here:
 Usage:
     python scripts/freeze_detections.py                # materialize + verify
     python scripts/freeze_detections.py --check \\
-        --need cnos/cnos-fastsam_lmo-test.json ...     # pod-side preflight
+        --need cnos/cnos-fastsam_lmo-test.json ...     # run-side preflight
 
 Exit 0 = clean. Non-zero = violations on stderr. JSON-parse checking stays
 the downloader's job (size alone lies) — this gate is about identity.

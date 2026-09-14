@@ -167,7 +167,7 @@ def test_floored_topk_is_per_target_n_plus_one(bop_eval):
 
 
 def test_floored_topk_2n_mode(bop_eval):
-    """--mask-m 2n: v2.1's "up to M = 2N" (Row 19 prose, decision 13). At N=1
+    """--mask-m 2n: v2.1's "up to M = 2N". At N=1
     both floors are 2, so single-instance targets are identical between modes;
     the divergence starts at inst_count >= 2. --topk still floors either way."""
     assert bop_eval.floored_topk(2, 1, "2n") == 2    # N=1: 2N == N+1 == 2

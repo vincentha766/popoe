@@ -467,7 +467,7 @@ def _parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                     "(source='muse-repro')."
     )
     ap.add_argument("--bop-root", required=True,
-                    help="BOP dataset root, e.g. /workspace/bop_data/ycbv")
+                    help="BOP dataset root, e.g. /path/to/ycbv")
     ap.add_argument("--split", default="test")
     ap.add_argument("--targets", default="",
                     help="BOP targets JSON; default: <bop-root>/<split>_targets_bop19.json")

@@ -1,10 +1,10 @@
 """A THIRD PoseSolver — vectorized GPU RANSAC.
 
-Motivation (B layer): Open3D's C++ correspondence-RANSAC ranks hypotheses by
-GEOMETRIC inlier count and cannot take a custom fitness, so the feature
-similarity can only re-rank the survivors (the A layer). To put feature
-agreement INSIDE hypothesis selection — changing which hypotheses survive, not
-just their order — we need our own RANSAC. This is a batched implementation:
+Open3D's C++ correspondence-RANSAC ranks hypotheses by GEOMETRIC inlier count
+and cannot take a custom fitness, so the feature similarity can only re-rank
+the survivors. To put feature agreement INSIDE hypothesis selection — changing
+which hypotheses survive, not just their order — we need our own RANSAC. This
+is a batched implementation:
 vectorised triplet sampling + edge-length pruning + batched Kabsch/SVD, ~54 ms
 for 10k hypotheses on a GPU. It runs on CPU too (small scales), so the whole
 thing is unit-testable without a GPU.
@@ -19,21 +19,21 @@ coarse `PoseHypothesis`, `score = s_coarse`, breakdown carrying `s_coarse`).
   since it was written. The v1 paper joins two conditions with `or` — matched-
   point distances over a geometric threshold OR inconsistent relative edge
   lengths — and only the edge test was implemented. ON reproduces Open3D's
-  `CorrespondenceCheckerBasedOnDistance`. Registered as the isolation arm
-  ``gpu-feat-dist``; until it has been priced, no part of the +5.36 pt
-  solver-substitution recovery may be attributed to this gap.
+  `CorrespondenceCheckerBasedOnDistance`. Registered as ``gpu-feat-dist``;
+  until it has been priced, do not attribute a solver-substitution recovery
+  to this gap.
 
 `fitness`:
   * ``"geometric"`` (default) — rank hypotheses by inlier COUNT, a faithful port
     of a correspondence-RANSAC (verifiable against Open3D alone). Zero-perturbs
     the mainline: the default solver stays Open3D.
-  * ``"feature"`` — the B-layer increment: rank by the paper's Eq.5 feature-
-    aware score, ``Σ_inlier cos(f_q, f_t) / |P_T|``. The denominator is the
-    FIXED sparse-target count |P_T|, never the inlier count — normalise-by-
-    inlier (mean cosine) lets a few high-similarity spurious correspondences
-    beat many true ones (ch3 tax #2: -31pt, AR 0.37). Puts feature agreement
-    INSIDE hypothesis selection (which hypotheses survive), not just the A-layer
-    re-ranking of survivors.
+  * ``"feature"`` — rank by the paper's Eq.5 feature-aware score,
+    ``Σ_inlier cos(f_q, f_t) / |P_T|``. The denominator is the FIXED
+    sparse-target count |P_T|, never the inlier count — normalise-by-inlier
+    (mean cosine) lets a few high-similarity spurious correspondences beat
+    many true ones (measured −31 pt, AR 0.37). Puts feature agreement INSIDE
+    hypothesis selection (which hypotheses survive), not just a re-ranking of
+    survivors.
 
 Convention: R maps QUERY -> TARGET (`p_t ≈ R p_q + t`), matching
 feature_aware_score and Open3DFeatureRansacSolver.
@@ -149,7 +149,7 @@ def _gpu_ransac(pts_q, feats_q, pts_t, feats_t, thr, iters, k, min_inliers,
             # the FIXED sparse-target count, NEVER the inlier count. Dividing by
             # n_in (mean cosine) lets a tiny set of high-similarity spurious
             # correspondences outscore a large set of true ones; that exact bug
-            # (ch3 reproduction tax #2) collapsed real-data AR to 0.37 (-31pt).
+            # collapsed real-data AR to 0.37 (−31 pt).
             # Fixed |P_T| makes the score reward inlier QUANTITY x quality.
             val = (c_sim[None] * inl).sum(1) / float(N_t)
         else:  # geometric: inlier fraction (argmax == inlier count)

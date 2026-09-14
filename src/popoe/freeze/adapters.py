@@ -65,9 +65,8 @@ def sample_query_surface(mesh_path: str, n_points: int, seed: int) -> np.ndarray
 
 
 def query_sampler_provenance(n_points: int) -> str:
-    """One log line naming the sampler actually in force. An isolation arm whose
-    identity is not printed is not isolable (see recipes.solver_provenance and
-    the C9/C9b `--corr-topk` incident, 2026-08-08/09)."""
+    """One log line naming the sampler actually in force. A configuration
+    whose identity is not printed is not isolable (see recipes.solver_provenance)."""
     import os
     sampler = os.environ.get("POPOE_QUERY_SAMPLER", "even")
     return (f"query_sampler={sampler} n_points={n_points} "

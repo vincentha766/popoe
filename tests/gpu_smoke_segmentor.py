@@ -122,7 +122,7 @@ def main():
           renders_differ)
 
     # ── SAM2 availability decides which segmentors can run ──────────────
-    ckpt_dir = os.environ.get("POPOE_SAM2_CKPT", "/workspace/sam2_checkpoints")
+    ckpt_dir = os.environ.get("POPOE_SAM2_CKPT", "")
     have_sam2 = os.path.exists(os.path.join(ckpt_dir, "sam2.1_hiera_small.pt"))
     print(f"\n[sam2] checkpoint present: {have_sam2} ({ckpt_dir})", flush=True)
 

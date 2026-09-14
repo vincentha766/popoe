@@ -17,9 +17,8 @@ ADD-S (closest-point) is used for symmetric objects, ADD for the rest
 as failures via their large errors.
 
 Usage:
-  BOP_PATH=/workspace/bop_data/ycbv \
-  python -m popoe.metrics.grasp preds.csv
-Env: POPOE_BOP_TOOLKIT (default /workspace/bop_toolkit), BOP_PATH.
+  BOP_PATH=/path/to/ycbv python -m popoe.metrics.grasp preds.csv
+Env: POPOE_BOP_TOOLKIT (thodan/bop_toolkit checkout), BOP_PATH.
 """
 import os, sys, csv, json
 from pathlib import Path
@@ -27,7 +26,11 @@ import numpy as np
 
 
 def _pose_error():
-    sys.path.insert(0, os.environ.get("POPOE_BOP_TOOLKIT", "/workspace/bop_toolkit"))
+    toolkit = os.environ.get("POPOE_BOP_TOOLKIT")
+    if not toolkit:
+        raise SystemExit(
+            "set POPOE_BOP_TOOLKIT to a thodan/bop_toolkit checkout")
+    sys.path.insert(0, toolkit)
     from bop_toolkit_lib import pose_error
     return pose_error
 
@@ -105,8 +108,14 @@ def aggregate_grasp(err, obj):
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
+    if not argv:
+        raise SystemExit(
+            "usage: BOP_PATH=/path/to/lmo python -m popoe.metrics.grasp preds.csv")
     csv_path = argv[0]
-    bop_path = Path(os.environ.get("BOP_PATH", "/workspace/bop_data/lmo"))
+    bop_path_env = os.environ.get("BOP_PATH")
+    if not bop_path_env:
+        raise SystemExit("set BOP_PATH to the dataset root (e.g. /path/to/lmo)")
+    bop_path = Path(bop_path_env)
 
     rows = list(csv.DictReader(open(csv_path)))
     print(f"loaded {len(rows)} rows from {csv_path}", flush=True)

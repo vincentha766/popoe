@@ -84,7 +84,7 @@ def format_report(total: float | None = None) -> str:
     is what makes an unaccounted slice visible instead of silently absorbed."""
     rows = report()
     if not rows:
-        return "  (空 — POPOE_PROFILE 没开?)"
+        return "  (empty — POPOE_PROFILE not set?)"
     width = max(len(r[0]) for r in rows)
     out = []
     for name, secs, calls in rows:
@@ -92,6 +92,6 @@ def format_report(total: float | None = None) -> str:
         out.append(f"  {name:<{width}}  {secs:8.2f}s  {pct}  x{calls}")
     if total:
         top = sum(s for n, s, _ in rows if not n.startswith(" "))
-        out.append(f"  {'—— 顶层合计':<{width}}  {top:8.2f}s"
-                   f"  {top / total * 100:5.1f}%  (墙钟 {total:.2f}s)")
+        out.append(f"  {'-- top-level total':<{width}}  {top:8.2f}s"
+                   f"  {top / total * 100:5.1f}%  (wall {total:.2f}s)")
     return "\n".join(out)

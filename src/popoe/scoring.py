@@ -69,15 +69,15 @@ class ChampionScorer:
             the SAME (post-ICP) pose but in the MATCHED, weight-scaled space,
             i.e. the space s_feat_1 deliberately does not use. Diagnostic only;
             the score is untouched. This is what a canonical-vs-matched
-            comparison needs and what the campaign2-era dumps lack.
+            comparison needs; older candidate dumps often lack the column.
         use_s_coarse: multiply the final score by ``max(s_coarse, 0)`` — i.e.
             arbitrate with ``s_icp * s_feat_1 * metric_fit * s_coarse``,
             byte-identical to rule_replay's rule of that name (all evidence
             clamped at 0; s_icp/metric_fit are already >= 0). Implies recording.
         use_render_score: multiply the final score by ``max(sar_ti, 0)`` — the
             input-vs-render appearance score the rerank stage left in the
-            breakdown (v2.1's "compare input image with the rendered pose"
-            component, decision 13). Requires ``--render-rerank`` upstream.
+            breakdown (FreeZeV2.1: compare the input image with the rendered
+            pose). Requires ``--render-rerank`` upstream.
 
     Either needs the coarse pose in the breakdown (``R_coarse``/``t_coarse`` —
     set ICPRefiner(keep_coarse=True)); a missing coarse pose is a loud error,
@@ -116,15 +116,14 @@ class ChampionScorer:
         # recomputed "using the same formulation provided in Eq. (5)". Off by
         # default: the tuned scoring identity stays byte-identical.
         self.eq5_terms = eq5_terms
-        # v2.1 third component (decision 13): multiply the final score by the
+        # FreeZeV2.1 third component: multiply the final score by the
         # clamped input-vs-render DINOv2 appearance score (`sar_ti`) of the
         # variant the rerank stage kept — the paper only says v2.1 "compares
         # the visual features of the input image with the rendered pose" to
-        # improve scoring; this factor form is pinned-by-us (same clamped
+        # improve scoring; this factor form is a local choice (same clamped
         # arbitration shape as use_s_coarse). The render pass is the rerank
         # stage's own, so this adds ZERO renders; a chain without that stage
-        # is a wiring error (loud), not a degraded mode. Off by default: both
-        # arms' pre-decision-13 identities stay byte-identical.
+        # is a wiring error (loud), not a degraded mode. Off by default.
         self.use_render_score = use_render_score
 
     def score(self, pose: PoseHypothesis,

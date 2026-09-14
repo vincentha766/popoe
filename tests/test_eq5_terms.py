@@ -1,4 +1,4 @@
-"""Eq.5-form scoring for the faithful arms (triage D1).
+"""Eq.5-form scoring for the paper-faithful recipes.
 
 The paper's Eq.7 combines S_feat^coarse and S_feat^fine, BOTH "using the same
 formulation provided in Eq. (5)": target->query top-k feature pool, tau_inlier

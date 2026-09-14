@@ -23,7 +23,7 @@ from popoe.datasets.bop import find_instances, load_inputs
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--bop", default="/workspace/bop_data/ycbv")
+    ap.add_argument("--bop", required=True, help="BOP dataset root (e.g. /path/to/ycbv)")
     ap.add_argument("--obj", type=int, default=5)
     ap.add_argument("-n", "--n-instances", type=int, default=3)
     ap.add_argument("--n-points", type=int, default=5000)

@@ -24,12 +24,12 @@ the unflipped champion, so no variant gets an unfair advantage. Features come
 from the campaign cache; a miss is fatal rather than silently re-encoded,
 because re-encoding here would not match what produced the champion.
 
-Usage (pod, fresh clone):
+Usage:
   python scripts/flip_rescore_ab.py \
-      --bop /workspace/bop_data/ycbv --dataset ycbv \
-      --detections .../fastSAM_pbr_ycbv.json \
-      --cand-csv .../ycbv_cands.csv \
-      --cache /workspace/results/pipeline_verify_20260726/cache_ycbv_g32m \
+      --bop /path/to/ycbv --dataset ycbv \
+      --detections data/detections/cnos/cnos-fastsam_ycbv-test.json \
+      --cand-csv /path/to/ycbv_cands.csv \
+      --cache /path/to/cache_ycbv \
       --out flip_ab_ycbv.csv
 """
 from __future__ import annotations
@@ -148,7 +148,7 @@ def main():
         "skip_vis": os.environ.get("POPOE_SKIP_VIS", "0"),
         "geom_backbone": os.environ.get("POPOE_GEOM_BACKBONE", "gedi"),
         "dgedi_mode": os.environ.get("POPOE_DGEDI_MODE", "single_scale"),
-        "gedi_path": os.environ.get("POPOE_GEDI_PATH", "/workspace/gedi"),
+        "gedi_path": os.environ.get("POPOE_GEDI_PATH", ""),
         "render_backend": "nvdiffrast",
     }
     # The same conditional knobs bop_eval adds, from the SAME table
@@ -281,7 +281,7 @@ def main():
                     h = refiner.refine(h, scene, obj, q, tgt)
                     h = scorer.score(h, q, tgt)
                     # Raw ingredients, so any normalisation can be compared
-                    # offline without another pod trip: the live score divides
+                    # offline without another GPU run: the live score divides
                     # the cosine sum by |I|, the paper's Eq.5 divides by the
                     # fixed |P_T|, and both are recoverable from these.
                     c_all, c_vis, c_geo, n_inl = slice_cosines(

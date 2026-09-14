@@ -28,7 +28,7 @@ Scene (RGB-D, K) ──┴──────────────────
 | External coarse pose | class | `segmentor_sam6d.SAM6DPemResultsCoarseEstimator` over already-written PEM results |
 | Refine | `PoseRefiner` | `adapters.ICPRefiner` |
 | Score | class | `scoring.ChampionScorer` |
-| Render re-rank (opt.) | `PoseRefiner` chain | `render_rerank.RenderAppearanceReranker` (knife-4 SAR-style; `--render-rerank`) |
+| Render re-rank (opt.) | `PoseRefiner` chain | `render_rerank.RenderAppearanceReranker` (SAR-style; `--render-rerank`) |
 | Select | function | `adapters.best_hyp` / `select_top_instances` |
 | Metrics | scripts | `metrics.vsd`, `metrics.ar` |
 
@@ -111,10 +111,10 @@ dispose" is reachable as pure composition, with no new scoring code.
 
 - `solvers.Open3DFeatureRansacSolver` — Open3D's C++ correspondence RANSAC.
   `n_restarts>1` emits several geometrically-ranked hypotheses; the feature-aware
-  scorer re-ranks the survivors (the A layer).
+  scorer re-ranks the survivors.
 - `solvers.GPURansacSolver` — batched RANSAC (vectorised triplet sampling +
   batched Kabsch/SVD; CPU or CUDA) with a selectable `fitness`, so feature
-  agreement can sit **inside** hypothesis selection (the B layer), not only after
+  agreement can sit **inside** hypothesis selection, not only after
   it. `"geometric"` ranks by inlier count. `"feature"` uses the paper's Eq.5
   `Σ_inlier cos(f_q,f_t) / |P_T|`: the denominator is the **fixed** sparse-target
   count, never the inlier count (mean cosine lets a few high-similarity spurious
@@ -126,7 +126,7 @@ dispose" is reachable as pure composition, with no new scoring code.
   `tau_inlier` doubles as TEASER's noise bound. The import is deferred to
   `.solve`, so construction is dep-light.
 
-The A/B that ranks the first three against each other is
+The comparison that ranks the first three against each other is
 [examples/solver_swap_demo.py](examples/solver_swap_demo.py); the numbers live
 only in [REPRODUCTION.md](REPRODUCTION.md#solver-ab-ledger-2026-07-26) and are
 not a performance claim for popoe. Default solver stays `o3d`, so the evaluated

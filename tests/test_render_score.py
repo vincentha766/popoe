@@ -1,8 +1,7 @@
-"""The v2.1 render-vs-input component (decision 13): the rerank stage's
-``sar_ti`` (input-vs-render DINOv2 appearance score, one per candidate) enters
+"""The v2.1 render-vs-input component: the rerank stage's ``sar_ti``
+(input-vs-render DINOv2 appearance score, one per candidate) enters
 champion selection as a clamped multiplicative factor
-(``ChampionScorer(use_render_score=True)``). Off by default so both arms'
-pre-decision-13 identities stay byte-identical. numpy + sklearn
+(``ChampionScorer(use_render_score=True)``). Off by default. numpy + sklearn
 (feature_aware_score); no GPU — the factor consumes a breakdown key the rerank
 stage wrote, it never renders.
 """

@@ -45,8 +45,8 @@ that should not be merged into popoe's `pyproject.toml`. Put it in its own
 conda/uv environment and point popoe's command builder at it:
 
 ```bash
-export POPOE_CNOS_PATH=/workspace/cnos
-export POPOE_CNOS_PYTHON=/workspace/envs/cnos/bin/python
+export POPOE_CNOS_PATH=/path/to/cnos          # or this repo's external/cnos
+export POPOE_CNOS_PYTHON=/path/to/envs/cnos/bin/python
 ```
 
 For source-pinned local development, the default path is `external/cnos`.

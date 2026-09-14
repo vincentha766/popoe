@@ -51,10 +51,10 @@ before each target encode (install_pca) — the image-major loop interleaves
 objects, and the shared fusion instance would otherwise leak one object's
 PCA into another's target features.
 
-Usage (pod):
-  python examples/bop_eval.py --bop /workspace/bop_data/ycbv \
-      --detections /workspace/bop_data/detections/cnos/BOP23/fastSAM_pbr/fastSAM_pbr_ycbv.json \
-      --out popoe_ycbv.csv --cache /workspace/popoe_cache_ycbv \
+Usage:
+  python examples/bop_eval.py --bop /path/to/ycbv \
+      --detections data/detections/cnos/cnos-fastsam_ycbv-test.json \
+      --out popoe_ycbv.csv --cache /path/to/popoe_cache_ycbv \
       [--objs 5,8,...] [--weights 1.0,0.7,0.5,0.3,0.2] [--cand-csv cands.csv]
 """
 
@@ -108,7 +108,7 @@ CAND_COARSE_HEADER = ["s_coarse", "R_coarse", "t_coarse"]
 CAND_EXTRA_HEADER = ["source", "R_prererank", "t_prererank"]
 # --score-feat-w rides at the very END of the header: appending keeps every
 # existing column at its current index, so readers that address columns by
-# position (the campaign2-era analysis scripts) still line up.
+# position still line up.
 CAND_FEATW_HEADER = ["s_feat_w"]
 
 
@@ -133,7 +133,7 @@ def cand_csv_header(score_coarse, score_feat_w=False):
 def cand_csv_compatible_headers(score_coarse, score_feat_w=False):
     """Headers this run can append to without corrupting column alignment.
 
-    campaign2-era dumps exist in a few schemas. A fresh file gets the current
+    Older dumps exist in a few schemas. A fresh file gets the current
     header; appending to a legacy file writes only the columns that header names.
 
     --score-feat-w is the exception: a legacy header has no s_feat_w column, so
@@ -393,8 +393,8 @@ def floored_topk(user_topk, inst_count, mask_m="n1"):
 
     ``mask_m`` picks the floor rule (N = THIS target's inst_count):
       * ``"n1"`` — the paper's M = N+1 (FreeZeV2 Table V default);
-      * ``"2n"`` — v2.1's "up to M = 2N" (Row 19 prose, decision 13; the
-        paper gives no 2N ablation, so any 2N number is our own measurement).
+      * ``"2n"`` — FreeZeV2.1's "up to M = 2N" (the paper gives no 2N
+        ablation, so any 2N number is our own measurement).
     At N=1 both floors are 2, so single-instance targets are identical under
     either mode; the modes diverge only where inst_count >= 2."""
     if mask_m not in ("n1", "2n"):
@@ -587,8 +587,8 @@ def main():
                          "score-affecting knob — --merge, --weights, --grid).")
     ap.add_argument("--render-rerank", action="store_true",
                     help="After ICP, re-rank PCA-axis flip variants by DINOv2 "
-                         "render-vs-scene patch cosine (knife-4 / FreeZe SAR "
-                         "core; popoe.render_rerank.RenderAppearanceReranker). "
+                         "render-vs-scene patch cosine (FreeZe SAR-style; "
+                         "popoe.render_rerank.RenderAppearanceReranker). "
                          "Off by default (headline path unchanged). Measured "
                          "offline: YCB-V combo_sym full AR flat 0.8275→0.8605. "
                          "Needs CUDA + nvdiffrast + DINOv2. Fresh --out required.")
@@ -596,15 +596,15 @@ def main():
                     help="Champion selection multiplies in the clamped sar_ti "
                          "(input-vs-render DINOv2 appearance score) that the "
                          "rerank stage left on each candidate — v2.1's "
-                         "render-vs-input scoring component (decision 13); the "
-                         "factor form is pinned-by-us (paper gives prose only). "
+                         "render-vs-input scoring component; the factor form "
+                         "is a local choice (paper gives prose only). "
                          "Requires --render-rerank (the score has no producer "
                          "without it; zero extra renders with it). Fresh --out "
                          "required.")
     ap.add_argument("--mask-m", choices=["n1", "2n"], default="n1",
                     help="Per-target mask floor rule: n1 = paper M=N+1 (Table V "
-                         "default), 2n = v2.1's 'up to M=2N' (Row 19, decision "
-                         "13). At N=1 both floors are 2, so single-instance "
+                         "default), 2n = v2.1's 'up to M=2N'. At N=1 both "
+                         "floors are 2, so single-instance "
                          "targets are identical; the modes differ only where "
                          "inst_count >= 2. --topk still floors the budget "
                          "either way. Fresh --out required.")
@@ -613,10 +613,10 @@ def main():
                     help="pose solver: o3d (default, evaluated mainline — "
                          "unchanged) | gpu (ported batched RANSAC, geometric "
                          "fitness) | gpu-feat (gpu with the Eq.5 feature-aware "
-                         "fitness, the B layer) | gpu-feat-dist (gpu-feat plus the "
+                         "fitness) | gpu-feat-dist (gpu-feat plus the "
                          "paper's second triplet-rejection condition, the "
-                         "matched-point distance test this port never had; "
-                         "isolation arm) | teaser (TEASER++ certifiable "
+                         "matched-point distance test this port never had) "
+                         "| teaser (TEASER++ certifiable "
                          "registration). gpu* need torch; teaser needs "
                          "teaserpp_python (source build). A non-default "
                          "solver changes score/R/t, so use a FRESH --out and "
@@ -714,13 +714,13 @@ def main():
     ap.add_argument("--min-mask-pixels", type=int, default=100,
                     help="drop candidate masks smaller than this many pixels "
                          "(unreliable geometry). Paper Sec. III-C keeps the "
-                         "union UNFILTERED — faithful arms pass 0 (triage "
-                         "D2). Default 100 = tuned identity.")
+                         "union UNFILTERED — paper-faithful recipes pass 0. "
+                         "Default 100 = tuned identity.")
     ap.add_argument("--mask-iou-dedupe", type=float, default=0.9,
                     help="within one SOURCE, drop a mask whose IoU with an "
                          "already-kept one exceeds this. Paper Sec. III-C "
-                         "does not filter overlapping masks — faithful arms "
-                         "pass a value > 1 to disable (triage D2). Default "
+                         "does not filter overlapping masks — paper-faithful "
+                         "recipes pass a value > 1 to disable. Default "
                          "0.9 = tuned identity. Cross-source duplicates are "
                          "never filtered here; they resolve at the end via "
                          "--trans-nms.")
@@ -739,7 +739,7 @@ def main():
                     help="Translation NMS radius as a FRACTION of the BOP "
                          "models_info diameter (FreeZeV2 Sec. III-F: NMS on "
                          "refined poses' translation distance; the paper "
-                         "gives no radius, so the value is pinned-by-us). "
+                         "gives no radius, so the value is a local pin). "
                          "Default 0.05: same-instance duplicates from a "
                          "multi-source union converge post-ICP to within "
                          "~1-2%% of the diameter (2.5-5x margin), while for "
@@ -905,8 +905,8 @@ def main():
     # Built by recipes so it reports the EFFECTIVE seed per solver family — the
     # gpu solvers are deterministic by default and teaser has no RNG, so a flat
     # "UNSEEDED" would be a false claim in a cited run's log.
-    # Also prints corr_topk (o3d) / distance_check (gpu*) so isolation arms that
-    # share a solver name remain distinguishable after the fact (C9 vs C9b).
+    # Also prints corr_topk (o3d) / distance_check (gpu*) so configurations
+    # that share a solver name remain distinguishable after the fact.
     print(solver_provenance(args.solver, args.seed,
                             corr_topk=args.corr_topk), flush=True)
     # Same rule one stage upstream: the query sampler changes every number and
@@ -950,7 +950,7 @@ def main():
         "skip_vis": os.environ.get("POPOE_SKIP_VIS", "0"),
         "geom_backbone": os.environ.get("POPOE_GEOM_BACKBONE", "gedi"),
         "dgedi_mode": os.environ.get("POPOE_DGEDI_MODE", "single_scale"),
-        "gedi_path": os.environ.get("POPOE_GEDI_PATH", "/workspace/gedi"),
+        "gedi_path": os.environ.get("POPOE_GEDI_PATH", ""),
         # The renderer is an upstream knob like any other: nvdiffrast and the
         # trimesh CPU ray-caster produce different CAD views, hence different
         # query features. It used to be absent from the key, so a cache built on
@@ -1124,8 +1124,11 @@ def main():
     probe_syms: dict = {}
     if args.probe_corr:
         import sys as _sys
-        _sys.path.insert(0, os.environ.get("POPOE_BOP_TOOLKIT",
-                                           "/workspace/bop_toolkit"))
+        _tk = os.environ.get("POPOE_BOP_TOOLKIT")
+        if not _tk:
+            raise SystemExit(
+                "set POPOE_BOP_TOOLKIT to a thodan/bop_toolkit checkout")
+        _sys.path.insert(0, _tk)
         from bop_toolkit_lib import misc as _btk_misc
         mi_raw = json.load(open(bop / layout["models_dir"] / "models_info.json"))
         for _k, _v in mi_raw.items():

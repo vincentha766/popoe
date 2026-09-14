@@ -54,8 +54,8 @@ rather than guessed at:
   chamfer      Chamfer(Rs P_Q, P_Q) / diameter for this variant's rotation,
                letting the paper's symmetry gate be applied offline.
 
-Usage (pod, fresh clone):
-  python scripts/sar_render_compare.py --bop /workspace/bop_data/ycbv \
+Usage:
+  python scripts/sar_render_compare.py --bop /path/to/ycbv \
       --dataset ycbv --cand-csv flip_ab3_ycbv.csv \
       --detections .../fastSAM_pbr_ycbv.json --champ-csv .../ycbv_cands.csv \
       --out sar_ycbv.csv

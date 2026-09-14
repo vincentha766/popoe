@@ -88,10 +88,9 @@ def test_provenance_reports_the_effective_seed_per_solver():
         assert "no RNG" in line and "UNSEEDED" not in line, line
 
 
-def test_provenance_prints_corr_topk_so_c9_and_c9b_differ():
-    """2026-08-09 postmortem: C9 (o3d) and C9b (o3d + corr_topk=10) printed the
-    same provenance line, so the missing flag was invisible in the run log.
-    The line must carry the effective corr_topk for every o3d arm."""
+def test_provenance_prints_corr_topk_so_o3d_variants_differ():
+    """o3d and o3d + corr_topk=10 must not print the same provenance line.
+    The line must carry the effective corr_topk for every o3d configuration."""
     from popoe.freeze.recipes import solver_provenance
 
     bare = solver_provenance("o3d", 42, corr_topk=0)
@@ -99,7 +98,7 @@ def test_provenance_prints_corr_topk_so_c9_and_c9b_differ():
     assert "corr_topk=0" in bare, bare
     assert "corr_topk=10" in topk, topk
     assert bare != topk
-    # unseeded path too — isolation arms can still be unseeded
+    # unseeded path too — configurations can still be unseeded
     assert "corr_topk=0" in solver_provenance("o3d", None, corr_topk=0)
     assert "corr_topk=10" in solver_provenance("o3d", None, corr_topk=10)
 

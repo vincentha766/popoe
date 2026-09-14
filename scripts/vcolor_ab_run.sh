@@ -22,15 +22,16 @@
 # bug acts on the FEATURES and should therefore show up in the coarse pose
 # first; refinement can mask or amplify it.
 #
-# Usage (pod, fresh clone, ONE arm per ssh — see RUNPOD.md on truncation):
-#   nohup bash scripts/vcolor_ab_run.sh uvonly > /workspace/results/vcolor/uvonly.log 2>&1 &
+# Usage:
+#   OUT=/path/to/out CACHE_ROOT=/path/to/cache BOP=/path/to/bop_data \
+#     bash scripts/vcolor_ab_run.sh uvonly
 set -euo pipefail
 
 ARM="${1:?usage: vcolor_ab_run.sh <uvonly|vcolor> [dataset]}"
 DS="${2:-lmo}"
-OUT="${OUT:-/workspace/results/vcolor_ab_20260728}"
-CACHE_ROOT="${CACHE_ROOT:-/workspace/results/pipeline_verify_20260726}"
-BOP="${BOP:-/workspace/bop_data}"
+OUT="${OUT:?set OUT to the output directory}"
+CACHE_ROOT="${CACHE_ROOT:?set CACHE_ROOT to the feature-cache root}"
+BOP="${BOP:?set BOP to the bop_data root}"
 DET="${DET:-$PWD/data/detections}"
 PY="${PY:-python}"
 SEED="${SEED:-1234}"
@@ -66,9 +67,9 @@ mkdir -p "$OUT"
 BASE="$OUT/vcolor_${DS}_$ARM"
 
 echo "=== vcolor_ab $DS arm=$ARM shading=$POPOE_MESH_SHADING seed=$SEED cache=$CACHE | $(date -u +%FT%TZ) ==="
-# Positive confirmation of WHICH clone is running (the env's editable install
-# points somewhere else — see RUNPOD.md's stale-import trap). Printed on
-# success too: a check that only speaks on failure cannot prove it ran.
+# Positive confirmation of WHICH clone is running (an editable install
+# can point somewhere else). Printed on success too: a check that only
+# speaks on failure cannot prove it ran.
 "$PY" -c "import popoe, sys; print('popoe', popoe.__file__)"
 BOP_MODELS="$BOP/$DS/$("$PY" -c "from popoe.datasets.bop import bop_layout; print(bop_layout('$DS')['models_dir'])")" \
 "$PY" -c "

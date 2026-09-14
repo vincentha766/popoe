@@ -1,10 +1,10 @@
-"""Paper Sec. III-D target protocol helpers (triage D3/D4).
+"""Paper Sec. III-D target protocol helpers.
 
-D3: the sparse targets are the patch centres of the minimal axis-aligned
-SQUARE bbox, features assigned per patch (no bilinear) — the geometry lives
-in adapters.paper_grid_centers so it is testable without torch.
+Sparse targets are the patch centres of the minimal axis-aligned SQUARE
+bbox, features assigned per patch (no bilinear) — the geometry lives in
+adapters.paper_grid_centers so it is testable without torch.
 
-D4: P_T^dense is ONE cloud serving both the GeDi neighbourhood and ICP;
+P_T^dense is ONE cloud serving both the GeDi neighbourhood and ICP;
 both sides subsample through adapters.fixed_seed_subsample over the same
 index space, so sharing the function IS the equality guarantee.
 """

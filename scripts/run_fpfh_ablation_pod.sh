@@ -1,27 +1,18 @@
 #!/usr/bin/env bash
-# Boot on pod after a fresh clone of this repo. Records HEAD in the log.
-# Usage (on pod):
-#   bash scripts/run_fpfh_ablation_pod.sh          # full ycbv+lmo three-arm
-#   MODE=pilot bash scripts/run_fpfh_ablation_pod.sh  # LMO objs 1,5,6 only
+# Geometric-backbone ablation driver. Records HEAD in the log.
+# Usage:
+#   BOP=/path/to/bop_data OUT=/path/to/out bash scripts/run_fpfh_ablation_pod.sh
+#   MODE=pilot BOP=... OUT=... bash scripts/run_fpfh_ablation_pod.sh  # LMO objs 1,5,6
 set -euo pipefail
 cd "$(dirname "$0")/.."
 COMMIT=$(git rev-parse --short HEAD)
 echo "=== fpfh ablation start $(date -u +%FT%TZ) commit=$COMMIT ==="
 echo "hostname=$(hostname) gpu=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo none)"
 
-BOP="${BOP:-/workspace/bop_data}"
+BOP="${BOP:?set BOP to the bop_data root}"
 DET="${DET:-data/detections}"
-OUT="${OUT:-/workspace/results/geomablation_20260726}"
+OUT="${OUT:?set OUT to the output directory}"
 export BOP DET OUT
-
-# Prefer existing popoe venv on volume if present
-if [ -x /workspace/envs/popoe/bin/python ]; then
-  export PATH="/workspace/envs/popoe/bin:$PATH"
-  echo "using /workspace/envs/popoe"
-elif [ -x /workspace/envs/freezev2/bin/python ]; then
-  export PATH="/workspace/envs/freezev2/bin:$PATH"
-  echo "using /workspace/envs/freezev2"
-fi
 
 # Ensure package importable from this clone
 export PYTHONPATH="${PWD}/src:${PYTHONPATH:-}"
@@ -41,14 +32,9 @@ else
 fi
 
 mkdir -p "$OUT"
-# detections: use clone's if present, else volume copy
 if [ ! -f "$DET/cnos/cnos-fastsam_lmo-test.json" ]; then
-  if [ -d /workspace/popoe/data/detections ]; then
-    DET=/workspace/popoe/data/detections
-  elif [ -d /workspace/detections ]; then
-    DET=/workspace/detections
-  fi
-  export DET
+  echo "missing $DET/cnos/cnos-fastsam_lmo-test.json — set DET to the detections root" >&2
+  exit 1
 fi
 echo "BOP=$BOP DET=$DET"
 ls -la "$BOP/lmo" 2>&1 | head -5
