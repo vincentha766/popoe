@@ -1,11 +1,10 @@
 """Grasping-axis pose metrics from a BOP prediction CSV (no renderer needed).
 
-Aggregation and output are kept byte-compatible with the archived grasp rows in
-`REPRODUCTION.md` (headline rows #5/#6). Per that ledger's calibre note, the
-grasp axis deliberately keeps those statistics — **mean over per-object
-recalls** and **median over per-object medians** — NOT the BOP flat calibre
-used by metrics/ar.py and metrics/vsd.py. Do not "fix" this without
-re-baselining the archived numbers.
+Aggregation is **mean over per-object recalls** and **median over
+per-object medians** — not the BOP flat (per-instance) calibre used by
+`metrics/ar.py` and `metrics/vsd.py`. That is the grasp-axis convention
+this module has always reported; do not switch it to flat without
+calling the change out.
 
 Reports, per object then averaged:
   ADD(-S) recall @ 0.1d : fraction with ADD(-S) < 0.10 * diameter   <- robotics standard

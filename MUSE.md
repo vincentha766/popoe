@@ -15,14 +15,11 @@ public, and popoe carries them (see Upstream Status). Keep the two facts apart:
 | `muse` | The authors' official artefacts ONLY. **Nothing in popoe writes it** — the files under this name were downloaded, not produced. |
 | `muse-repro` | This reimplementation (`popoe.segmentor_muse`, `MUSE_SOURCE`) |
 
-This split matters more here than anywhere else in the repo, and it carries more
-weight now that both names have files behind them. The reproduction study cites
-MUSE as the ensemble member whose *method* cannot be reproduced — no code, so
-the masks can only be re-derived from the paper's description. That argument is
-about the method, not the artefacts: the authors' masks are downloadable, so a
-union run CAN be fed the real thing. A number produced by our reimplementation
-but filed under `muse` would collapse exactly the distinction the study is
-drawing. Do not relabel.
+This split matters more here than anywhere else in the repo. The method
+has no public code, so masks can only be re-derived from the paper — but
+the authors' BOP artefacts are downloadable, so a union run can still be
+fed the real thing. A number produced by the reimplementation must not be
+filed under `muse`. Do not relabel.
 
 ## Upstream Status
 
@@ -235,5 +232,4 @@ Measured segmentation AP (`source='muse-repro'`, not official `muse`):
 YCB-V is at parity. LM-O keeps an unattributed residual. Turning the
 depth gate off, or switching patch similarity to cosine, does not close
 it. Four-way **pose** still consumes the authors' official `muse` JSON —
-`muse-repro` numbers must never be filed as `muse`. Rows and commits:
-[REPRODUCTION.md](REPRODUCTION.md) segmentation AP ledger.
+`muse-repro` numbers must never be filed as `muse`.

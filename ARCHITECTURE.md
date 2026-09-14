@@ -5,8 +5,7 @@ a `typing.Protocol` in [src/popoe/interfaces.py](src/popoe/interfaces.py). An
 implementation only needs matching method signatures — no base class, no
 registration — so stages stay decoupled and any one can be re-implemented alone.
 
-Measured claims, run artefacts, and withdrawn tables live in
-[REPRODUCTION.md](REPRODUCTION.md). Rules learned from incidents live in [ISSUES.md](ISSUES.md). This file
+Rules learned from incidents live in [ISSUES.md](ISSUES.md). This file
 is the seams and the invariants.
 
 ## Stages
@@ -127,10 +126,9 @@ dispose" is reachable as pure composition, with no new scoring code.
   `.solve`, so construction is dep-light.
 
 The comparison that ranks the first three against each other is
-[examples/solver_swap_demo.py](examples/solver_swap_demo.py); the numbers live
-only in [REPRODUCTION.md](REPRODUCTION.md#solver-ab-ledger-2026-07-26) and are
-not a performance claim for popoe. Default solver stays `o3d`, so the evaluated
-mainline is unperturbed; the others are independent configurations.
+[examples/solver_swap_demo.py](examples/solver_swap_demo.py). Default solver
+stays `o3d`, so the evaluated mainline is unperturbed; the others are
+independent configurations.
 
 ## Segmentation backends
 

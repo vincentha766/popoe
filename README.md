@@ -24,8 +24,7 @@ and ships multiple `PoseSolver` implementations to demonstrate pluggability.
 > covered by tests and runs on CPU. The FreeZe-style reference implementation
 > needs a CUDA GPU, the external models below, a BOP split, and detection
 > JSONs (none of those are in this clone). See
-> [ARCHITECTURE.md](ARCHITECTURE.md) for the design. Measured claims live in
-> [REPRODUCTION.md](REPRODUCTION.md).
+> [ARCHITECTURE.md](ARCHITECTURE.md) for the design.
 
 ## Install
 
@@ -117,10 +116,11 @@ export POPOE_BOP_TOOLKIT=/path/to/bop_toolkit
 python examples/solver_swap_demo.py --bop /path/to/ycbv --obj 5 -n 5 --seed 42
 ```
 
-Full BOP eval is `examples/bop_eval.py` plus the frozen recipes in
-[REPRODUCTION.md](REPRODUCTION.md). Those command blocks record a lab host
-(`/workspace/...`); override `POPOE`, `BOP`, `DET`, `POPOE_GEDI_PATH`, and
-`POPOE_BOP_TOOLKIT` locally and leave the rest of each block unchanged.
+Full BOP eval is `examples/bop_eval.py`. Pass `--bop`, exactly one of
+`--detections` or `--sources`, and `--out`. Defaults follow the tuned
+Open3D path; paper-faithful knobs (`--solver gpu-feat`, `--eq5-terms`,
+`--tau-diameter`, `--icp-dense`, `--render-rerank`, …) are documented on
+`--help`.
 
 ## Extending — add your own method for a step
 
@@ -163,9 +163,8 @@ geometry-only RANSAC can emit several hypotheses
 (`Open3DFeatureRansacSolver(n_restarts=8)`) and let the existing scorer choose,
 with no new scoring code. See
 [ARCHITECTURE.md](ARCHITECTURE.md#pluggability-proven--the-posesolver-stage)
-for the seam, and
-[REPRODUCTION.md](REPRODUCTION.md#solver-ab-ledger-2026-07-26)
-for the measured ranking (not a performance claim for popoe).
+for the seam. `examples/solver_swap_demo.py` runs the three shipped solvers
+on the same encoded pair.
 
 ## Detections (segmentation sources)
 

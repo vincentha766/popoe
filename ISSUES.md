@@ -1,7 +1,6 @@
 # Known issues — rules that constrain the code
 
-The rule each incident taught. Numbers belong in
-[REPRODUCTION.md](REPRODUCTION.md); seams belong in
+The rule each incident taught. Seams belong in
 [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## No hidden fallbacks
@@ -99,9 +98,8 @@ Open3D RANSAC draws from a global RNG it does not seed. Pass
 cited number; `seed=None` is the historical unseeded mainline.
 
 Do not cite a raw rotation-angle median on a near-50/50 flip
-distribution. The solver-swap ranking lives only in REPRODUCTION.md
-and is not a performance claim for popoe; an older parity claim is
-withdrawn.
+distribution. `examples/solver_swap_demo.py` compares the shipped
+solvers; that ranking is not a performance claim for popoe.
 
 ## Eval swallowed failures and under-keyed caches (do not regress)
 

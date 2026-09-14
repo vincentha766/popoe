@@ -7,9 +7,8 @@ CNOS has two source names in popoe, and they are part of the contract:
 | `cnos` | Official CNOS/CNOS-FastSAM producer, including public BOP default detections |
 | `cnos-lab` | Local lab recipe (formerly `cnos-v3`): proposal masks -> depth size gate -> DINOv2 foreground-patch rank |
 
-Do not write local lab outputs with `source="cnos"`. Official benchmark numbers
-and reproduction headline commands should keep using official/public `cnos`
-detections.
+Do not write local lab outputs with `source="cnos"`. Official BOP
+detections keep the public `cnos` name.
 
 ## Official Source
 

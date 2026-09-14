@@ -170,8 +170,7 @@ def _build_solver(name: str, tau: float, n_ransac: int, seed: int | None = None,
       * o3d — ``seed=None`` (default) leaves Open3D's global RNG unseeded,
         which is the historical behaviour every evaluated number was produced
         under. Passing a seed makes the run reproducible and IS a different
-        configuration; REPRODUCTION.md's acceptance rule ("tighten to
-        bit-identical if the run is seeded") is what it exists for.
+        configuration; a seeded run can be checked bit-identical.
       * gpu / gpu-feat — already deterministic (their own default is 42); a
         seed here overrides that, ``None`` keeps it.
       * teaser — no RNG at all, so the seed is not applicable and is ignored.

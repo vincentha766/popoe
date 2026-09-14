@@ -1,9 +1,7 @@
-"""metrics.grasp — grasp-axis ADD(-S) at the archived per-object calibre.
+"""metrics.grasp — grasp-axis ADD(-S) at per-object calibre.
 
-The defining property here is the ARCHIVED calibre (deliberately NOT flat):
-mean over per-object recalls, median over per-object medians. The archived
-REPRODUCTION.md grasp rows (#5/#6) were produced at this calibre, so the port
-must keep it for numbers to reconcile.
+Mean over per-object recalls, median over per-object medians — not BOP
+flat (per-instance) calibre.
 """
 import numpy as np
 import pytest
