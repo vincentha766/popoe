@@ -25,8 +25,8 @@ Scene, ObjectModel ─ (Segmentor?) ─ CoarseEstimator ─ GeometricRefiner* �
 | Stage | Protocol | Reference implementation |
 |-------|----------|--------------------------|
 | Segmentation | `Segmentor` | `segmentor_detections.BOPDetectionsSegmentor` (evaluated) — more in [§Segmentation backends](#segmentation-backends) |
-| Query features | `FreeZeQueryEncoder` | `freeze.adapters.FreeZeQueryEncoder` (DINOv2 visual + `PointDescriptor` geometric branch) |
-| Target features | `FreeZeTargetEncoder` | `freeze.adapters.FreeZeTargetEncoder` |
+| Query features | `QueryEncoder` | `freeze.adapters.FreeZeQueryEncoder` (DINOv2 visual + `PointDescriptor` geometric branch) |
+| Target features | `TargetEncoder` | `freeze.adapters.FreeZeTargetEncoder` |
 | Geometric descriptors | `PointDescriptor` | `freeze.feature_extractor.load_geometric_descriptor` dispatches on `POPOE_GEOM_BACKBONE`: `load_gedi` (default); `descriptors.FPFHDescriptor` |
 | Fusion | class | `freeze.fusion.DinoGeDiFusion` |
 | Pose solve | `PoseSolver` | `solvers.Open3DFeatureRansacSolver` (default) — also GPU RANSAC and TEASER++ |
@@ -38,7 +38,7 @@ Scene, ObjectModel ─ (Segmentor?) ─ CoarseEstimator ─ GeometricRefiner* �
 | Select | function | `adapters.best_hyp` / `select_top_instances` |
 | Metrics | scripts | `metrics.vsd`, `metrics.ar` |
 
-The library entry is `PoseMethod.run`. `make_correspondence_pipeline` in `popoe.freeze.recipes` returns a `Pipeline` (correspondence graph); `DirectPoseMethod` is the estimator-graph implementation (for example SAM-6D PEM files). The evaluated BOP loop is `examples/bop_eval.py` (cache, weight sweep, multi-instance, resume). It builds a per-object `Pipeline` with `make_correspondence_pipeline`, then scores each encoded pair with `correspond_pair`. Default eval flags are the tuned Open3D identity, not a paper-faithful freeze — see [README.md](README.md#minimal-bop-eval).
+The library entry is `PoseMethod.run`. `make_correspondence_pipeline` in `popoe.freeze.recipes` returns a `Pipeline` (correspondence graph); `DirectPoseMethod` is the estimator-graph implementation (for example SAM-6D PEM files). The evaluated BOP loop is `examples/bop_eval.py` (cache, weight sweep, multi-instance, resume). It builds a per-object `Pipeline` with `make_correspondence_pipeline`, then scores each encoded pair with `correspond_pair`. Default eval flags are the tuned Open3D identity, not a paper-faithful freeze — see [README.md](README.md#three-identities).
 
 ## Cross-cutting data (conventions live in one place)
 
@@ -108,7 +108,8 @@ SAM-6D's ISM half is a detections producer like the others. Its PEM half is an e
 
 ## Verification
 
-- **Adapter fidelity** — `examples/bop_eval.py` is the evaluated composition. `examples/freezev2_monolith.py` is a byte-identity check on identical arrays (fixed RANSAC seed + deterministic ICP).
+- **Evaluated composition** — `examples/bop_eval.py` (ChampionScorer + Open3D). Paper-side flags are opt-in; see [README.md](README.md#three-identities).
+- **Adapter parity oracle** — `examples/pipeline_selfcheck.py` checks `RansacSolver` + `FreeZeScorer` against `examples/freezev2_monolith.py` on identical arrays (fixed RANSAC seed + deterministic ICP). That is not the BOP eval loop.
 - **Fusion byte-identity & Protocol wiring** — [tests/](tests/), GPU-free (numpy + scikit-learn), run with `pytest`.
 
 ## Eval invariants

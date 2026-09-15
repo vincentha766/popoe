@@ -19,7 +19,10 @@ vendor these; they are optional/external dependencies.
 - FreeZe / FreeZeV2 (method this reference implementation reproduces)
                                    — see upstream  — the FreeZe papers/repos
 - BOP toolkit (evaluation)         — MIT-style     — github.com/thodan/bop_toolkit  (POPOE_BOP_TOOLKIT)
-- nvdiffrast (rendering, optional) — NVIDIA Source Code License — github.com/NVlabs/nvdiffrast
+- nvdiffrast (GPU CAD renderer)    — NVIDIA Source Code License — github.com/NVlabs/nvdiffrast
+  Required for the evaluated default (`bop_eval.py` / `best_encoders`);
+  not a silent optional fallback. Pass `--render-backend trimesh` or `auto`
+  only if you accept different CAD views (hence different features).
 
 Before redistributing or using popoe with these components, verify each upstream
 license (some carry non-commercial or research-only terms). This NOTICE is a

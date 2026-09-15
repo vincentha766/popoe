@@ -7,7 +7,7 @@ key and produces a run that looks entirely normal; there is no symptom to notice
 """
 import numpy as np
 import pytest
-import trimesh
+trimesh = pytest.importorskip("trimesh")
 
 from popoe.cache import conditional_enc_entries
 from popoe.freeze.adapters import sample_query_surface, query_sampler_provenance

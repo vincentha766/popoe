@@ -1,4 +1,4 @@
-"""popoe.recipes — default stage configurations, in one place.
+"""popoe.freeze.recipes — default stage configurations, in one place.
 
 ``make_correspondence_pipeline`` is the public factory: it returns a
 ``Pipeline`` (a ``PoseMethod``) for the correspondence graph. Internally it
@@ -13,6 +13,8 @@ paper-side flags are set:
   * 32x32 target sampling grid (16 is the fast preset);
   * Open3D feature-matching RANSAC + ICP, thresholds at 3% of object extent
     (metric space — equivalent to canonical-space 0.03);
+  * CAD query renders via nvdiffrast (``best_encoders`` / ``bop_eval`` default;
+    missing the rasteriser is an error, not a trimesh swap);
   * ChampionScorer (icp * s_feat_1, size-aware for pooled confusable pairs);
   * label pooling for confusable same-shape pairs (YCB-V clamps 19/20).
 
@@ -95,7 +97,7 @@ def scale_vis(feats: np.ndarray, w: float,
 
 
 def best_encoders(device: str = "cuda", target_grid: int = 32,
-                  render_backend: str = "auto"):
+                  render_backend: str = "nvdiffrast"):
     """Shared-model query/target encoders at the formal configuration.
     Returns (query_encoder, target_encoder). GPU required.
 
@@ -106,10 +108,12 @@ def best_encoders(device: str = "cuda", target_grid: int = 32,
     default (0.5) leaked in, so every "w" in the sweep and the "w=1" re-score
     actually ran at half the advertised visual weight.
 
-    `render_backend='nvdiffrast'` refuses to run on a box without the GPU
-    rasteriser rather than silently producing CPU-ray-cast features, which are
-    NOT the same features (see QueryFeatureExtractor). The evaluated numbers
-    were produced on nvdiffrast."""
+    Default ``render_backend`` matches ``examples/bop_eval.py --render-backend``:
+    ``nvdiffrast``. Missing the GPU rasteriser is an error, not a silent
+    trimesh swap — CPU ray-cast views are different images, hence different
+    DINOv2 features (see QueryFeatureExtractor). Pass ``'auto'`` or
+    ``'trimesh'`` only if you accept that. The evaluated numbers were produced
+    on nvdiffrast."""
     os.environ.setdefault("POPOE_TARGET_GRID", str(target_grid))
     from popoe.freeze.adapters import make_freeze_encoders
     from popoe.freeze.feature_extractor import (

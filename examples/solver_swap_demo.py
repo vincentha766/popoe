@@ -6,7 +6,8 @@ Same query/target features, refiner, and scorer. Only ``pipe.solver`` changes:
     pipe.solver = Open3DFeatureRansacSolver(n_restarts=8)
     pipe.solver = GPURansacSolver()
 
-Needs bop_toolkit (`POPOE_BOP_TOOLKIT`). Pass --seed for a reproducible o3d run.
+Needs bop_toolkit (`POPOE_BOP_TOOLKIT`) and nvdiffrast (`best_encoders`
+default, same as `bop_eval.py`). Pass --seed for a reproducible o3d run.
 
     POPOE_GEDI_PATH=/path/to/gedi POPOE_TWO_SCALE_GEDI=1 \
     python -u examples/solver_swap_demo.py --bop /path/to/ycbv --obj 5 -n 150 --seed 42

@@ -8,9 +8,22 @@ import pytest
 from popoe.freeze.recipes import (
     YCBV_CLAMP_DIAMETERS_M,
     YCBV_MERGE_LABELS,
+    best_encoders,
     best_segmentor,
 )
 from popoe.interfaces import ObjectModel, Scene
+
+
+def test_best_encoders_default_render_backend_matches_eval_cli():
+    """Library default must match ``bop_eval --render-backend`` (nvdiffrast).
+
+    ``auto`` would silently ray-cast on a box without the GPU rasteriser and
+    write different DINOv2 features. Inspect the signature only — calling
+    ``best_encoders`` loads DINOv2/GeDi.
+    """
+    import inspect
+    default = inspect.signature(best_encoders).parameters["render_backend"].default
+    assert default == "nvdiffrast"
 
 
 def _rle(mask):

@@ -1,6 +1,6 @@
 # MUSE
 
-MUSE is a mask source in FreeZe-v2's segmentation ensemble. **The method is unpublished, but its masks are not.** No code has been released, so popoe cannot adapt an official producer the way it does for CNOS, SAM-6D and NIDS-Net. What it has instead is `popoe.segmentor_muse`, a reimplementation from the paper. The authors' own BOP submissions are public; keep the two facts apart: *unreproducible method, obtainable artefacts*.
+MUSE is a mask source in FreeZe-v2's segmentation ensemble. **The paper is public; the authors' code is not.** No official producer exists to adapt the way popoe does for CNOS, SAM-6D and NIDS-Net. What it has instead is `popoe.segmentor_muse`, a reimplementation from the paper. The authors' own BOP submissions are public; keep the two facts apart: *no released producer code, obtainable artefacts*.
 
 ## Source names
 

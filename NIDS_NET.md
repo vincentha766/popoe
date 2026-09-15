@@ -1,6 +1,6 @@
 # NIDS-Net
 
-NIDS-Net is a detector/segmentor producer for popoe. It should run in its own environment or service and write a detections JSON; popoe then consumes that file through `popoe.segmentor_nids.NIDSNetDetectionsSegmentor` or the generic multi-source union.
+NIDS-Net is a detector/segmentor producer for popoe. It should run in its own environment or service and write a detections JSON; popoe then consumes that file through `BOPDetectionsSegmentor(..., source="nids")` or a named-source union. Raw Detectron2/COCO-style files can be normalised first with `popoe-nids-adapt` (`popoe.segmentor_nids.adapt_nidsnet_json`). There is no `NIDSNetDetectionsSegmentor`.
 
 The official source is pinned as a submodule at `external/NIDS-Net`:
 

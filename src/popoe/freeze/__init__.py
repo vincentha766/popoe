@@ -1,8 +1,10 @@
 """popoe.freeze — the FreeZe-v2 reference method, packaged as pipeline stages.
 
 Everything specific to the FreeZe recipe (DINOv2 + GeDi encoders, the
-[vis | geo] fusion rule, the s_coarse*s_fine*s_icp scorer, and the
-default stage configuration) lives here; the method-agnostic pipeline
+[vis | geo] fusion rule, `FreeZeScorer` for the paper's
+`s_coarse*s_fine*s_icp` combination, and the default stage configuration)
+lives here. The evaluated BOP scorer is `popoe.scoring.ChampionScorer`,
+wired by `popoe.freeze.recipes`. The method-agnostic pipeline
 (interfaces, solvers, segmentors, registration primitives, cache, metrics)
 stays in the top-level popoe package. A second method would sit beside this
 package, not inside it.

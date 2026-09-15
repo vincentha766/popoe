@@ -546,3 +546,4 @@ def test_help_renders(tmp_path):
     assert r.returncode == 0, f"--help failed:\n{r.stderr[-2000:]}"
     assert "--tau-diameter" in r.stdout          # the flag that carried the bug
     assert "3% of" in r.stdout                   # %% must render back as one %
+    assert "nvdiffrast" in r.stdout              # default CAD renderer
