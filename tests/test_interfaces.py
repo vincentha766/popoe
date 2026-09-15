@@ -1,11 +1,11 @@
-"""Contract + Pipeline orchestration tests — GPU-free, mock stages only."""
+"""Contract + PoseMethod orchestration tests — GPU-free, mock stages only."""
 import numpy as np
 import pytest
 
 import popoe
 from popoe import (
     Scene, ObjectModel, CanonFrame, Detection, PointFeatures, PoseHypothesis,
-    Pipeline,
+    Pipeline, DirectPoseMethod,
 )
 
 
@@ -75,6 +75,13 @@ def test_mocks_satisfy_protocols():
     assert isinstance(_RefinerGeom(), popoe.PoseRefiner)
     assert isinstance(_Scorer(), popoe.PoseScorer)
     assert isinstance(_Selector(), popoe.Selector)
+    pipe = Pipeline(segmentor=_Seg(), query_encoder=_QEnc(),
+                    target_encoder=_TEnc(), solver=_Solver(),
+                    refiners=[_RefinerGeom()], selector=_Selector())
+    assert isinstance(pipe, popoe.PoseMethod)
+    assert popoe.CorrespondencePipeline is Pipeline
+    direct = DirectPoseMethod(estimator=_Coarse(), selector=_Selector())
+    assert isinstance(direct, popoe.PoseMethod)
 
 
 def test_pipeline_run_orchestration():
@@ -140,6 +147,34 @@ def test_pipeline_refuses_missing_pca_snapshot():
     scene = Scene(np.zeros((4, 4, 3), np.uint8), np.ones((4, 4), np.float32), np.eye(3))
     with pytest.raises(ValueError, match="pca_vis"):
         pipe.run(scene, ObjectModel(1, "a.ply", 0.1))
+
+
+def test_direct_pose_method_selects_estimator_hypotheses():
+    class _Est:
+        def __init__(self):
+            self.dets = []
+        def estimate(self, scene, obj, det=None):
+            self.dets.append(det)
+            s = 0.4 if det is None else det.score
+            return [PoseHypothesis(np.eye(3), np.zeros(3), s,
+                                   breakdown={"source": "mock"})]
+
+    est = _Est()
+    scene = Scene(np.zeros((4, 4, 3), np.uint8), np.ones((4, 4), np.float32),
+                  np.eye(3))
+    obj = ObjectModel(5, "x.ply", 0.1)
+
+    best = DirectPoseMethod(estimator=est, selector=_Selector()).run(scene, obj)
+    assert best is not None
+    assert np.isclose(best.score, 0.4)
+    assert est.dets == [None]
+
+    best = DirectPoseMethod(estimator=est, selector=_Selector(),
+                            segmentor=_Seg(), topk=2).run(scene, obj)
+    assert best is not None
+    assert np.isclose(best.score, 0.9)
+    assert len(est.dets) == 3
+    assert est.dets[1].score == 0.9
 
 
 def test_freeze_package_exports():

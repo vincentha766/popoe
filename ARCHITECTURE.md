@@ -1,19 +1,30 @@
 # Architecture
 
-popoe factors a 6-DoF pose pipeline into **swappable stages**, each
-a `typing.Protocol` in [src/popoe/interfaces.py](src/popoe/interfaces.py). An
-implementation only needs matching method signatures — no base class, no
-registration — so stages stay decoupled and any one can be re-implemented alone.
+popoe factors 6-DoF pose into a **method** (`PoseMethod.run(scene, obj)`)
+and **optional stage** Protocols in
+[src/popoe/interfaces.py](src/popoe/interfaces.py). A method uses only the
+stages its graph needs. An implementation only needs matching method
+signatures — no base class, no registration.
 
 Rules learned from incidents live in [ISSUES.md](ISSUES.md). This file
 is the seams and the invariants.
 
 ## Stages
 
+Library entry: `PoseMethod.run(scene, obj) → PoseHypothesis | None`.
+
+Correspondence graph (`Pipeline` / `CorrespondencePipeline`):
+
 ```
 ObjectModel (CAD) ─┬─ QueryEncoder ──────────── q, CanonFrame ─┐
                    ├─ Segmentor ─ Detection ─┐                 │
 Scene (RGB-D, K) ──┴─────────────────────────┴─ TargetEncoder ─┴─ PoseSolver ─ PoseRefiner* ─ PoseScorer ─ Selector ─ (R, t)
+```
+
+Estimator graph (`DirectPoseMethod`):
+
+```
+Scene, ObjectModel ─ (Segmentor?) ─ CoarseEstimator ─ Selector ─ (R, t)
 ```
 
 | Stage | Protocol | Reference implementation |
@@ -31,8 +42,14 @@ Scene (RGB-D, K) ──┴──────────────────
 | Select | function | `adapters.best_hyp` / `select_top_instances` |
 | Metrics | scripts | `metrics.vsd`, `metrics.ar` |
 
-The library composition is `interfaces.Pipeline.run`. The evaluated BOP
-loop is `examples/bop_eval.py` (cache, weight sweep, multi-instance, resume).
+The library entry is `PoseMethod.run`. `Pipeline` is the correspondence-graph
+implementation; `DirectPoseMethod` is the estimator-graph implementation
+(e.g. SAM-6D PEM files). The evaluated BOP loop is `examples/bop_eval.py`
+(cache, weight sweep, multi-instance, resume) and still drives the
+correspondence graph directly. Default eval flags are the tuned Open3D
+identity, not a paper-faithful freeze — see
+[README.md](README.md#minimal-bop-eval). There is no published AR on this
+path ([REPRODUCTION.md](REPRODUCTION.md)).
 
 ## Cross-cutting data (conventions live in one place)
 

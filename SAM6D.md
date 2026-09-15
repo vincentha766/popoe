@@ -112,9 +112,16 @@ est = SAM6DPemResultsCoarseEstimator(
 hyps = est.estimate(scene, obj)   # list[PoseHypothesis], t in metres
 ```
 
-This is a PEM-results loader, not a `PoseSolver`. It is not wired into the FreeZe
-`Pipeline.run` path because PEM already performs a full external pose estimate;
-use it as a separate candidate source or service response.
+This is a PEM-results loader, not a `PoseSolver`. Wire it as a
+`DirectPoseMethod` (estimator graph), not as a correspondence `Pipeline`:
+
+```python
+from popoe import DirectPoseMethod
+from popoe.adapters import BestScoreSelector
+
+method = DirectPoseMethod(estimator=est, selector=BestScoreSelector())
+hyp = method.run(scene, obj)
+```
 
 ## Real Scene Mode
 

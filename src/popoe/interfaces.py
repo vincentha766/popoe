@@ -1,10 +1,15 @@
 """
-popoe.interfaces — the stage contracts.
+popoe.interfaces — method and stage contracts.
 
-Data objects that flow between stages, and the Protocol each swappable stage
-must satisfy. Implementations live in popoe.adapters, popoe.freeze,
-popoe.registration, popoe.solvers. `Pipeline` is the reference composition;
-the evaluated BOP loop is examples/bop_eval.py.
+A pose *method* is ``PoseMethod.run(scene, obj) -> PoseHypothesis | None``.
+That is the library entry. Stage Protocols (Segmentor, encoders, PoseSolver,
+CoarseEstimator, …) are optional building blocks; a method uses only the
+ones its graph needs.
+
+``Pipeline`` is the correspondence-graph implementation (segment → encode →
+solve → refine* → score → select). ``DirectPoseMethod`` is the
+estimator-graph implementation (CoarseEstimator → select). Neither graph is
+the framework. The BOP loop is examples/bop_eval.py.
 """
 
 from __future__ import annotations
@@ -289,13 +294,28 @@ class Selector(Protocol):
     def select(self, candidates: list[PoseHypothesis]) -> Optional[PoseHypothesis]: ...
 
 
+@runtime_checkable
+class PoseMethod(Protocol):
+    """One pose method: Scene + CAD → one hypothesis (or None).
+
+    Callers (eval, demos, downstream) depend on this, not on a particular
+    stage order. Correspondence matching, direct estimators (SAM-6D PEM,
+    MegaPose, a regressor), and future graphs are all PoseMethods.
+    """
+    def run(self, scene: Scene, obj: ObjectModel) -> Optional[PoseHypothesis]: ...
+
+
 @dataclass
 class Pipeline:
-    """Reference composition of the stage contracts.
+    """Correspondence-graph PoseMethod.
 
-    The evaluated BOP runner (`examples/bop_eval.py`) does extra work this
-    class does not (weight sweep, disk cache, multi-instance, resume). This
-    is the library wiring: segment → encode → solve → refine → score → select.
+    segment → encode_query / encode_target → solve(q, t) → refine* →
+    score → select. This is one method graph, not the only one: methods
+    that never build query/target features use ``DirectPoseMethod`` (or
+    their own ``PoseMethod.run``).
+
+    The BOP runner (`examples/bop_eval.py`) still does extra work this
+    class does not (weight sweep, disk cache, multi-instance, resume).
     """
     segmentor: Segmentor
     query_encoder: QueryEncoder
@@ -340,4 +360,41 @@ class Pipeline:
                     with profiling.stage("score"):
                         h = self.scorer.score(h, q, t)
                 cands.append(h)
+        return self.selector.select(cands)
+
+
+# Public name for the correspondence graph. ``Pipeline`` stays as the
+# historical identifier; both are the same class.
+CorrespondencePipeline = Pipeline
+
+
+@dataclass
+class DirectPoseMethod:
+    """Estimator-graph PoseMethod.
+
+    ``CoarseEstimator.estimate(scene, obj[, det])`` already returns pose
+    hypotheses (SAM-6D PEM files, MegaPose, a learned regressor). This
+    composition selects among them. It does not call QueryEncoder /
+    TargetEncoder / PoseSolver.
+
+    Optional ``segmentor``: estimate once per detection (estimators that
+    ignore ``det`` still work). Correspondence-style ``PoseRefiner`` is
+    out of scope here — those signatures require PointFeatures.
+    """
+    estimator: CoarseEstimator
+    selector: Selector
+    segmentor: Optional[Segmentor] = None
+    topk: int = 2
+
+    def run(self, scene: Scene, obj: ObjectModel) -> Optional[PoseHypothesis]:
+        cands: list[PoseHypothesis] = []
+        if self.segmentor is None:
+            with profiling.stage("estimate"):
+                cands.extend(self.estimator.estimate(scene, obj, None))
+        else:
+            with profiling.stage("segment"):
+                dets = self.segmentor.segment(scene, obj)[: self.topk]
+            for det in dets:
+                with profiling.stage("estimate"):
+                    cands.extend(self.estimator.estimate(scene, obj, det))
         return self.selector.select(cands)

@@ -26,6 +26,29 @@ and ships multiple `PoseSolver` implementations to demonstrate pluggability.
 > JSONs (none of those are in this clone). See
 > [ARCHITECTURE.md](ARCHITECTURE.md) for the design.
 
+There is **no published AR on this path**. [REPRODUCTION.md](REPRODUCTION.md)
+is a placeholder until one frozen recipe is re-run end to end. Do not cite
+figures from git history of that file.
+
+### After a clone
+
+| You want | Install | Also needed | Run |
+|----------|---------|-------------|-----|
+| Read the contracts / write a stage | `pip install -e .` | — | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| Check the clone | `pip install -e ".[dev]"` | — | `pytest tests/` (CPU) |
+| Run 6-DoF on BOP | `pip install -e ".[reference]"` | CUDA, GeDi, **nvdiffrast**, a BOP split, detection JSONs | [`examples/bop_eval.py`](#minimal-bop-eval) |
+
+`examples/solver_swap_demo.py` is a GPU solver comparison on **ground-truth
+instances**. It does not read detection files and is not the BOP eval loop.
+The library entry is `PoseMethod.run(scene, obj)`. `popoe.Pipeline` is the
+correspondence-graph method (segment → encode → solve → …);
+`DirectPoseMethod` is the estimator-graph method (e.g. SAM-6D PEM).
+`examples/bop_eval.py` writes BOP CSVs (cache, weight sweep, resume,
+multi-instance). `scripts/` holds offline A/B helpers, not onboarding.
+
+Some tests import OpenCV / pycocotools. Install `.[reference]` as well if
+`pytest tests/` should cover those, not only the contract layer.
+
 ## Install
 
 ```bash
@@ -52,18 +75,24 @@ lab-host fallback.
 | GeDi | `POPOE_GEDI_PATH` | Clone [fabiopoiesi/gedi](https://github.com/fabiopoiesi/gedi). The directory must contain `data/chkpts/3dmatch/chkpt.tar` (see that repo). This is the geometric descriptor, not a popoe sibling. |
 | SAM 2 checkpoints | `POPOE_SAM2_CKPT` | Directory holding `sam2.1_hiera_large.pt`. Needed only for live SAM2 / MUSE / CNOS-lab, not for file-backed BOP eval. |
 | bop_toolkit | `POPOE_BOP_TOOLKIT` | Clone [thodan/bop_toolkit](https://github.com/thodan/bop_toolkit). Used by `solver_swap_demo.py` and `python -m popoe.metrics.ar`. |
-| nvdiffrast | — | Optional GPU renderer; missing it falls back to trimesh CPU rendering (raises `BackendUnavailable` where a silent swap would lie). |
-| Official CNOS / NIDS / SAM-6D producers | `POPOE_CNOS_PATH`, `external/NIDS-Net`, `POPOE_SAM6D_PATH` | Optional. Evaluated BOP runs consume **already-written** detection files; you do not need these producers unless you want to regenerate detections. |
+| nvdiffrast | — | GPU CAD renderer. **Required** for the default `bop_eval.py` (`--render-backend nvdiffrast`). Missing it is an error, not a silent trimesh swap. Pass `--render-backend trimesh` or `auto` only if you accept different CAD views (hence different features). |
+| Official CNOS / NIDS / SAM-6D producers | `POPOE_CNOS_PATH`, `external/NIDS-Net`, `POPOE_SAM6D_PATH` | Optional. Evaluated BOP runs consume **already-written** detection files; you do not need these producers — or `git submodule update` — unless you want to regenerate detections. |
 
 DINOv2 weights come from `torch.hub` on first encode (`TORCH_HOME` caches them).
 See [NOTICE](NOTICE) for upstream licenses — **each keeps its own license;
 verify before use.**
 
-Pinned producer source checkouts (optional):
+Pinned producer source checkouts (optional; skip for file-backed eval):
 
 ```bash
 git submodule update --init --recursive external/cnos external/NIDS-Net external/SAM-6D
 ```
+
+A later encode also reads feature knobs from the environment
+(`POPOE_QUERY_POINTS`, `POPOE_TARGET_GRID`, `POPOE_DINO_LAYER`,
+`POPOE_TWO_SCALE_GEDI`, `POPOE_VIS_DIM`, `POPOE_GEOM_BACKBONE`, …). Unset,
+they take the defaults recorded in the eval cache key. Changing one without
+a new `--cache` directory reuses stale features.
 
 ### BOP data
 
@@ -94,21 +123,56 @@ Download sources and SHA256s: [CNOS.md](CNOS.md), [NIDS_NET.md](NIDS_NET.md),
 `muse`) are reserved for official artefacts; lab reimplementations write
 `cnos-lab` / `muse-repro`.
 
+## Minimal BOP eval
+
+Defaults are the **tuned Open3D** identity (mask pixel floor 100, IoU
+dedupe 0.9, tau from the sampled query extent, ICP on the sparse grid
+cloud). That is **not** a paper-faithful freeze, and the CSV is **not** a
+number to cite.
+
+`--bop` is the dataset root that contains `models/` (T-LESS: `models_cad/`),
+`test/` or `test_primesense/`, and `test_targets_bop19.json`. T-LESS/HB use
+the primesense split; ITODD uses `gray/*.tif`. Layouts live in
+`popoe.datasets.bop.BOP_LAYOUTS`; a wrong root fails rather than writing an
+all-zero CSV.
+
+```bash
+export POPOE_GEDI_PATH=/path/to/gedi
+python examples/bop_eval.py \
+    --bop /path/to/ycbv \
+    --detections data/detections/cnos/cnos-fastsam_ycbv-test.json \
+    --out popoe_ycbv.csv \
+    --cache /path/to/popoe_cache_ycbv
+```
+
+Pass exactly one of `--detections` (one JSON) or `--sources name=path,...`
+(named union; FreeZe-style multi-source). Paper-side knobs (`--eq5-terms`,
+`--tau-diameter`, `--icp-dense`, `--solver gpu-feat`, `--render-rerank`,
+`--min-mask-pixels 0`, `--mask-iou-dedupe` above 1) are on `--help`. There
+is no named recipe that pins them into one command.
+
+Score the CSV with `python -m popoe.metrics.ar` (`POPOE_BOP_TOOLKIT` set).
+A BOP submission needs one shared per-image time — run
+`examples/bop_time_normalize.py` first.
+
 ## Quickstart — the stages
 
 ```python
 import popoe  # light: only numpy + scikit-learn
 
-# The contracts (Protocols) any implementation satisfies:
+# A method is run(scene, obj). Stages are optional building blocks:
+popoe.PoseMethod
 popoe.Segmentor, popoe.QueryEncoder, popoe.TargetEncoder
-popoe.PoseSolver, popoe.PoseRefiner, popoe.PoseScorer, popoe.Selector
+popoe.PoseSolver, popoe.CoarseEstimator, popoe.PoseRefiner
+popoe.PoseScorer, popoe.Selector
 
 # Data that flows between them:
 popoe.Scene, popoe.ObjectModel, popoe.CanonFrame
 popoe.Detection, popoe.PointFeatures, popoe.PoseHypothesis
 ```
 
-A GPU demo of the reference pipeline (GeDi + DINOv2 + a BOP split):
+A GPU demo that ranks the shipped solvers on the **same encoded pair**
+(GT instances, not detection JSONs; needs `models_eval/` as well as `models/`):
 
 ```bash
 export POPOE_GEDI_PATH=/path/to/gedi
@@ -116,16 +180,12 @@ export POPOE_BOP_TOOLKIT=/path/to/bop_toolkit
 python examples/solver_swap_demo.py --bop /path/to/ycbv --obj 5 -n 5 --seed 42
 ```
 
-Full BOP eval is `examples/bop_eval.py`. Pass `--bop`, exactly one of
-`--detections` or `--sources`, and `--out`. Defaults follow the tuned
-Open3D path; paper-faithful knobs (`--solver gpu-feat`, `--eq5-terms`,
-`--tau-diameter`, `--icp-dense`, `--render-rerank`, …) are documented on
-`--help`.
+## Extending — a new method, or a new stage
 
-## Extending — add your own method for a step
-
-Each stage is a `Protocol`: implement the method, drop it in. No base class, no
-registration. Example — a new pose solver is one new file:
+The library entry is `PoseMethod.run(scene, obj)`. Stages are optional
+building blocks; a correspondence method uses encoders + `PoseSolver`, an
+estimator method uses `CoarseEstimator`. No base class, no registration.
+Example — a new pose solver for the correspondence graph:
 
 ```python
 # my_solver.py
@@ -138,8 +198,11 @@ class MySolver:  # satisfies popoe.PoseSolver structurally
         return [PoseHypothesis(R=R, t=t, score=..., breakdown={"s_coarse": ...})]
 ```
 
-`popoe.Pipeline` is the library composition of those stages. The evaluated
-BOP loop is `examples/bop_eval.py`. The shipped solvers
+A new **method** implements `PoseMethod.run`. A new **stage** (for example a
+solver) drops into the correspondence graph (`popoe.Pipeline`) or an
+estimator graph (`DirectPoseMethod`) without a registry. The BOP CSV loop
+is `examples/bop_eval.py` (see [Minimal BOP eval](#minimal-bop-eval)).
+The shipped solvers
 (`popoe.solvers.Open3DFeatureRansacSolver`, `popoe.solvers.GPURansacSolver`,
 and `popoe.solvers.TeaserSolver`) are worked examples.
 
@@ -333,7 +396,7 @@ src/popoe/               # method-agnostic pipeline
     feature_extractor.py # DINOv2 + GeDi encoders
     fusion.py            # FeatureFusion (DinoGeDiFusion)
     adapters.py          # FreeZe encoder/scorer stage adapters
-    recipes.py           # evaluated-best configuration
+    recipes.py           # default (tuned Open3D) stage configuration
 examples/  tests/  ARCHITECTURE.md
 ```
 

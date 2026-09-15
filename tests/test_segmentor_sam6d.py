@@ -117,6 +117,12 @@ def test_sam6d_pem_csv_loader_and_coarse_estimator(tmp_path):
     assert hyps[0].score == 0.75
     assert hyps[0].breakdown["source"] == "sam6d-pem"
 
+    from popoe import DirectPoseMethod
+    from popoe.adapters import BestScoreSelector
+    hyp = DirectPoseMethod(estimator=est, selector=BestScoreSelector()).run(
+        _scene(), _obj())
+    assert hyp is not None and hyp.score == 0.75
+
 
 def test_sam6d_pem_csv_rejects_id_overrides(tmp_path):
     csv_path = tmp_path / "result_lmo.csv"
