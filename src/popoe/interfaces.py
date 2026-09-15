@@ -8,8 +8,9 @@ ones its graph needs.
 
 ``Pipeline`` is the correspondence-graph implementation (segment → encode →
 solve → refine* → score → select). ``DirectPoseMethod`` is the
-estimator-graph implementation (CoarseEstimator → select). Neither graph is
-the framework. The BOP loop is examples/bop_eval.py.
+estimator-graph implementation (CoarseEstimator → optional geometric
+refine → select). Neither graph is the framework. The BOP loop is
+examples/bop_eval.py.
 """
 
 from __future__ import annotations
@@ -276,9 +277,25 @@ class CoarseEstimator(Protocol):
 
 @runtime_checkable
 class PoseRefiner(Protocol):
-    """Stage 3. Move geometry (and report fitness). Scoring is PoseScorer."""
+    """Correspondence-graph refine: needs query/target PointFeatures.
+
+    ICP on encoded clouds uses this. Estimator graphs that never build
+    features use ``GeometricRefiner`` instead.
+    """
     def refine(self, pose: PoseHypothesis, scene: Scene, obj: ObjectModel,
                query: PointFeatures, target: PointFeatures) -> PoseHypothesis: ...
+
+
+@runtime_checkable
+class GeometricRefiner(Protocol):
+    """Geometry-only refine: pose + two point clouds, no descriptors.
+
+    ``pts_src`` is the model/query cloud, ``pts_tgt`` the scene/target cloud,
+    both metres. ``ICPRefiner`` implements this and ``PoseRefiner``.
+    """
+    def refine_geometry(self, pose: PoseHypothesis, scene: Scene,
+                        obj: ObjectModel, pts_src: np.ndarray,
+                        pts_tgt: np.ndarray) -> PoseHypothesis: ...
 
 
 @runtime_checkable
@@ -397,27 +414,50 @@ class DirectPoseMethod:
 
     ``CoarseEstimator.estimate(scene, obj[, det])`` already returns pose
     hypotheses (SAM-6D PEM files, MegaPose, a learned regressor). This
-    composition selects among them. It does not call QueryEncoder /
-    TargetEncoder / PoseSolver.
+    composition optionally runs ``GeometricRefiner``s, then selects.
+    It does not call QueryEncoder / TargetEncoder / PoseSolver.
 
     Optional ``segmentor``: estimate once per detection (estimators that
     ignore ``det`` still work). Correspondence-style ``PoseRefiner`` is
-    out of scope here — those signatures require PointFeatures.
+    still out of scope — those signatures require PointFeatures.
+    ``geometric_refiners`` need ``clouds(scene, obj, det) -> (pts_src, pts_tgt)``.
     """
     estimator: CoarseEstimator
     selector: Selector
     segmentor: Optional[Segmentor] = None
+    geometric_refiners: Sequence[GeometricRefiner] = field(default_factory=tuple)
+    clouds: Optional[object] = None
     topk: int = 2
+
+    def _after_estimate(self, hyps: list[PoseHypothesis], scene: Scene,
+                        obj: ObjectModel, det: Optional[Detection]
+                        ) -> list[PoseHypothesis]:
+        if not self.geometric_refiners:
+            return hyps
+        if self.clouds is None:
+            raise ValueError(
+                "DirectPoseMethod.geometric_refiners need clouds(scene, obj, "
+                "det) -> (pts_src, pts_tgt); PointFeatures are not on this graph")
+        pts_src, pts_tgt = self.clouds(scene, obj, det)
+        out: list[PoseHypothesis] = []
+        for h in hyps:
+            for r in self.geometric_refiners:
+                with profiling.stage("refine"):
+                    h = r.refine_geometry(h, scene, obj, pts_src, pts_tgt)
+            out.append(h)
+        return out
 
     def run(self, scene: Scene, obj: ObjectModel) -> Optional[PoseHypothesis]:
         cands: list[PoseHypothesis] = []
         if self.segmentor is None:
             with profiling.stage("estimate"):
-                cands.extend(self.estimator.estimate(scene, obj, None))
+                hyps = list(self.estimator.estimate(scene, obj, None))
+            cands.extend(self._after_estimate(hyps, scene, obj, None))
         else:
             with profiling.stage("segment"):
                 dets = self.segmentor.segment(scene, obj)[: self.topk]
             for det in dets:
                 with profiling.stage("estimate"):
-                    cands.extend(self.estimator.estimate(scene, obj, det))
+                    hyps = list(self.estimator.estimate(scene, obj, det))
+                cands.extend(self._after_estimate(hyps, scene, obj, det))
         return self.selector.select(cands)

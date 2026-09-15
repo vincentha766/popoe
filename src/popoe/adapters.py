@@ -4,8 +4,9 @@ generic registration primitives (popoe.registration) satisfy the stage
 Protocols in popoe.interfaces. Pure numpy+open3d, unit-testable offline.
 
 `ICPRefiner` moves geometry only; scoring is PoseScorer
-(FreeZeScorer / ChampionScorer). RansacSolver + BestScoreSelector compose
-with them in `interfaces.Pipeline`.
+(FreeZeScorer / ChampionScorer). It is both a correspondence ``PoseRefiner``
+and a ``GeometricRefiner`` for ``DirectPoseMethod``. RansacSolver +
+BestScoreSelector compose with them in `interfaces.Pipeline`.
 """
 
 from __future__ import annotations
@@ -53,11 +54,14 @@ class ICPRefiner:
         self.tau_icp = tau_icp
         self.keep_coarse = keep_coarse
 
-    def refine(self, pose: PoseHypothesis, scene: Scene, obj: ObjectModel,
-               query: PointFeatures, target: PointFeatures) -> PoseHypothesis:
+    def refine_geometry(self, pose: PoseHypothesis, scene: Scene,
+                        obj: ObjectModel, pts_src: np.ndarray,
+                        pts_tgt: np.ndarray) -> PoseHypothesis:
+        """``GeometricRefiner``: ICP on two clouds, no descriptors."""
+        del scene, obj
         from popoe.registration import icp_refinement
-        dense = target.pts_dense if target.pts_dense is not None else target.pts
-        R_f, t_f, s_icp = icp_refinement(query.pts, dense, pose.R, pose.t, self.tau_icp)
+        R_f, t_f, s_icp = icp_refinement(pts_src, pts_tgt, pose.R, pose.t,
+                                         self.tau_icp)
         extra = {"R_coarse": pose.R, "t_coarse": pose.t} if self.keep_coarse else {}
         return PoseHypothesis(
             R=R_f, t=t_f, score=pose.score,     # provisional; ChampionScorer sets final
@@ -69,6 +73,12 @@ class ICPRefiner:
                        # 30 mm (see render_rerank._tau_icp).
                        "tau_icp": float(self.tau_icp), **extra},
         )
+
+    def refine(self, pose: PoseHypothesis, scene: Scene, obj: ObjectModel,
+               query: PointFeatures, target: PointFeatures) -> PoseHypothesis:
+        """``PoseRefiner``: same ICP, clouds taken from encoded features."""
+        dense = target.pts_dense if target.pts_dense is not None else target.pts
+        return self.refine_geometry(pose, scene, obj, query.pts, dense)
 
 
 def best_hyp(candidates):

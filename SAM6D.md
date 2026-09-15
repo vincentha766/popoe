@@ -117,10 +117,17 @@ This is a PEM-results loader, not a `PoseSolver`. Wire it as a
 
 ```python
 from popoe import DirectPoseMethod
-from popoe.adapters import BestScoreSelector
+from popoe.adapters import BestScoreSelector, ICPRefiner
 
 method = DirectPoseMethod(estimator=est, selector=BestScoreSelector())
 hyp = method.run(scene, obj)
+
+# Optional geometry-only ICP (no query/target features):
+# method = DirectPoseMethod(
+#     estimator=est, selector=BestScoreSelector(),
+#     geometric_refiners=[ICPRefiner(tau_icp=0.03)],
+#     clouds=lambda scene, obj, det: (cad_pts, scene_pts),
+# )
 ```
 
 ## Real Scene Mode

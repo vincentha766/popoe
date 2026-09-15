@@ -28,7 +28,7 @@ Scene (RGB-D, K) ──┴──────────────────
 Estimator graph (`DirectPoseMethod`):
 
 ```
-Scene, ObjectModel ─ (Segmentor?) ─ CoarseEstimator ─ Selector ─ (R, t)
+Scene, ObjectModel ─ (Segmentor?) ─ CoarseEstimator ─ GeometricRefiner* ─ Selector ─ (R, t)
 ```
 
 | Stage | Protocol | Reference implementation |
@@ -40,7 +40,8 @@ Scene, ObjectModel ─ (Segmentor?) ─ CoarseEstimator ─ Selector ─ (R, t)
 | Fusion | class | `freeze.fusion.DinoGeDiFusion` |
 | Pose solve | `PoseSolver` | `solvers.Open3DFeatureRansacSolver` (default) — also GPU RANSAC and TEASER++ |
 | External coarse pose | class | `segmentor_sam6d.SAM6DPemResultsCoarseEstimator` over already-written PEM results |
-| Refine | `PoseRefiner` | `adapters.ICPRefiner` |
+| Refine (correspondence) | `PoseRefiner` | `adapters.ICPRefiner` (clouds from encoded features) |
+| Refine (estimator) | `GeometricRefiner` | `adapters.ICPRefiner.refine_geometry` (caller supplies clouds) |
 | Score | class | `scoring.ChampionScorer` |
 | Render re-rank (opt.) | `PoseRefiner` chain | `render_rerank.RenderAppearanceReranker` (SAR-style; `--render-rerank`) |
 | Select | function | `adapters.best_hyp` / `select_top_instances` |

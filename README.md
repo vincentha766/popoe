@@ -166,6 +166,7 @@ import popoe  # light: only numpy + scikit-learn
 popoe.PoseMethod
 popoe.Segmentor, popoe.QueryEncoder, popoe.TargetEncoder
 popoe.PoseSolver, popoe.CoarseEstimator, popoe.PoseRefiner
+popoe.GeometricRefiner
 popoe.PoseScorer, popoe.Selector
 
 # Data that flows between them:

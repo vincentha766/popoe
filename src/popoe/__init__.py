@@ -12,7 +12,7 @@ from popoe.interfaces import (
     PoseHypothesis, PoseMethod, correspond_pair, Pipeline,
     CorrespondencePipeline, DirectPoseMethod, Segmentor, PointDescriptor,
     FeatureFusion, QueryEncoder, TargetEncoder, PoseSolver, CoarseEstimator,
-    PoseRefiner, PoseScorer, Selector,
+    PoseRefiner, GeometricRefiner, PoseScorer, Selector,
 )
 
 __version__ = "0.1.0"
@@ -23,6 +23,7 @@ __all__ = [
     "Pipeline",
     "CorrespondencePipeline", "DirectPoseMethod", "Segmentor",
     "PointDescriptor", "FeatureFusion", "QueryEncoder", "TargetEncoder",
-    "PoseSolver", "CoarseEstimator", "PoseRefiner", "PoseScorer", "Selector",
+    "PoseSolver", "CoarseEstimator", "PoseRefiner", "GeometricRefiner",
+    "PoseScorer", "Selector",
     "__version__",
 ]

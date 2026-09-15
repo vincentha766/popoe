@@ -75,6 +75,10 @@ def test_mocks_satisfy_protocols():
     assert isinstance(_RefinerGeom(), popoe.PoseRefiner)
     assert isinstance(_Scorer(), popoe.PoseScorer)
     assert isinstance(_Selector(), popoe.Selector)
+    from popoe.adapters import ICPRefiner
+    icp = ICPRefiner()
+    assert isinstance(icp, popoe.PoseRefiner)
+    assert isinstance(icp, popoe.GeometricRefiner)
     pipe = Pipeline(segmentor=_Seg(), query_encoder=_QEnc(),
                     target_encoder=_TEnc(), solver=_Solver(),
                     refiners=[_RefinerGeom()], selector=_Selector())
@@ -199,6 +203,48 @@ def test_direct_pose_method_selects_estimator_hypotheses():
     assert np.isclose(best.score, 0.9)
     assert len(est.dets) == 3
     assert est.dets[1].score == 0.9
+
+
+def test_direct_pose_method_runs_geometric_refiners():
+    class _Est:
+        def estimate(self, scene, obj, det=None):
+            return [PoseHypothesis(np.eye(3), np.zeros(3), 0.4,
+                                   breakdown={"source": "mock"})]
+
+    class _Geom:
+        def __init__(self):
+            self.seen = []
+
+        def refine_geometry(self, pose, scene, obj, pts_src, pts_tgt):
+            self.seen.append((pts_src.shape, pts_tgt.shape))
+            return PoseHypothesis(pose.R, pose.t + np.array([0.01, 0, 0]),
+                                  pose.score, breakdown={**pose.breakdown,
+                                                         "s_icp": 0.5})
+
+    geom = _Geom()
+    src = np.zeros((5, 3), np.float32)
+    tgt = np.ones((8, 3), np.float32)
+
+    def clouds(scene, obj, det):
+        del scene, obj, det
+        return src, tgt
+
+    scene = Scene(np.zeros((4, 4, 3), np.uint8), np.ones((4, 4), np.float32),
+                  np.eye(3))
+    obj = ObjectModel(5, "x.ply", 0.1)
+    with pytest.raises(ValueError, match="clouds"):
+        DirectPoseMethod(estimator=_Est(), selector=_Selector(),
+                         geometric_refiners=[geom]).run(scene, obj)
+
+    hyp = DirectPoseMethod(
+        estimator=_Est(), selector=_Selector(),
+        geometric_refiners=[geom], clouds=clouds,
+    ).run(scene, obj)
+    assert hyp is not None
+    assert np.allclose(hyp.t, [0.01, 0, 0])
+    assert hyp.breakdown["s_icp"] == 0.5
+    assert geom.seen == [(src.shape, tgt.shape)]
+    assert isinstance(geom, popoe.GeometricRefiner)
 
 
 def test_freeze_package_exports():
