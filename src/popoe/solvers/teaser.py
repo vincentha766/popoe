@@ -6,9 +6,8 @@ minimal triplets (RANSAC's exponential blow-up at high outlier ratios), it
 DECOUPLES scale/rotation/translation, prunes correspondences with a pairwise
 translation-invariant-measurement max-clique, and solves rotation by GNC-TLS —
 robust to >90% outliers, deterministic (no RNG), with optimality certificates.
-That failure mode is exactly where progress.md locates the remaining AR gap:
-thin / near-symmetric geometry where the correspondence set is outlier-heavy and
-RANSAC+ICP converges to the wrong basin.
+That is the failure mode on thin / near-symmetric geometry where the
+correspondence set is outlier-heavy and RANSAC+ICP converges to the wrong basin.
 
 Like the other solvers this returns ONLY the coarse pose (ICP is PoseRefiner's
 job, final scoring is PoseScorer's) in the shared hypothesis shape: `score =

@@ -182,8 +182,8 @@ if __name__ == "__main__":
         print(f"{o:<5}{n:<5}{ar_mssd:<10.4f}{ar_mspd:<10.4f}")
 
     # PRIMARY: flat aggregation over all annotated instances (BOP official).
-    # The former equal-weight-per-object mean under-reported 0.5-0.9 pt on
-    # LM-O/YCB-V; flat matches the BOP server to 0.03 pt (see metrics/aggregate.py).
+    # Equal-weight-per-object mean under-reports vs the BOP server
+    # (see metrics/aggregate.py).
     # M3 call-site: headline MUST use flat_ar_*; tests assert this symbol path.
     all_mssd = np.concatenate([np.asarray(errs_mssd[o], dtype=float) for o in objs])
     all_mspd = np.concatenate([np.asarray(errs_mspd[o], dtype=float) for o in objs])

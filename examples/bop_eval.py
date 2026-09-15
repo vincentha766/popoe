@@ -1,7 +1,6 @@
 """BOP evaluation through popoe stages — the framework-validation run.
 
-Reproduces the reproduction study's formal pipeline semantics using popoe's
-stage contracts composed at the runner level:
+Composes popoe's stage contracts at the runner level:
 
   detections Segmentor (label pooling) -> encode once at w=1 (pinned)
   -> for each (mask, visual weight): solve -> refine -> ChampionScorer
@@ -263,7 +262,7 @@ def probe_corr_stats(q, tgt, gts, syms, diam_m):
 
 def probe_half_stats(q, tgt, gts, syms, diam_m):
     """The fused feature is [vis | geo] at geo-matched equal halves (the
-    configuration every campaign cache was built under). Re-running the top-1
+    configuration the default cache was built under). Re-running the top-1
     check on each half alone answers WHICH branch produced the wrong pairings:
     a dead visual half points at the render-vs-photo domain, a live visual
     half that dies when fused points at dilution by the geometric half.
@@ -667,14 +666,14 @@ def main():
     ap.add_argument("--render-backend", default="nvdiffrast",
                     choices=["nvdiffrast", "trimesh", "auto"],
                     help="CAD renderer for query features. Default demands the "
-                         "GPU rasteriser (what the reported numbers used) and "
-                         "errors without it; 'auto' accepts the ~100x slower CPU "
-                         "ray-caster, which yields DIFFERENT features.")
+                         "GPU rasteriser and errors without it; 'auto' accepts "
+                         "the ~100x slower CPU ray-caster, which yields "
+                         "DIFFERENT features.")
     args = ap.parse_args()
 
     # D4 contract guard: POPOE_TARGET_DENSE pins ONE shared P_T^dense for
     # GeDi and ICP; a differing --icp-dense-max silently splits it back into
-    # two clouds (measured: 3000 vs 2000 overlap only ~45%). Env and CLI are
+    # two clouds (different N overlap only partially). Env and CLI are
     # two hands on one value — refuse the mismatch, don't paper over it.
     _n_td = int(os.environ.get("POPOE_TARGET_DENSE", "0"))
     if _n_td and (not args.icp_dense or args.icp_dense_max != _n_td):
@@ -842,9 +841,8 @@ def main():
     # Where the [vis | geo] boundary sits, for the selection-time weight sweep.
     # Taken from the SAME value the cache key records, so the split can never
     # disagree with the features it is applied to: a different POPOE_VIS_DIM is
-    # a different key, hence a different entry. "geo-matched" (the default, and
-    # what every published number ran under) means equal halves, which
-    # scale_vis derives itself.
+    # a different key, hence a different entry. "geo-matched" (the default)
+    # means equal halves, which scale_vis derives itself.
     vis_split = (None if enc_cfg["vis_dim"] == "geo-matched"
                  else int(enc_cfg["vis_dim"]))
     if vis_split is not None:

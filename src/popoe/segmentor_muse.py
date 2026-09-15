@@ -15,10 +15,9 @@ Naming (same discipline as CNOS's ``cnos`` / ``cnos-lab`` split):
 ``muse-repro``This module: our from-the-paper reimplementation.
 ============  ==============================================================
 
-Do not relabel this output as ``muse``. The reproduction study cites MUSE as
-evidence that one of the four ensemble members is externally unreproducible; a
-number produced here wearing the official name would quietly refute an argument
-we are making on purpose.
+Do not relabel this output as ``muse``. Official artefacts and this
+reimplementation must stay distinct; a number produced here wearing the
+official name would look like an exact replication.
 
 Two halves, because MUSE has to be both kinds of segmentor at once
 (see ARCHITECTURE.md, "Segmentation backends"):
@@ -47,8 +46,8 @@ Deliberate divergences from the paper (keep this list honest — it is what
 stops these numbers being read as an exact replication):
 
 * A depth-based 3D-extent size gate runs after proposal. MUSE has none (its BOP
-  results are RGB-only); we keep it because it is cheap and directly targets the
-  printed-text confuser failure mode seen on this project's real shots.
+  results are RGB-only); we keep it because it is cheap and targets same-shape
+  wrong-size confusers.
 * No union-bbox box-prompt refinement pass (CNOS-lab has one); the GD+SAM2
   cascade is the paper's single largest ablation lever and should not need it.
 * Matching defaults to cosine(class token) + Tanimoto(GeM patch). Paper
@@ -87,8 +86,8 @@ from popoe.segmentor_cnos_lab import (
 MUSE_SOURCE = "muse-repro"
 
 #: The name this module must never write. `muse` belongs to official MUSE
-#: artefacts, which do not exist publicly; a reimplementation wearing it would
-#: refute the very claim the reproduction study makes about MUSE.
+#: artefacts; a reimplementation wearing it would look like an exact
+#: replication.
 RESERVED_SOURCE = "muse"
 
 #: Layout of ``Detection.descriptor`` for this segmentor. The final score alone

@@ -24,8 +24,7 @@ def mesh_path(tmp_path):
 
 
 def test_default_is_bitwise_the_historical_call(mesh_path, monkeypatch):
-    """The knob must be invisible when unset: every published number, and every
-    cached query feature on the GPU host, was produced by this exact call."""
+    """The knob must be invisible when unset: the default is this exact call."""
     monkeypatch.delenv("POPOE_QUERY_SAMPLER", raising=False)
     got = sample_query_surface(mesh_path, 800, seed=7)
     mesh = trimesh.load(mesh_path, force="mesh")

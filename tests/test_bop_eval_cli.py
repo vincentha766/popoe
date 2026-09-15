@@ -531,8 +531,8 @@ def test_help_renders(tmp_path):
 
     argparse runs every help string through %-interpolation, so one literal
     "3%" in a help text is enough to make the whole CLI's --help raise
-    `TypeError: %o format: an integer is required, not dict` — which is what
-    happened on main until 2026-07-30. Nothing else catches it: the flag
+    `TypeError: %o format: an integer is required, not dict`. Nothing else
+    catches it: the flag
     itself worked fine, only the help did not, so every run passed while the
     CLI was undiscoverable.
 

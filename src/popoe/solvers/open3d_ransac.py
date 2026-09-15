@@ -10,11 +10,10 @@ is unchanged.
 `Open3DFeatureRansacSolver` uses Open3D's correspondence-RANSAC
 (`registration_ransac_based_on_feature_matching`, a C++ implementation with edge-
 length + distance pruning checkers) on the fused features — a genuinely different
-algorithm from the pure-Python `ransac_pose_estimation`. Motivation beyond the
-pluggability demo: progress.md finds the -20.8pt YCB-V gap lives mostly in
-registration on thin / near-symmetric geometry where RANSAC+ICP struggles;
-swapping the solver is the intended lever to attack that (TEASER++ / MAC would be
-further PoseSolver implementations added the same way — one new file each).
+algorithm from the pure-Python `ransac_pose_estimation`. Swapping the solver is
+the intended lever for thin / near-symmetric geometry where RANSAC+ICP struggles
+(TEASER++ / MAC would be further PoseSolver implementations added the same way —
+one new file each).
 
 Like the other solver, this returns ONLY the coarse pose (no ICP, no final
 score): ICP is PoseRefiner's job and the s_coarse/s_fine/s_icp combination is
@@ -51,8 +50,8 @@ class Open3DFeatureRansacSolver:
         # instead. Every hypothesis' s_coarse is still feature_aware_score on the
         # FULL cloud, so candidates are comparable.
         # Extra restarts give the downstream scorer several geometrically
-        # ranked poses instead of one. Do not cite a raw rotation-angle
-        # median on a near-50/50 flip distribution.
+        # ranked poses instead of one. A raw rotation-angle median is not a
+        # meaningful summary of a near-50/50 flip distribution.
         self.n_restarts = n_restarts
         self.subsample = subsample
         # Open3D's RANSAC draws from a GLOBAL RNG that it does not seed itself,

@@ -8,9 +8,9 @@ serves per-target candidate masks, reproducing the evaluated best practice:
   * **label pooling** for confusable same-shape/different-size pairs
     (`merge_labels={19: [19, 20], 20: [19, 20]}` for the YCB-V clamp pair):
     the detector matches by appearance and cannot tell such pairs apart, so an
-    object's true instance frequently sits under its partner's label (measured
-    73-86% of the time for YCB-V obj20). Pooling both labels' top-K recovers
-    it; a size-aware scorer (popoe.scoring.ChampionScorer) arbitrates.
+    object's true instance frequently sits under its partner's label. Pooling
+    both labels' top-K recovers it; a size-aware scorer
+    (popoe.scoring.ChampionScorer) arbitrates.
 
 Pure numpy + pycocotools; no GPU.
 """

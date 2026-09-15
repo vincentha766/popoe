@@ -99,7 +99,7 @@ def test_shape_validation():
         flat_ar_vsd(np.zeros(5))  # 1-D: needs (N, n_taus)
 
 
-# --- N3 / M1 / M3 guards (2026-07-29) -----------------------------------------
+# --- N3 / M1 / M3 guards ------------------------------------------------------
 
 def test_mspd_normalize_factor_identity_at_ref_width():
     assert aggregate.mspd_normalize_factor(640) == pytest.approx(1.0)

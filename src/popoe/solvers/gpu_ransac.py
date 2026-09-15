@@ -31,7 +31,7 @@ coarse `PoseHypothesis`, `score = s_coarse`, breakdown carrying `s_coarse`).
     ``Σ_inlier cos(f_q, f_t) / |P_T|``. The denominator is the FIXED
     sparse-target count |P_T|, never the inlier count — normalise-by-inlier
     (mean cosine) lets a few high-similarity spurious correspondences beat
-    many true ones (measured −31 pt, AR 0.37). Puts feature agreement INSIDE
+    many true ones. Puts feature agreement INSIDE
     hypothesis selection (which hypotheses survive), not just a re-ranking of
     survivors.
 
@@ -148,8 +148,7 @@ def _gpu_ransac(pts_q, feats_q, pts_t, feats_t, thr, iters, k, min_inliers,
             # Eq.5: Σ_inlier cos(f_q, f_t) / |P_T^sparse| — the denominator is
             # the FIXED sparse-target count, NEVER the inlier count. Dividing by
             # n_in (mean cosine) lets a tiny set of high-similarity spurious
-            # correspondences outscore a large set of true ones; that exact bug
-            # collapsed real-data AR to 0.37 (−31 pt).
+            # correspondences outscore a large set of true ones.
             # Fixed |P_T| makes the score reward inlier QUANTITY x quality.
             val = (c_sim[None] * inl).sum(1) / float(N_t)
         else:  # geometric: inlier fraction (argmax == inlier count)

@@ -58,10 +58,9 @@ def feature_aware_score(R, t, pts_query, pts_target, feats_query, feats_target, 
     The denominator is the INLIER count |I|. Eq.5 divides by the FIXED sparse
     target count |P_T^sparse| instead, which is a different quantity and a
     different ranking: mean cosine lets a handful of high-similarity spurious
-    correspondences outrank many true ones. That substitution was measured at
-    -31 pt in the study, so the distinction is not pedantic. The genuine
-    fixed-|P_T| Eq.5 score is `fitness="feature"` inside
-    popoe.solvers.gpu_ransac, which is where hypothesis RANKING needs it.
+    correspondences outrank many true ones. The genuine fixed-|P_T| Eq.5
+    score is `fitness="feature"` inside popoe.solvers.gpu_ransac, which is
+    where hypothesis RANKING needs it.
 
     This function is deliberately the mean-cosine form, and every caller wants
     that form: it is the A-layer signal — `s_coarse` for all four solvers and
@@ -107,7 +106,7 @@ def eq5_score(R, t, pts_query, pts_target, feats_query, feats_target,
     point can contribute up to k inlier pairs, and the denominator is the
     FIXED sparse-target count, never |I| — the score rewards inlier
     QUANTITY x quality, so a handful of high-cosine spurious pairs cannot
-    outrank broad agreement (the -31 pt mean-cosine trap, in reverse).
+    outrank broad agreement.
     Returns (score, n_inlier_pairs)."""
     pts_query = np.asarray(pts_query, float)
     pts_target = np.asarray(pts_target, float)

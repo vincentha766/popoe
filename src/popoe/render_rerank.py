@@ -2,7 +2,7 @@
 
 Re-selects among PCA-axis rotational variants by DINOv2 render-vs-scene
 patch cosine (`sar_ti`). This is the in-pipeline form of that re-rank;
-it is off by default on ``examples/bop_eval.py``. Not a published AR.
+it is off by default on ``examples/bop_eval.py``.
 
 Public API
 ----------
@@ -55,9 +55,9 @@ def pca_flip_variants(
     """Champion + rotational alternates expressed in the **model** frame.
 
     Axes = principal directions of ``pts`` (query cloud, metres). Byte-same
-    variant *set* as ``scripts/flip_rescore_ab.variants`` (the set knife 4
-    measured): champion, flip0/1/2 (180° about each PCA axis), optional
-    az90/az270 about the first axis.
+    variant *set* as ``scripts/flip_rescore_ab.variants``: champion,
+    flip0/1/2 (180° about each PCA axis), optional az90/az270 about the
+    first axis.
     """
     R = np.asarray(R, float).reshape(3, 3)
     pts = np.asarray(pts, float).reshape(-1, 3)

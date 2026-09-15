@@ -236,7 +236,7 @@ def test_output_dims():
 
 def test_scale_vis_geo_matched_is_unchanged():
     """The mainline: geo-matched halves ARE equal, so the historical `// 2`
-    answer must survive byte-for-byte. Every published number ran here."""
+    answer must survive byte-for-byte."""
     from popoe.freeze.recipes import scale_vis
     rng = np.random.default_rng(41)
     fused = rng.standard_normal((50, 128)).astype(np.float32)   # 64 vis + 64 geo

@@ -81,10 +81,9 @@ class DinoGeDiFusion:
             # PCA signs are arbitrary per fit; two fits on slightly different
             # query samples agree up to sign flips, and a flipped TOP component
             # scrambles cosine similarity against features projected with the
-            # other fit (measured: flipped-variance-mass 29-48% <-> AR 0.16-0.25
-            # vs 3-5% <-> AR 0.79-0.85 on YCB-V obj8). With canonical signs any
-            # two fits of the same object produce compatible bases, so cached
-            # target features stay valid across runs.
+            # other fit. With canonical signs any two fits of the same object
+            # produce compatible bases, so cached target features stay valid
+            # across runs.
             comps = self.pca_vis.components_
             signs = np.sign(comps[np.arange(len(comps)),
                                   np.abs(comps).argmax(axis=1)])

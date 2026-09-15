@@ -1,14 +1,10 @@
 """Self-developed CNOS-lab segmentor.
 
-This is the lab/real-scene track, deliberately separate from official CNOS:
+This is the live-scene track, deliberately separate from official CNOS:
 
 * `source='cnos'` is reserved for the official producer / public BOP files.
 * `source='cnos-lab'` means the local recipe: proposal masks -> depth size gate
   -> DINOv2 foreground-patch ranking.
-
-Formerly named ``cnos-v3``: the "v3" was an internal iteration count, not an
-official CNOS release. Old artifacts carrying ``source="cnos-v3"`` mean this
-recipe.
 
 The core gate and patch scoring are numpy-only and unit-testable. Heavy
 components (SAM2 proposals, DINOv2 patch extraction, template image loading)
@@ -171,8 +167,8 @@ class DiameterSizeModel:
     pose; this runs on depth alone.
     """
 
-    # ~0.2 separates YCB-V clamp diameters under competitive softmax; 0.35 is too soft
-    # to overturn large wrong-label CNOS score gaps (measured in size-select A/B).
+    # ~0.2 separates YCB-V clamp diameters under competitive softmax; 0.35 is
+    # too soft to overturn large wrong-label detector-score gaps.
     sigma_log: float = 0.20
 
     def log_ratio_error(self, extent: float, diameter: float) -> float:

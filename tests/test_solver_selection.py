@@ -75,8 +75,8 @@ def test_provenance_reports_the_effective_seed_per_solver():
 
     assert "UNSEEDED" in solver_provenance("o3d", None)
     assert "seed=7 (seeded)" in solver_provenance("o3d", 7)
-    # Not "deterministic": a seeded o3d run is reproducible to within the
-    # measured 0.08 pt, not bit-for-bit (see solver_provenance). The word in
+    # Not "deterministic": a seeded o3d run is not bit-for-bit
+    # (see solver_provenance). The word in
     # the provenance line is what a reader uses to decide whether a small
     # between-run difference can be read as signal.
     assert "deterministic" not in solver_provenance("o3d", 7)

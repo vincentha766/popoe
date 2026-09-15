@@ -2,49 +2,25 @@
 
 score = s_icp * max(s_feat_1, 0) * (metric_fit if size_aware else 1)
 
-Where the terms come from (internal measurements below are **not** a
-published AR; see REPRODUCTION.md):
+Where the terms come from:
 
   * ``s_icp`` — ICP inlier fitness (geometric agreement), from the refiner.
   * ``s_feat_1`` — mean feature cosine over inliers computed with the fused
     features at **visual weight 1** (the canonical, weight-invariant space).
-    Scoring in a weight-dependent space biases the arbitration across weights;
-    the w=1 space fixes that. A 26-rule exponent grid over both spaces
-    (pre-registered before the dumps ran; frozen `tuned-cnos` dumps with the
-    diagnostic ``s_feat_w`` column) has the canonical family ahead at **all 13
-    exponent pairs on both datasets**: best-vs-best +0.41 pt on LM-O, +3.75 pt
-    on YCB-V.
-
-    Those two figures are the 2026-08-10 run. An earlier note here quoted +0.74
-    / +2.95 from a 2026-08-04 batch; that batch was superseded and the numbers
-    do not match the current dumps. Quote the study's own results file, not this
-    docstring, if the exact values matter.
-
-    The bias runs toward LOW weights, not high ones. Measured on the same
-    dumps: under the matched-space rule 57% (LM-O) / 46% (YCB-V) of targets
-    pick w=0.2, mean picked w drops 0.577->0.355 and 0.631->0.441, and only
-    ~38% of targets keep the same champion. Mechanism: at small w the visual
-    half is shrunk, so the fused vector is dominated by the geometric half,
-    whose cosines agree more readily — the matched score rises as w falls
-    (median s_feat_w 0.2867->0.4154 on LM-O as w goes 1.0->0.2, while s_feat_1
-    stays flat). An earlier version of this note said the bias favours
-    high-weight candidates; that direction was never measured and is wrong.
-
-    Note also that ratio 1 is NOT the grid optimum on these dumps (LM-O
-    ``s_icp^1.5*s_feat_1`` 0.7119 vs 0.7069 at (1,1); YCB-V 0.8277 vs 0.8265).
-    The live rule is kept at ratio 1 deliberately: picking a maximum out of 13
-    post-hoc rules is a multiple-comparison trap, and the spread among the top
-    canonical rules is under 0.5 pt.
+    Scoring in a weight-dependent space biases the arbitration across weights
+    toward LOW weights: shrinking the visual half lets the geometric half
+    dominate, so matched-space cosines rise as w falls while ``s_feat_1``
+    stays flat. The live exponents stay at ratio 1; picking a post-hoc
+    maximum among nearby rules is a multiple-comparison trap.
   * ``metric_fit`` — bidirectional absolute-scale inlier fraction
     ``min(fit(query->target), fit(target->query))`` at ``size_thr`` metres.
     Canonical/fused scores are scale-blind, so a same-shape wrong-size
     candidate (a pooled confusable pair, e.g. the YCB-V clamps) looks perfect
     to them; at metre scale the size mismatch collapses this term. min() is
     required: one-directional fitness is blind to small-model-on-big-instance
-    (every query point still finds a neighbour) and was measured to make the
-    swap WORSE (68% -> 79%). Enable only for objects served from a pooled
-    candidate set (``size_aware=True``); for ordinary objects it correlates
-    with s_icp and just adds noise.
+    (every query point still finds a neighbour). Enable only for objects
+    served from a pooled candidate set (``size_aware=True``); for ordinary
+    objects it correlates with s_icp and just adds noise.
 
 Feature convention: PointFeatures.feats fused as [vis | geo] halves. If a
 runner sweeps visual weights by rescaling the vis half, it should pass the
@@ -83,10 +59,9 @@ class ChampionScorer:
     Either needs the coarse pose in the breakdown (``R_coarse``/``t_coarse`` —
     set ICPRefiner(keep_coarse=True)); a missing coarse pose is a loud error,
     never a silent skip. With BOTH off the scorer is byte-identical to before
-    (``s_icp * s_feat_1 * metric_fit``). S_coarse HELPS YCB-V (+2.5 in replay)
-    but HURTS LM-O (-1.9): the 26-rule ablation shows rules do not transfer, so
-    this is a per-DATASET switch (make_correspondence_pipeline / bop_eval), not a
-    hard-coded default — the first formal carrier of a per-dataset rule."""
+    (``s_icp * s_feat_1 * metric_fit``). Whether ``use_s_coarse`` helps is
+    dataset-dependent, so it is a per-dataset switch
+    (make_correspondence_pipeline / bop_eval), not a hard-coded default."""
 
     def __init__(self, tau_inlier_frac: float = 0.03, size_thr: float = 0.0075,
                  size_aware: bool = False, compute_s_coarse: bool = False,

@@ -4,15 +4,9 @@ FreeZe's geometric branch is GeDi, but nothing in the pipeline requires it: the
 encoders only ever call ``descriptor.compute(pts, pcd)`` (see
 ``popoe.interfaces.PointDescriptor``). Descriptors that are NOT part of the
 FreeZe recipe live here rather than in ``popoe.freeze`` — starting with FPFH,
-the classical control the reproduction study was missing.
-
-Why FPFH is worth a module: the study's only geometric-backbone comparison was
-GeDi vs dGeDi (-16.6 pt on LM-O), i.e. GeDi beating a *weaker learned*
-descriptor. That does not establish that a learned descriptor is needed at all.
-FPFH (Rusu et al., ICRA 2009) is the standard hand-crafted control — no
-training, no GPU, Open3D built-in — and either outcome is publishable: a wide
-GeDi win justifies the learned branch, while a near-tie reframes the geometric
-branch as a swappable commodity.
+the standard hand-crafted control (Rusu et al., ICRA 2009): no training, no
+GPU, Open3D built-in. Comparing GeDi only against a weaker learned descriptor
+(dGeDi) does not establish that a learned descriptor is needed at all.
 
 **Scale convention** (get this wrong and the comparison is meaningless): both
 call sites hand the descriptor points already scaled by the ``CanonFrame``, so
@@ -70,9 +64,9 @@ class FPFHDescriptor:
     cap binds the effective radius silently shrinks — and it binds hard at
     these densities (a 3k-point query cloud has ~272/482 neighbours at r=0.3/
     0.4; a 20k-point masked depth cloud has ~1772/3166). Raising the cap
-    instead is not an option: measured two-scale FPFH on a 20k cloud costs
-    0.2 s at cap 100, 4.3 s at 1000 and 48.8 s at 4000, per detection. So the
-    support cloud is voxel-downsampled to a radius-relative resolution first.
+    instead is not an option: two-scale FPFH cost on a dense cloud grows
+    steeply with the cap. So the support cloud is voxel-downsampled to a
+    radius-relative resolution first.
     That (a) keeps the cap from binding, so the RADIUS defines the support as
     it does for GeDi, (b) makes the neighbourhood independent of how near or
     dense the object happened to be — which GeDi gets for free by sampling a
@@ -178,8 +172,8 @@ class FPFHDescriptor:
         Both live call sites know their role and pass it to `compute()`.
 
         Without a role this falls back to a DISTANCE heuristic, and that
-        fallback has a genuinely ambiguous band. Three candidate rules were
-        measured and none separates the cases cleanly:
+        fallback has a genuinely ambiguous band. Three candidate rules, none
+        of which separates the cases cleanly:
 
           rule                      centred CAD   corner-origin CAD   depth @2.4 extents
           origin inside AABB            CAD            depth (X)          depth

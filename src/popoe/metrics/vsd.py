@@ -245,8 +245,8 @@ def compute_ar_vsd(csv_path, bop_root, models_eval_dir=None):
         print(f"{obj_id:<5}{len(arr):<5}{ar:<10.4f}")
 
     # PRIMARY: flat aggregation over all annotated instances (BOP official).
-    # The former equal-weight-per-object mean under-reported 0.5-0.9 pt;
-    # flat matches the BOP server to 0.03 pt (see metrics/aggregate.py).
+    # Equal-weight-per-object mean under-reports vs the BOP server
+    # (see metrics/aggregate.py).
     # M3 call-site: headline MUST use flat_ar_vsd (tested).
     all_errs = np.concatenate(
         [np.array(errs_per_obj[o]) for o in sorted(errs_per_obj.keys())], axis=0)

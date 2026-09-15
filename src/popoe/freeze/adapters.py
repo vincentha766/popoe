@@ -29,16 +29,15 @@ def sample_query_surface(mesh_path: str, n_points: int, seed: int) -> np.ndarray
     (popoe.cache.CONDITIONAL_ENC_KEYS), so switching it invalidates query
     features instead of silently reusing them.
 
-    - ``even`` (default; every published number ran under it):
-      ``trimesh.sample.sample_surface_even`` — rejection-based, approximately
-      even. Measured 2026-08-10 on six YCB-V meshes at N=5000: returns the full
-      count, but minimum nearest-neighbour spacing is 22% below the poisson arm.
+    - ``even`` (default): ``trimesh.sample.sample_surface_even`` —
+      rejection-based, approximately even. Returns the requested count;
+      minimum nearest-neighbour spacing is looser than the poisson arm.
     - ``poisson``: Open3D's Yuksel-2015 sample elimination (blue noise, minimum
       inter-point distance). FreeZeV2 Sec. III-D cites Bridson 2007 [77], which
       is a VOLUMETRIC dart-throwing algorithm — there is no unique way to *be*
       it on a mesh surface, so this satisfies the property the paper states
-      rather than being the cited algorithm. Isolation arm D20 only; it is NOT
-      the mainline recipe and must not be described as "implementing [77]".
+      rather than being the cited algorithm. Opt-in only; it is NOT the
+      mainline recipe and must not be described as "implementing [77]".
     """
     import os
     sampler = os.environ.get("POPOE_QUERY_SAMPLER", "even")
@@ -50,7 +49,7 @@ def sample_query_surface(mesh_path: str, n_points: int, seed: int) -> np.ndarray
     if sampler == "poisson":
         import open3d as o3d
         # Open3D's poisson sampler draws from a PROCESS-GLOBAL RNG: two calls
-        # without reseeding return different clouds (measured). trimesh takes a
+        # without reseeding return different clouds. trimesh takes a
         # per-call seed; copying that shape here would leave a silently
         # non-reproducible arm, so reseed immediately before each sample.
         o3d.utility.random.seed(int(seed))

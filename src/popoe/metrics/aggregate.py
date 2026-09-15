@@ -3,13 +3,11 @@
 BOP defines recall as the fraction of *annotated object instances* that are
 correct, so every instance carries equal weight and each object contributes in
 proportion to its instance count. Averaging per-object recalls with equal
-weight per OBJECT (popoe's former behaviour) systematically under-reports:
-0.5-0.9 pt on LM-O / YCB-V, while the flat calibre matches the BOP evaluation
-server to 0.03 pt.
+weight per OBJECT (popoe's former behaviour) systematically under-reports
+relative to the BOP evaluation server. The flat calibre is the official one.
 
 `metrics/ar.py` and `metrics/vsd.py` report the flat numbers as their primary
-output and keep the per-object means as clearly-labelled secondary output, for
-reconciling against historical (pre-fix) records.
+output and keep the per-object means as clearly-labelled secondary output.
 
 These helpers are pure numpy so they can be unit-tested and re-run over
 persisted error tensors (e.g. `<csv>.vsd_errs.npz`) without bop_toolkit or a

@@ -16,8 +16,7 @@ paper-side flags are set:
   * ChampionScorer (icp * s_feat_1, size-aware for pooled confusable pairs);
   * label pooling for confusable same-shape pairs (YCB-V clamps 19/20).
 
-This is configuration, not a published AR. Do not cite campaign figures
-from git history of REPRODUCTION.md as the project's public result.
+These are recipe defaults, not a published score.
 
 Mask-stage ``size_select`` is opt-in via
 ``best_segmentor(..., size_select=...)``. Formal defaults keep
@@ -55,8 +54,8 @@ def scale_vis(feats: np.ndarray, w: float,
     Extracting once and rescaling reproduces any weight exactly.
 
     The split is `vis_dim` wide, NOT necessarily half. `feats.shape[1] // 2` is
-    right only while the visual branch is geo-matched — the default, and what
-    every published number ran under (64-D GeDi -> 64-D visual -> 128-D fused).
+    right only while the visual branch is geo-matched — the default
+    (64-D GeDi -> 64-D visual -> 128-D fused).
     Set `POPOE_VIS_DIM` to anything else and the halves stop being equal: 1536-D
     visual against 64-D GeDi fuses to 1600-D, where `// 2` puts the boundary at
     800 and a weight sweep would scale 800 of the 1536 visual channels and leave
@@ -255,26 +254,13 @@ def solver_provenance(name: str, seed: int | None,
     if effective is None:
         return (f"solver={name} seed=None (UNSEEDED — Open3D's global RNG is "
                 f"never seeded, so poses vary run-to-run){extra}")
-    # "seeded", not "deterministic". Measured 2026-07-28 on o3d: the same
-    # commit, the same seed and the same config, re-run, still moved 94/1445
-    # LM-O rows and 262/4123 YCB-V rows (Open3D's parallel reduction order is
-    # not fixed by a seed). Whether the gpu solvers are bit-reproducible has
-    # NOT been measured, so the word here is the weaker one for every solver
-    # rather than a claim that happens to be checked for one of them.
-    #
-    # 2026-08-04: those 6.5% / 6.4% figures PRE-DATE --render-rerank. Re-measured
-    # WITH the reranker (LM-O --objs 1, same machine, same warm cache, serial,
-    # same seed, back-to-back): 75/175 targets = 43% move by >0.1mm or >0.1deg.
-    # Do NOT use the 2026-07-28 numbers as an acceptance floor for a
-    # rerank-enabled run — comparing against them reads any rerun as a behaviour
-    # change. AR is the stable quantity: the same three runs land within 0.20 pt
-    # (0.7814 / 0.7820 / 0.7834), matching the seed-variance finding that this
-    # pipeline moves many rows by amounts far below the MSSD threshold band.
-    #
-    # The distinction is not pedantry: provenance that reads "deterministic"
-    # licenses treating a 0.0x pt difference between two runs as signal, and
-    # this project has already spent a GPU run re-deriving a noise floor that
-    # such a claim would have hidden.
+    # "seeded", not "deterministic". Open3D's parallel reduction order is not
+    # fixed by a seed, so the same commit, seed, and config still move many
+    # rows by amounts far below the MSSD threshold band. GPU solvers have not
+    # been shown to be bit-reproducible either, so the weaker word applies to
+    # every solver rather than a claim checked for one of them. Provenance
+    # that reads "deterministic" licenses treating a tiny between-run
+    # difference as signal.
     return f"solver={name} seed={effective} (seeded){extra}"
 
 

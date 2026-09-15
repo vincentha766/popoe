@@ -3,10 +3,7 @@
 Every stage output is stored under a key that fingerprints (a) the stage's
 CONFIGURATION and (b) the CONTENT of its inputs — so a rerun with the same
 config reuses results automatically, and changing any upstream knob
-invalidates exactly the entries it should. Measured payoff in the
-reproduction study: feature extraction skipped entirely on reruns
-(registration-only iterations), selection-rule changes with zero GPU, and
-the whole obj8/obj21 investigation ran offline from caches.
+invalidates exactly the entries it should.
 
 Two invariants (see ARCHITECTURE.md, Stage caching):
 

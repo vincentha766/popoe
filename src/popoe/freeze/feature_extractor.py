@@ -201,17 +201,15 @@ SHADING_FLAT = "flat"             # no colour at all (T-LESS models_cad, ITODD)
 def resolve_mesh_shading(mesh) -> str:
     """Which colour source a query mesh actually carries.
 
-    Until 2026-07-28 the dispatch asked only `uv is not None and image is not
-    None`, so a mesh whose colour lives in `property uchar red/green/blue` —
-    which is how BOP ships LM-O, TUD-L, IC-BIN and HB — was classified as
-    untextured and rendered as flat beige Lambertian. The DINOv2 half of every
-    query feature for those datasets was therefore computed on a colourless
-    image while the target half saw real RGB photographs.
+    Default ``auto`` also honours vertex/face colours. Asking only
+    ``uv is not None and image is not None`` classifies meshes whose colour
+    lives in ``property uchar red/green/blue`` (how BOP ships LM-O, TUD-L,
+    IC-BIN and HB) as untextured, so the DINOv2 query half is computed on a
+    colourless render while the target half sees real RGB photographs.
 
-    POPOE_MESH_SHADING=uv-only restores that behaviour. It exists so the A/B
-    that prices this fix can run both arms at ONE commit, and because it
-    reproduces the pre-fix cache keys byte for byte (see
-    mesh_shading_key_parts), so the old arm still hits the campaign cache.
+    ``POPOE_MESH_SHADING=uv-only`` restores that UV-atlas-only dispatch. It
+    exists so both arms can run at one commit, and because it reproduces the
+    pre-fix cache keys byte for byte (see mesh_shading_key_parts).
     """
     vis = getattr(mesh, "visual", None)
     if vis is None:
@@ -561,7 +559,7 @@ class QueryFeatureExtractor:
         # the v axis must be flipped. Without this, YCB-V textured renders come
         # out vertically mirrored — text upside-down and UVs bleeding into the
         # unused (black) half of the 4096² atlas. LMO meshes are untextured so
-        # they take the Lambertian path and never hit this (bug found 2026-07-06).
+        # they take the Lambertian path and never hit this.
         uvs_np = uvs_np.copy()
         uvs_np[:, 1] = 1.0 - uvs_np[:, 1]
         uv_t = torch.from_numpy(uvs_np).unsqueeze(0).to(self.device)  # (1, V, 2)

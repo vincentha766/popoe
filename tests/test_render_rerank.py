@@ -117,7 +117,7 @@ def test_champion_is_re_icped_too(monkeypatch):
     Re-ICP'ing only the flipped variants left them with a fitness from a second
     ICP pass while the champion kept the first one — and s_icp reaches
     ChampionScorer as a multiplicative factor, so flips won on measurement
-    asymmetry alone (LM-O AR(2/3) 0.77 -> 0.25 on the 2026-07-30 two-line runs).
+    asymmetry alone.
     Here the champion WINS the appearance vote, and re-ICP must still have run.
     """
     q, t, scene, obj = _icp_scene()

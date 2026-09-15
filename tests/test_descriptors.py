@@ -108,8 +108,7 @@ def test_downsampling_keeps_the_radius_binding_not_the_cap():
 @pytest.mark.parametrize("radii", [(0.3, 0.4), (0.25, 0.5), (0.2, 0.6)])
 def test_cap_never_binds_across_radius_ratios(radii):
     """The voxel is sized off the LARGEST radius. Sizing it off the smallest
-    left the coarse scale free to blow past the cap — measured 1559 and 3221
-    against a cap of 1000 for (0.25,0.5) and (0.2,0.6) — which silently
+    left the coarse scale free to blow past the cap, which silently
     restores the nearest-max_nn truncation the downsampling exists to remove.
     Radii are a swept knob, so this has to hold for any ratio, not just the
     default."""
