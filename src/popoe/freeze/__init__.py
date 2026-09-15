@@ -10,6 +10,8 @@ package, not inside it.
 This __init__ only re-exports the LIGHT pieces (numpy / scikit-learn).
 `popoe.freeze.feature_extractor` imports torch and GeDi and must be imported
 explicitly; `popoe.freeze.recipes.best_encoders()` pulls it in lazily.
+`make_correspondence_pipeline` is the correspondence-graph factory and does
+not import those models until the caller passes encoders from `best_encoders`.
 """
 from popoe.freeze.fusion import DinoGeDiFusion
 from popoe.freeze.adapters import (

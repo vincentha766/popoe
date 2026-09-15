@@ -40,9 +40,9 @@ figures from git history of that file.
 
 `examples/solver_swap_demo.py` is a GPU solver comparison on **ground-truth
 instances**. It does not read detection files and is not the BOP eval loop.
-The library entry is `PoseMethod.run(scene, obj)`. `popoe.Pipeline` is the
-correspondence-graph method (segment → encode → solve → …);
-`DirectPoseMethod` is the estimator-graph method (e.g. SAM-6D PEM).
+The library entry is `PoseMethod.run(scene, obj)`. Build the correspondence
+graph with `popoe.freeze.recipes.make_correspondence_pipeline` (returns a
+`Pipeline`); `DirectPoseMethod` is the estimator-graph method (e.g. SAM-6D PEM).
 `examples/bop_eval.py` writes BOP CSVs (cache, weight sweep, resume,
 multi-instance). `scripts/` holds offline A/B helpers, not onboarding.
 
@@ -199,9 +199,10 @@ class MySolver:  # satisfies popoe.PoseSolver structurally
 ```
 
 A new **method** implements `PoseMethod.run`. A new **stage** (for example a
-solver) drops into the correspondence graph (`popoe.Pipeline`) or an
-estimator graph (`DirectPoseMethod`) without a registry. The BOP CSV loop
-is `examples/bop_eval.py` (see [Minimal BOP eval](#minimal-bop-eval)).
+solver) drops into the correspondence graph
+(`make_correspondence_pipeline` → `Pipeline`) or an estimator graph
+(`DirectPoseMethod`) without a registry. The BOP CSV loop is
+`examples/bop_eval.py` (see [Minimal BOP eval](#minimal-bop-eval)).
 The shipped solvers
 (`popoe.solvers.Open3DFeatureRansacSolver`, `popoe.solvers.GPURansacSolver`,
 and `popoe.solvers.TeaserSolver`) are worked examples.

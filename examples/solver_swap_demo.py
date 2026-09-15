@@ -1,8 +1,10 @@
-"""Pluggability demo — same encoders/refiner/scorer, different PoseSolver.
+"""Pluggability demo — one correspondence Pipeline, different PoseSolver.
 
-    solver = Open3DFeatureRansacSolver(n_restarts=1)
-    solver = Open3DFeatureRansacSolver(n_restarts=8)
-    solver = GPURansacSolver()
+Same query/target features, refiner, and scorer. Only ``pipe.solver`` changes:
+
+    pipe.solver = Open3DFeatureRansacSolver(n_restarts=1)
+    pipe.solver = Open3DFeatureRansacSolver(n_restarts=8)
+    pipe.solver = GPURansacSolver()
 
 Needs bop_toolkit (`POPOE_BOP_TOOLKIT`). Pass --seed for a reproducible o3d run.
 
@@ -15,10 +17,8 @@ import os
 
 import numpy as np
 
-from popoe import Scene, ObjectModel, Detection, PointFeatures
-from popoe.adapters import ICPRefiner, best_hyp
-from popoe.freeze.recipes import best_encoders
-from popoe.scoring import ChampionScorer
+from popoe import Detection, ObjectModel, Scene
+from popoe.freeze.recipes import best_encoders, make_correspondence_pipeline
 from popoe.solvers import GPURansacSolver, Open3DFeatureRansacSolver
 from popoe.datasets.bop import find_instances, load_inputs, load_gt
 
@@ -51,12 +51,33 @@ def pose_err(R, t_m, R_gt, t_gt_mm, pts, syms):
     return mssd, float(np.degrees(np.arccos(np.clip(cos, -1.0, 1.0)))), dt
 
 
-def run_chain(solver, refiner, scorer, q, t, scene, obj):
-    hyps = solver.solve(q, t)
-    if not hyps:
-        return None
-    cands = [scorer.score(refiner.refine(h, scene, obj, q, t), q, t) for h in hyps]
-    return best_hyp(cands)
+class _GtMaskSegmentor:
+    """One GT mask as a Detection — this demo is not a detections eval."""
+
+    def __init__(self, mask):
+        self.mask = mask
+
+    def segment(self, scene, obj):
+        del scene, obj
+        return [Detection(mask=self.mask, score=1.0)]
+
+
+class _FixedQuery:
+    def __init__(self, q):
+        self._q = q
+
+    def encode_query(self, obj):
+        del obj
+        return self._q
+
+
+class _FixedTarget:
+    def __init__(self, t):
+        self._t = t
+
+    def encode_target(self, scene, det, obj, frame):
+        del scene, det, obj, frame
+        return self._t
 
 
 def main():
@@ -79,8 +100,13 @@ def main():
     obj = ObjectModel(obj_id=args.obj, mesh_path=mesh_path, diameter=diameter / 1000.0)
     q = qenc.encode_query(obj)
     frame = q.meta["canon_frame"]
-    tau = 0.03 * (1.0 / frame.scale)
-    refiner, scorer = ICPRefiner(tau_icp=tau), ChampionScorer(tau_abs=tau)
+    extent_m = 1.0 / frame.scale
+    tau = 0.03 * extent_m
+    pipe = make_correspondence_pipeline(
+        _GtMaskSegmentor(np.zeros((1, 1), dtype=bool)),
+        _FixedQuery(q), _FixedTarget(q), extent_m,
+        tau_basis_m=extent_m, seed=args.seed, topk=1,
+    )
     solvers = {
         "open3d_1shot": Open3DFeatureRansacSolver(tau_inlier=tau, n_restarts=1,
                                                   seed=args.seed),
@@ -103,9 +129,13 @@ def main():
         R_gt, t_gt = load_gt(args.bop, s_id, im_id, gi)
         scene = Scene(rgb=rgb, depth=depth, K=K, scene_id=s_id, im_id=im_id)
         t = tenc.encode_target(scene, Detection(mask=mask, score=1.0), obj, frame)
+        pipe.segmentor = _GtMaskSegmentor(mask)
+        pipe.query_encoder = _FixedQuery(q)
+        pipe.target_encoder = _FixedTarget(t)
         row = {}
         for name, solver in solvers.items():
-            best = run_chain(solver, refiner, scorer, q, t, scene, obj)
+            pipe.solver = solver
+            best = pipe.run(scene, obj)
             row[name] = None if best is None else pose_err(
                 best.R, best.t, R_gt, t_gt, pts_eval, syms)
             if row[name]:
@@ -126,7 +156,7 @@ def main():
         if errs:
             print(f"  {name:>16}: median rot {np.median([e[1] for e in errs]):6.2f}deg  "
                   f"trans {np.median([e[2] for e in errs]):7.1f}mm")
-    print("\nPluggability: three PoseSolver implementations, one pipeline.")
+    print("\nPluggability: three PoseSolver implementations, one Pipeline.")
 
 
 if __name__ == "__main__":

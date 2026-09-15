@@ -4,7 +4,11 @@ Solver CONSTRUCTION is dep-light (torch/open3d/teaserpp import lazily inside
 """
 import pytest
 
-from popoe.freeze.recipes import stages_for_object
+import numpy as np
+
+import popoe
+from popoe import Detection, ObjectModel, PointFeatures, PoseHypothesis, Scene
+from popoe.freeze.recipes import make_correspondence_pipeline, stages_for_object
 from popoe.solvers import GPURansacSolver, Open3DFeatureRansacSolver, TeaserSolver
 
 
@@ -128,3 +132,55 @@ def test_solver_gets_object_scaled_tau():
     from popoe.freeze.recipes import TAU_FRAC
     solver, _, _ = stages_for_object(0.2, solver="gpu")
     assert solver.tau_inlier == pytest.approx(TAU_FRAC * 0.2)
+
+
+def test_make_correspondence_pipeline_is_a_pose_method():
+    class _Seg:
+        def segment(self, scene, obj):
+            return [Detection(np.ones((4, 4), bool), 0.9)]
+
+    class _Q:
+        def encode_query(self, obj):
+            from popoe import CanonFrame
+            return PointFeatures(np.zeros((6, 3), np.float32),
+                                 np.ones((6, 4), np.float32),
+                                 meta={"canon_frame": CanonFrame(3.0)})
+
+    class _T:
+        def encode_target(self, scene, det, obj, frame):
+            return PointFeatures(np.zeros((6, 3), np.float32),
+                                 np.ones((6, 4), np.float32))
+
+    class _Solver:
+        def solve(self, q, t, frame=None):
+            return [PoseHypothesis(np.eye(3), np.zeros(3), 0.5)]
+
+    pipe = make_correspondence_pipeline(_Seg(), _Q(), _T(), 0.1, topk=1)
+    assert isinstance(pipe, popoe.PoseMethod)
+    assert isinstance(pipe, popoe.Pipeline)
+    assert isinstance(pipe.solver, Open3DFeatureRansacSolver)
+    assert pipe.scorer is not None
+    assert len(pipe.refiners) == 1
+
+    class _Pass:
+        def refine(self, pose, scene, obj, query, target):
+            return pose
+
+    class _Score:
+        def score(self, pose, query, target):
+            return pose
+
+    pipe.solver = _Solver()
+    pipe.refiners = [_Pass()]
+    pipe.scorer = _Score()
+    scene = Scene(np.zeros((4, 4, 3), np.uint8), np.ones((4, 4), np.float32),
+                  np.eye(3))
+    hyp = pipe.run(scene, ObjectModel(1, "a.ply", 0.1))
+    assert hyp is not None
+    assert np.allclose(hyp.R, np.eye(3))
+
+
+def test_make_correspondence_pipeline_unwraps_rerank_chain():
+    pipe = make_correspondence_pipeline(
+        object(), object(), object(), 0.1, render_rerank=True)
+    assert len(pipe.refiners) == 2

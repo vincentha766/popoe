@@ -42,11 +42,12 @@ Scene, ObjectModel ─ (Segmentor?) ─ CoarseEstimator ─ Selector ─ (R, t)
 | Select | function | `adapters.best_hyp` / `select_top_instances` |
 | Metrics | scripts | `metrics.vsd`, `metrics.ar` |
 
-The library entry is `PoseMethod.run`. `Pipeline` is the correspondence-graph
-implementation; `DirectPoseMethod` is the estimator-graph implementation
-(e.g. SAM-6D PEM files). The evaluated BOP loop is `examples/bop_eval.py`
-(cache, weight sweep, multi-instance, resume) and still drives the
-correspondence graph directly. Default eval flags are the tuned Open3D
+The library entry is `PoseMethod.run`. `make_correspondence_pipeline` in
+`popoe.freeze.recipes` returns a `Pipeline` (correspondence graph);
+`DirectPoseMethod` is the estimator-graph implementation (e.g. SAM-6D PEM
+files). The evaluated BOP loop is `examples/bop_eval.py` (cache, weight
+sweep, multi-instance, resume) and still drives the correspondence graph
+via `stages_for_object` directly. Default eval flags are the tuned Open3D
 identity, not a paper-faithful freeze — see
 [README.md](README.md#minimal-bop-eval). There is no published AR on this
 path ([REPRODUCTION.md](REPRODUCTION.md)).

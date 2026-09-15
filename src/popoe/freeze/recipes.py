@@ -1,7 +1,10 @@
 """popoe.recipes — default stage configurations, in one place.
 
-``best_encoders`` / ``stages_for_object`` wire the tuned Open3D identity
-used by ``examples/bop_eval.py`` when no paper-side flags are set:
+``make_correspondence_pipeline`` is the public factory: it returns a
+``Pipeline`` (a ``PoseMethod``) for the correspondence graph. Internally it
+calls ``best_encoders`` / ``stages_for_object``, which still wire the tuned
+Open3D identity used by ``examples/bop_eval.py`` when no paper-side flags
+are set:
 
   * DINOv2 ViT-g intermediate layer (FoundPose depth ratio) + object crop;
   * two-scale GeDi (30% + 40% of diameter, 64-D geometric);
@@ -370,3 +373,42 @@ def stages_for_object(extent_m: float, size_aware: bool = False,
                             # v2.1 render-vs-input component.
                             use_render_score=render_score)
     return solver, refiner, scorer
+
+
+def _as_refiners(refiner):
+    """``stages_for_object`` returns one refine() object; ``Pipeline`` wants a
+    sequence. Unwrap ``_RefinerChain`` without changing refine order."""
+    if isinstance(refiner, _RefinerChain):
+        return list(refiner.refiners)
+    return [refiner]
+
+
+def make_correspondence_pipeline(segmentor, query_encoder, target_encoder,
+                                 extent_m: float, *, topk: int = 2,
+                                 **stage_kw):
+    """Correspondence-graph ``PoseMethod`` at the tuned Open3D identity.
+
+    ``segmentor`` / encoders are the caller's; this function only wires
+    solver, refiners, scorer, and selector via ``stages_for_object``.
+    ``extent_m`` is the same basis that function uses (sampled query
+    extent, or a BOP diameter when ``tau_basis_m`` is passed in
+    ``stage_kw``). Extra keywords go to ``stages_for_object``
+    (``solver``, ``seed``, ``eq5_terms``, …).
+
+    Construction does not load DINOv2 / GeDi — pass encoders from
+    ``best_encoders()`` when you need the reference features.
+    """
+    from popoe.adapters import BestScoreSelector
+    from popoe.interfaces import Pipeline
+
+    solver, refiner, scorer = stages_for_object(extent_m, **stage_kw)
+    return Pipeline(
+        segmentor=segmentor,
+        query_encoder=query_encoder,
+        target_encoder=target_encoder,
+        solver=solver,
+        refiners=_as_refiners(refiner),
+        selector=BestScoreSelector(),
+        scorer=scorer,
+        topk=topk,
+    )
