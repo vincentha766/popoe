@@ -83,7 +83,7 @@ class FreeZeQueryEncoder:
         self.n_points = n_points
         # Deterministic surface sampling by default (seed = obj_id): unseeded
         # sampling makes query features differ per RUN, which compounds with
-        # solver stochasticity into run-to-run AR variance (see ISSUES.md).
+        # solver stochasticity into run-to-run AR variance.
         self.seed = seed
 
     @property
@@ -135,8 +135,6 @@ class FreeZeTargetEncoder:
         projected in a basis fitted from TARGET data while the cached query
         features live in the query basis. Cosines are then compared across two
         unrelated bases: no exception, no warning, just scrambled similarity.
-        That is the PCA-basis incoherence ISSUES.md root-caused (measured AR
-        0.16-0.25 vs 0.79-0.85 on YCB-V obj8), arriving through a second door.
 
         The live caller is an incomplete cache entry — query arrays present, PCA
         sidecar missing (examples/bop_eval.py). A degenerate query whose PCA

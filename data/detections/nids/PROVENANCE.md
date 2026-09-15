@@ -1,6 +1,6 @@
 # Official NIDS-Net_WA_Sappe detections (source tag: `nids`)
 
-BOP `method_info/601`, task "Model-based 2D segmentation of unseen objects". Single batch 2024-05-27 (8980–8986) — all seven sets are segmentation; no mixed-task trap here. Download each submission from the `sub_info` page ("Download submission") and save as `nids_wa_sappe_<ds>.json` in this directory. The UT Dallas Box dump linked from [`IRVLUTD/NIDS-Net`](https://github.com/IRVLUTD/NIDS-Net) is the same WA_Sappe variant; hashes below are the identity that popoe recipes pin.
+BOP `method_info/601`, task "Model-based 2D segmentation of unseen objects". Download each submission from the `sub_info` page ("Download submission") and save as `nids_wa_sappe_<ds>.json` in this directory. The UT Dallas Box dump linked from [`IRVLUTD/NIDS-Net`](https://github.com/IRVLUTD/NIDS-Net) is the same WA_Sappe variant; hashes below are the identity that popoe pins.
 
 | Dataset | BOP submission | Records | SHA256 |
 |---|---|---|---|

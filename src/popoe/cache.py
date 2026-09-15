@@ -8,7 +8,7 @@ reproduction study: feature extraction skipped entirely on reruns
 (registration-only iterations), selection-rule changes with zero GPU, and
 the whole obj8/obj21 investigation ran offline from caches.
 
-Two invariants, both learned the hard way (see ISSUES.md):
+Two invariants (see ARCHITECTURE.md, Stage caching):
 
 1. **Fitted state is part of the key.** Anything FIT during a stage (the
    visual PCA, normalisation stats) makes downstream outputs functions of

@@ -61,8 +61,7 @@ def scale_vis(feats: np.ndarray, w: float,
     visual against 64-D GeDi fuses to 1600-D, where `// 2` puts the boundary at
     800 and a weight sweep would scale 800 of the 1536 visual channels and leave
     the other 736 at w=1 — a sweep silently running a different weighting than
-    its label says, the same shape as the "w=1 was never w=1" defect
-    (ISSUES.md).
+    its label says.
 
     `vis_dim=None` keeps the historical equal-halves answer, so no existing
     caller changes behaviour. The split is NOT inferred from `POPOE_VIS_DIM`:

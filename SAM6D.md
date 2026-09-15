@@ -1,11 +1,10 @@
-# SAM-6D Deployment Notes
+# SAM-6D
 
 SAM-6D is an external producer for popoe. The official code is pinned as a submodule at `external/SAM-6D`:
 
 ```bash
 git submodule update --init --recursive external/SAM-6D
 git -C external/SAM-6D rev-parse HEAD
-# 1c2543b3b6faa1f1d81b3c7291f8b371d71e50c2
 ```
 
 Keep this checkout as source provenance and run it in a separate environment or service. popoe consumes files written by SAM-6D; it does not import the official package.
@@ -27,7 +26,7 @@ ISM detections carry only 2D masks, labels, scores and boxes. Depth stays with `
 
 ## Environment
 
-The official SAM-6D README reports Python 3.9.6, PyTorch 2.0.0 and CUDA 11.3 for both ISM and PEM. Treat that as incompatible with the lighter popoe env. On a single 4090, serial execution is the normal shape: run ISM/PEM, let that process exit and release GPU memory, then run popoe.
+The official SAM-6D stack is heavier than popoe. On a single GPU, serial execution is the normal shape: run ISM/PEM, let that process exit and release GPU memory, then run popoe.
 
 ```bash
 export POPOE_SAM6D_PATH=/path/to/SAM-6D       # or this repo's external/SAM-6D
@@ -119,7 +118,7 @@ hyp = method.run(scene, obj)
 # )
 ```
 
-## Real Scene Mode
+## Real scene mode
 
 The official custom demo can write:
 

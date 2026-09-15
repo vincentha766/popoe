@@ -1,25 +1,24 @@
-# CNOS Deployment Notes
+# CNOS
 
-CNOS has two source names in popoe, and they are part of the contract:
+CNOS has two source names in popoe:
 
 | Source | Meaning |
 |--------|---------|
 | `cnos` | Official CNOS/CNOS-FastSAM producer, including public BOP default detections |
-| `cnos-lab` | Local lab recipe (formerly `cnos-v3`): proposal masks -> depth size gate -> DINOv2 foreground-patch rank |
+| `cnos-lab` | Local recipe: proposal masks → depth size gate → DINOv2 foreground-patch rank |
 
-Do not write local lab outputs with `source="cnos"`. Official BOP detections keep the public `cnos` name.
+Do not write local outputs with `source="cnos"`. Official BOP detections keep the public `cnos` name.
 
-## Official Source
+## Official source
 
 The official `nv-nguyen/cnos` source is pinned as a submodule at `external/cnos`:
 
 ```bash
 git submodule update --init --recursive external/cnos
 git -C external/cnos rev-parse HEAD
-# 298d1f3366171464ca271659f0e2f7a6eb8e39b4
 ```
 
-Use this checkout for source provenance and external deployment. popoe consumes the detections JSON it writes; it does not import the official package.
+Use this checkout for source provenance. popoe consumes the detections JSON it writes; it does not import the official package.
 
 ## Boundary
 
@@ -44,7 +43,7 @@ export POPOE_CNOS_PYTHON=/path/to/envs/cnos/bin/python
 
 For source-pinned local development, the default path is `external/cnos`.
 
-## BOP Mode
+## BOP mode
 
 Prefer public BOP/CNOS detections when available:
 
@@ -83,13 +82,13 @@ cd external/cnos && CUDA_VISIBLE_DEVICES=0 python run_inference.py \
   dataset_name=lmo model=cnos_fast model.onboarding_config.rendering_type=pbr
 ```
 
-The official repo writes BOP-style predictions under its configured Hydra log directory, with filenames based on the segmentor, template rendering type, aggregation function and dataset. Once a JSON exists, validate it without loading the official environment:
+The official repo writes BOP-style predictions under its configured Hydra log directory. Once a JSON exists, validate it without loading the official environment:
 
 ```bash
 popoe-cnos check --input data/detections/cnos/cnos-fastsam_lmo-test.json
 ```
 
-## Custom CAD/RGB Mode
+## Custom CAD/RGB mode
 
 The official custom flow is two commands: render templates from a CAD model, then run inference on an RGB image.
 
@@ -114,13 +113,7 @@ OUTPUT_DIR/cnos_results/detection.json
 OUTPUT_DIR/cnos_results/vis.png
 ```
 
-Official custom output uses placeholder BOP ids. Upstream `inference_custom.py` writes `object_ids = 0` and `save_to_file(..., "custom")` stores `category_id = object_ids + 1`, so the raw JSON is typically:
-
-```text
-scene_id=0, image_id=0, category_id=1
-```
-
-Stamp it to the frame/object you are going to evaluate before using `BOPDetectionsSegmentor(..., source="cnos")` (single-CAD path — preferred):
+Official custom output uses placeholder BOP ids (`scene_id=0`, `image_id=0`, `category_id=1`). Stamp it to the frame/object you are going to evaluate before using `BOPDetectionsSegmentor(..., source="cnos")`:
 
 ```bash
 popoe-cnos adapt-custom \
@@ -142,18 +135,15 @@ popoe-cnos adapt-custom \
   --category-map 1:9
 ```
 
-The adapted JSON keeps `source="cnos"` and can be consumed by `BOPDetectionsSegmentor`. If you run the local lab recipe, write it under a separate path such as `data/detections/cnos_lab/` and keep `source="cnos-lab"`.
+The adapted JSON keeps `source="cnos"` and can be consumed by `BOPDetectionsSegmentor`. If you run the local recipe, write it under a separate path such as `data/detections/cnos_lab/` and keep `source="cnos-lab"`.
 
-## Local CNOS-lab (formerly CNOS-v3)
+## Local CNOS-lab
 
-`popoe.segmentor_cnos_lab.CNOSLabSegmentor` is the local lab recipe: proposal masks are filtered by visible 3D extent from depth, then ranked by DINOv2 foreground-patch similarity to templates. The old name's "v3" was an internal iteration count — renamed because it read as an official CNOS release. Old artifacts with `source="cnos-v3"` mean this recipe.
-
-It is intentionally separate from official CNOS. Use it for real-scene/lab experiments, not for claiming official CNOS benchmark results.
+`popoe.segmentor_cnos_lab.CNOSLabSegmentor` is the local recipe: proposal masks are filtered by visible 3D extent from depth, then ranked by DINOv2 foreground-patch similarity to templates. It is intentionally separate from official CNOS.
 
 ## Checks
 
 - Confirm the official submodule commit before reproducing results.
 - Confirm `source="cnos"` only appears on official/public CNOS files.
-- Confirm local lab outputs use `source="cnos-lab"`.
-- Confirm live lab outputs are `source="cnos-lab"`.
+- Confirm local outputs use `source="cnos-lab"`.
 - Confirm object IDs match the CAD set consumed by popoe.

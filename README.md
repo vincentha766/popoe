@@ -14,8 +14,6 @@ The bundled reference implementation reproduces a FreeZe-v2-style pipeline (DINO
 
 > Status: research code, `v0.1`. The framework layer (contracts + fusion) is covered by tests and runs on CPU. The FreeZe-style reference implementation needs a CUDA GPU, the external models below, a BOP split, and detection JSONs (none of those are in this clone). See [ARCHITECTURE.md](ARCHITECTURE.md) for the design.
 
-There is **no published AR on this path**. [REPRODUCTION.md](REPRODUCTION.md) is a placeholder until one frozen recipe is re-run end to end. Do not cite figures from git history of that file.
-
 ### After a clone
 
 | You want | Install | Also needed | Run |
@@ -24,7 +22,7 @@ There is **no published AR on this path**. [REPRODUCTION.md](REPRODUCTION.md) is
 | Check the clone | `pip install -e ".[dev]"` | — | `pytest tests/` (CPU) |
 | Run 6-DoF on BOP | `pip install -e ".[reference]"` | CUDA, GeDi, **nvdiffrast**, a BOP split, detection JSONs | [`examples/bop_eval.py`](#minimal-bop-eval) |
 
-`examples/solver_swap_demo.py` is a GPU solver comparison on **ground-truth instances**. It does not read detection files and is not the BOP eval loop. The library entry is `PoseMethod.run(scene, obj)`. Build the correspondence graph with `popoe.freeze.recipes.make_correspondence_pipeline` (returns a `Pipeline`); `DirectPoseMethod` is the estimator-graph method (e.g. SAM-6D PEM). `examples/bop_eval.py` writes BOP CSVs (cache, weight sweep, resume, multi-instance) and scores each encoded pair with `correspond_pair`, the same kernel `Pipeline.run` uses after encode. `scripts/` holds offline A/B helpers, not onboarding.
+The library entry is `PoseMethod.run(scene, obj)`. Build the correspondence graph with `popoe.freeze.recipes.make_correspondence_pipeline` (returns a `Pipeline`); `DirectPoseMethod` is the estimator-graph method (for example SAM-6D PEM). `examples/bop_eval.py` writes BOP CSVs and scores each encoded pair with `correspond_pair`, the same kernel `Pipeline.run` uses after encode. `examples/solver_swap_demo.py` ranks the shipped solvers on **ground-truth instances** — it does not read detection files and is not the BOP eval loop.
 
 Some tests import OpenCV / pycocotools. Install `.[reference]` as well if `pytest tests/` should cover those, not only the contract layer.
 
@@ -45,7 +43,7 @@ pytest tests/
 
 ### External dependencies (not on PyPI)
 
-The reference implementation orchestrates external models/toolkits. Clone them yourself and **export the env vars**. Unset, they are empty — there is no lab-host fallback.
+The reference implementation orchestrates external models/toolkits. Clone them yourself and **export the env vars**. Unset, they stay empty — there is no implicit host path.
 
 | Component | Env var | Where it comes from |
 |-----------|---------|---------------------|
@@ -79,11 +77,11 @@ The JSONs under `data/detections/` are **not in git** (large). A clone has empty
 python scripts/freeze_detections.py --check
 ```
 
-Download sources and SHA256s: [CNOS.md](CNOS.md), [NIDS_NET.md](NIDS_NET.md), [SAM6D.md](SAM6D.md), [MUSE.md](MUSE.md), and `data/detections/*/PROVENANCE.md`. Official names (`cnos`, `sam6d`, `nids`, `muse`) are reserved for official artefacts; lab reimplementations write `cnos-lab` / `muse-repro`.
+Download sources and hashes: [CNOS.md](CNOS.md), [NIDS_NET.md](NIDS_NET.md), [SAM6D.md](SAM6D.md), [MUSE.md](MUSE.md), and `data/detections/*/PROVENANCE.md`. Official names (`cnos`, `sam6d`, `nids`, `muse`) are reserved for official artefacts; reimplementations write `cnos-lab` / `muse-repro`.
 
 ## Minimal BOP eval
 
-Defaults are the **tuned Open3D** identity (mask pixel floor 100, IoU dedupe 0.9, tau from the sampled query extent, ICP on the sparse grid cloud). That is **not** a paper-faithful freeze, and the CSV is **not** a number to cite.
+Defaults are the **tuned Open3D** identity (mask pixel floor 100, IoU dedupe 0.9, tau from the sampled query extent, ICP on the sparse grid cloud). That is **not** a paper-faithful freeze.
 
 `--bop` is the dataset root that contains `models/` (T-LESS: `models_cad/`), `test/` or `test_primesense/`, and `test_targets_bop19.json`. T-LESS/HB use the primesense split; ITODD uses `gray/*.tif`. Layouts live in `popoe.datasets.bop.BOP_LAYOUTS`; a wrong root fails rather than writing an all-zero CSV.
 
@@ -96,7 +94,7 @@ python examples/bop_eval.py \
     --cache /path/to/popoe_cache_ycbv
 ```
 
-Pass exactly one of `--detections` (one JSON) or `--sources name=path,...` (named union; FreeZe-style multi-source). Paper-side knobs (`--eq5-terms`, `--tau-diameter`, `--icp-dense`, `--solver gpu-feat`, `--render-rerank`, `--min-mask-pixels 0`, `--mask-iou-dedupe` above 1) are on `--help`. There is no named recipe that pins them into one command.
+Pass exactly one of `--detections` (one JSON) or `--sources name=path,...` (named union). Paper-side knobs (`--eq5-terms`, `--tau-diameter`, `--icp-dense`, `--solver gpu-feat`, `--render-rerank`, `--min-mask-pixels 0`, `--mask-iou-dedupe` above 1) are on `--help`.
 
 Score the CSV with `python -m popoe.metrics.ar` (`POPOE_BOP_TOOLKIT` set). A BOP submission needs one shared per-image time — run `examples/bop_time_normalize.py` first.
 
@@ -151,13 +149,11 @@ dets = SAMSegmentor().segment(scene, obj)   # raises if SAM2 is missing
 dets[0].source     # 'sam2-amg' — survives into the CSV
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md#the-availability-contract-no-hidden-fallbacks) for why (short version: a silent fallback makes results unattributable and poisons the config-addressed cache).
-
-A solver only has to *propose* candidates; `ChampionScorer` *disposes*. So a geometry-only RANSAC can emit several hypotheses (`Open3DFeatureRansacSolver(n_restarts=8)`) and let the existing scorer choose, with no new scoring code. See [ARCHITECTURE.md](ARCHITECTURE.md#pluggability-proven--the-posesolver-stage) for the seam. `examples/solver_swap_demo.py` runs the three shipped solvers on the same encoded pair.
+See [ARCHITECTURE.md](ARCHITECTURE.md#the-availability-contract-no-hidden-fallbacks). A solver only has to *propose* candidates; `ChampionScorer` *disposes*. So a geometry-only RANSAC can emit several hypotheses (`Open3DFeatureRansacSolver(n_restarts=8)`) and let the existing scorer choose, with no new scoring code.
 
 ## Detections (segmentation sources)
 
-The evaluated segmentor consumes **precomputed BOP-format detections**. popoe reads three open sources — CNOS-FastSAM, SAM-6D ISM, and NIDS-Net — under one backend and can **union any subset**, reproducing FreeZe-v2's multi-source segmentation (top-M per source, unioned without cross-source filtering; the feature-aware scorer disposes). Each is just a named file:
+The evaluated segmentor consumes **precomputed BOP-format detections**. popoe reads CNOS-FastSAM, SAM-6D ISM, and NIDS-Net under one backend and can **union any subset** (top-M per source, no cross-source filtering; the feature-aware scorer disposes). Each is just a named file:
 
 ```python
 from popoe.segmentor_detections import BOPDetectionsSegmentor
@@ -175,16 +171,14 @@ dets = seg.segment(scene, obj)                  # dets[i].source -> 'cnos'|'nids
 | **NIDS-Net** | WA_Sappe variant BOP predictions | UT Dallas Box, linked from [`IRVLUTD/NIDS-Net`](https://github.com/IRVLUTD/NIDS-Net) README → "Inference on BOP datasets"; saved as `nids_wa_sappe_{ycbv,lmo}.json` |
 | **SAM-6D ISM** | Instance Segmentation Model masks | No public per-dataset file — run [`JiehongLin/SAM-6D`](https://github.com/JiehongLin/SAM-6D) ISM on the BOP test images (GPU); optional |
 
-Official CNOS, NIDS-Net and SAM-6D are intentionally **external producers**, not popoe dependencies. Their official stacks use heavy and version-pinned segmentation, foundation-model and pose-estimation packages. The source checkouts are pinned under `external/`, but runtime should still happen in separate `uv`/conda projects or services. Export predictions, then consume them here as named files through `BOPDetectionsSegmentor(..., source="cnos")` (or `"nids"` / `"sam6d"`). That keeps `popoe`'s pose backend independent of segmentation-model dependency conflicts while preserving per-detection source provenance through scoring. See [CNOS.md](CNOS.md), [NIDS_NET.md](NIDS_NET.md), and [SAM6D.md](SAM6D.md) for deployment notes and the adapter CLIs.
-
-CNOS naming is deliberately split:
+Official CNOS, NIDS-Net and SAM-6D are **external producers**, not popoe dependencies. Pin the source checkouts under `external/` if you want them, but run them in separate environments. Export predictions, then consume them here as named files through `BOPDetectionsSegmentor(..., source="cnos")` (or `"nids"` / `"sam6d"`). See [CNOS.md](CNOS.md), [NIDS_NET.md](NIDS_NET.md), and [SAM6D.md](SAM6D.md).
 
 | Source | Meaning |
 |--------|---------|
 | `cnos` | Official CNOS/CNOS-FastSAM predictions, public BOP files, or `external/cnos` output |
-| `cnos-lab` | Local lab recipe (formerly `cnos-v3`): proposal masks -> depth size gate -> DINOv2 foreground-patch rank |
+| `cnos-lab` | Local recipe: proposal masks → depth size gate → DINOv2 foreground-patch rank |
 
-The ensemble's fourth member, **MUSE**, publishes **no code**, so it has no external producer to adapt — but its **masks are public for all seven BOP-Classic-Core sets** (BOP `method_info/873`; IDs and SHA256s in [data/detections/muse/PROVENANCE.md](data/detections/muse/PROVENANCE.md)). `popoe.segmentor_muse` is a reimplementation from the paper: a live segmentor that can also dump its masks as a detections JSON, which then unions and evaluates like any other source. It writes `muse-repro`; the name `muse` stays reserved for official artefacts. See [MUSE.md](MUSE.md).
+**MUSE** publishes no code, but its BOP masks are public. `popoe.segmentor_muse` is a reimplementation: a live segmentor that can also dump masks as a detections JSON. It writes `muse-repro`; the name `muse` stays reserved for official artefacts. See [MUSE.md](MUSE.md).
 
 ```bash
 popoe-muse --frame capture/frame_000000.json \
@@ -197,12 +191,9 @@ popoe-bop-muse --bop-root /path/to/ycbv \
   --shard-dir outputs/muse-repro_ycbv-test_shards --resume
 ```
 
-**Format notes.** A detections file is a JSON list of records `{scene_id, image_id, category_id, score, segmentation}` where `segmentation` is a COCO RLE. Real-capture files may use a `mask` or `mask_path` alias instead; these are still 2D masks, never depth. The loader (`load_bop_detections`, alias `load_detections`) handles the format variance seen across these releases without special-casing at the call site:
+A detections file is a JSON list of `{scene_id, image_id, category_id, score, segmentation}` records (`segmentation` is COCO RLE). Real-capture files may use a `mask` or `mask_path` alias instead; these are still 2D masks, never depth. The loader (`load_bop_detections`, alias `load_detections`) coerces stringified fields and both uncompressed and compressed RLE.
 
-- **Fully-stringified records** — the NIDS WA_Sappe Box release ships every field as a string (`"scene_id": "48"`, `"score": "0.74…"`, bbox as a stringified list). Coerced at load; a non-integral id is a loud error, not a silent truncation.
-- **Uncompressed vs compressed RLE** — `counts` may be a run-length **list** (uncompressed, both the CNOS and NIDS files here) or a COCO RLE **string**; `decode_detection_mask` routes each correctly (a compressed string may itself begin with `[`, so the discriminator parses, it does not sniff the first byte).
-
-Files are **not committed** (large; gitignored under `data/detections/`). A no-GPU end-to-end check over whatever files you have:
+Files are **not committed**. A no-GPU check over whatever files you have:
 
 ```bash
 python examples/union_smoke.py --dataset ycbv    # load -> decode -> union -> select
@@ -219,9 +210,9 @@ python examples/bop_seg_eval.py \
   --out-dir outputs/ycbv_cnos_seg_ap
 ```
 
-The command builds a merged `gt_coco.json` from `mask_visib`, converts the BOP detections into `pred_coco.json`, then runs `pycocotools` in `segm` mode and writes `summary.json`. With `--per-object`, it also writes per-category `per_object.json` and `per_object.csv` diagnostics for the same single segmentation source. BOP targets select target images, matching the official BOP COCO evaluator; wrong-category detections on those images remain false positives. It needs a complete BOP split with GT masks; sparse local subsets that only include RGB/depth/poses are useful for pose debugging but cannot produce segmentation AP.
+The command builds a merged `gt_coco.json` from `mask_visib`, converts the BOP detections into `pred_coco.json`, then runs `pycocotools` in `segm` mode. It needs a complete BOP split with GT masks.
 
-For real RGB-D captures, keep the same boundary: detections are still **2D** masks/scores only, and depth stays with the frame. A frame manifest points to the RGB/depth files, intrinsics, scale, and the per-frame detections file:
+For real RGB-D captures, detections are still **2D** masks/scores only, and depth stays with the frame. A frame manifest points to the RGB/depth files, intrinsics, scale, and the per-frame detections file:
 
 ```json
 {

@@ -1,4 +1,4 @@
-# NIDS-Net Deployment Notes
+# NIDS-Net
 
 NIDS-Net is a detector/segmentor producer for popoe. It should run in its own environment or service and write a detections JSON; popoe then consumes that file through `popoe.segmentor_nids.NIDSNetDetectionsSegmentor` or the generic multi-source union.
 
@@ -7,14 +7,11 @@ The official source is pinned as a submodule at `external/NIDS-Net`:
 ```bash
 git submodule update --init --recursive external/NIDS-Net
 git -C external/NIDS-Net rev-parse HEAD
-# c7685a442157a1f28f2d7771e10dd9c7afdd7154
 ```
 
-Use the submodule for source provenance and local deployment notes; keep the runtime environment separate from popoe.
+Use the submodule for source provenance; keep the runtime environment separate from popoe.
 
 ## Boundary
-
-Keep the dependency boundary strict:
 
 ```text
 NIDS-Net env/service
@@ -26,13 +23,13 @@ popoe env/service
 
 The detections JSON carries only 2D information: `scene_id`, `image_id`, `category_id`, `score`, `bbox`, and `mask`/`segmentation`. Depth stays in the frame manifest and is loaded into `Scene.depth` in metres.
 
-## Why A Separate Environment
+## Why a separate environment
 
-The official NIDS-Net repository uses GroundingDINO + SAM proposals, DINOv2 foreground feature averaging/adapters, and often Detectron2 plus version-pinned support packages. Those dependencies are much more volatile than the pose backend dependencies (`open3d`, GeDi/dGeDi, nvdiffrast). Put NIDS-Net in a separate `uv` or conda environment and exchange JSON files or HTTP payloads.
+The official NIDS-Net repository uses GroundingDINO + SAM proposals, DINOv2 foreground feature averaging/adapters, and often Detectron2 plus version-pinned support packages. Those dependencies are much more volatile than the pose backend. Put NIDS-Net in a separate `uv` or conda environment and exchange JSON files or HTTP payloads.
 
-On a 4090 host this is fine: the environments do not conflict at runtime, but the processes still share GPU memory. For a single-GPU workstation, prefer serial execution: run NIDS, release the model/process, then run popoe pose.
+On a single-GPU workstation, prefer serial execution: run NIDS, release the model/process, then run popoe pose.
 
-## BOP Mode
+## BOP mode
 
 Prefer published prediction files when available. For popoe evaluation they are just another named source:
 
@@ -57,7 +54,7 @@ print(d["scene_id"], d["image_id"], d["category_id"], d["score"], m.shape, m.dty
 PY
 ```
 
-## Real Scene Mode
+## Real scene mode
 
 For a real frame, save a frame manifest:
 
@@ -102,7 +99,7 @@ seg = BOPDetectionsSegmentor(frame.detections_path, source="nids", topk=2)
 dets = seg.segment(scene, obj)
 ```
 
-## Service Shape
+## Service shape
 
 For a long-running deployment, make NIDS-Net a detector service whose response body is the same list written to `detections_path`. A minimal API is:
 
@@ -117,7 +114,7 @@ response: [ { "scene_id": 0, "image_id": 42, "category_id": 9,
 
 popoe's pose service should not import NIDS-Net. It should accept a frame manifest plus detections, then run the pose pipeline.
 
-## Operational Checks
+## Checks
 
 - Confirm masks are present. The official NIDS-Net README notes that mask export may need to be enabled in the prediction path.
 - Confirm object IDs match the CAD set consumed by popoe.

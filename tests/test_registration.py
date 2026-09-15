@@ -29,10 +29,10 @@ def _fixture():
 def test_denominator_is_the_inlier_count_not_the_target_count():
     """Eq.5 divides by |P_T^sparse|; this function divides by |I|, on purpose.
 
-    Confusing the two was measured at -31 pt (ISSUES.md): a fixed
-    denominator rewards inlier quantity x quality, the mean rewards quality
-    alone. Callers here supply the quantity term separately as s_icp, so the
-    mean is the correct half — but only as long as it stays the mean.
+    Confusing the two is a ranking bug: a fixed denominator rewards inlier
+    quantity x quality, the mean rewards quality alone. Callers here supply
+    the quantity term separately as s_icp, so the mean is the correct half —
+    but only as long as it stays the mean.
     """
     pts_q, pts_t, fq, ft = _fixture()
     score, inliers = feature_aware_score(

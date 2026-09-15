@@ -1,8 +1,8 @@
 # Official CNOS-FastSAM detections (source tag: `cnos`)
 
-The seven BOP-Classic-Core "default detections" for CNOS-FastSAM — the official artefacts every arm's `cnos=` source points at (byte-identical to the published files). Download from HuggingFace [`bop-benchmark/bop_extra`](https://huggingface.co/datasets/bop-benchmark/bop_extra) (the default-detections bundle) as `cnos-fastsam_{lmo,tless,tudl,icbin,itodd,hb,ycbv}-test.json` and put them in this directory.
+The seven BOP-Classic-Core default detections for CNOS-FastSAM. Download from HuggingFace [`bop-benchmark/bop_extra`](https://huggingface.co/datasets/bop-benchmark/bop_extra) (the default-detections bundle) as `cnos-fastsam_{lmo,tless,tudl,icbin,itodd,hb,ycbv}-test.json` and put them in this directory.
 
-The CNOS method page also carries a detection-only batch 4017-4023 next to segmentation batch **4003-4009**. Always check the Task field — the files here are the segmentation (mask) batch.
+The CNOS method page also lists a detection-only batch next to the segmentation batch. Always check the Task field — the files here are the segmentation (mask) batch.
 
 | Dataset | Records | SHA256 |
 |---|---|---|
@@ -14,4 +14,4 @@ The CNOS method page also carries a detection-only batch 4017-4023 next to segme
 | HB | 13254 | `7eb39ad0d82783dc59a49cd2f6654c99b63d3b3ef3f051f3368056755e94e6b0` |
 | YCB-V | 30602 | `fdec15729676e15876302fc620f752cc5290ee28da5fc3c7e17da1072fd4f422` |
 
-After download, `python scripts/freeze_detections.py --check` refuses symlinks and unregistered hashes. Always JSON-parse after any fetch — size alone lies (see the HB lesson in sam6d/PROVENANCE.md).
+After download, `python scripts/freeze_detections.py --check` refuses symlinks and unregistered hashes. JSON-parse after any fetch — size alone is not enough.
