@@ -13,6 +13,10 @@ is the seams and the invariants.
 
 Library entry: `PoseMethod.run(scene, obj) → PoseHypothesis | None`.
 
+After encode, both `Pipeline.run` and `examples/bop_eval.py` call
+`correspond_pair` (solve → refine* → score). The runner still owns disk
+cache, the visual-weight sweep, multi-instance NMS, and resume.
+
 Correspondence graph (`Pipeline` / `CorrespondencePipeline`):
 
 ```
@@ -46,8 +50,10 @@ The library entry is `PoseMethod.run`. `make_correspondence_pipeline` in
 `popoe.freeze.recipes` returns a `Pipeline` (correspondence graph);
 `DirectPoseMethod` is the estimator-graph implementation (e.g. SAM-6D PEM
 files). The evaluated BOP loop is `examples/bop_eval.py` (cache, weight
-sweep, multi-instance, resume) and still drives the correspondence graph
-via `stages_for_object` directly. Default eval flags are the tuned Open3D
+sweep, multi-instance, resume). It builds a per-object `Pipeline` with
+`make_correspondence_pipeline`, then scores each encoded pair with
+`correspond_pair`.
+Default eval flags are the tuned Open3D
 identity, not a paper-faithful freeze — see
 [README.md](README.md#minimal-bop-eval). There is no published AR on this
 path ([REPRODUCTION.md](REPRODUCTION.md)).

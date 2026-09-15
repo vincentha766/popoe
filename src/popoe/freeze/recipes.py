@@ -2,9 +2,10 @@
 
 ``make_correspondence_pipeline`` is the public factory: it returns a
 ``Pipeline`` (a ``PoseMethod``) for the correspondence graph. Internally it
-calls ``best_encoders`` / ``stages_for_object``, which still wire the tuned
-Open3D identity used by ``examples/bop_eval.py`` when no paper-side flags
-are set:
+calls ``stages_for_object``. ``examples/bop_eval.py`` uses the factory for
+per-object solver/refiner/scorer wiring (still with disk cache, weight
+sweep, and multi-instance on the runner). Tuned Open3D identity when no
+paper-side flags are set:
 
   * DINOv2 ViT-g intermediate layer (FoundPose depth ratio) + object crop;
   * two-scale GeDi (30% + 40% of diameter, 64-D geometric);

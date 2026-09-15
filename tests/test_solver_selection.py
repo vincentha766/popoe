@@ -184,3 +184,20 @@ def test_make_correspondence_pipeline_unwraps_rerank_chain():
     pipe = make_correspondence_pipeline(
         object(), object(), object(), 0.1, render_rerank=True)
     assert len(pipe.refiners) == 2
+
+
+def test_make_correspondence_pipeline_matches_stages_for_object():
+    """Eval and the factory share one wiring; fields must not drift."""
+    kw = dict(size_aware=True, solver="gpu", seed=3, render_rerank=True,
+              use_s_coarse=True, eq5_terms=True)
+    solver, refiner, scorer = stages_for_object(0.15, **kw)
+    pipe = make_correspondence_pipeline(
+        object(), object(), object(), 0.15, **kw)
+    assert type(pipe.solver) is type(solver)
+    assert pipe.solver.seed == solver.seed
+    assert pipe.solver.tau_inlier == solver.tau_inlier
+    assert pipe.scorer.use_s_coarse is scorer.use_s_coarse
+    assert pipe.scorer.size_aware is scorer.size_aware
+    assert pipe.scorer.eq5_terms is scorer.eq5_terms
+    assert len(pipe.refiners) == 2
+    assert type(pipe.refiners[0]) is type(refiner.refiners[0])

@@ -9,17 +9,18 @@ open3d and must be imported explicitly, e.g.
 """
 from popoe.interfaces import (
     Scene, FrameManifest, ObjectModel, CanonFrame, Detection, PointFeatures,
-    PoseHypothesis, PoseMethod, Pipeline, CorrespondencePipeline,
-    DirectPoseMethod, Segmentor, PointDescriptor, FeatureFusion,
-    QueryEncoder, TargetEncoder, PoseSolver, CoarseEstimator, PoseRefiner,
-    PoseScorer, Selector,
+    PoseHypothesis, PoseMethod, correspond_pair, Pipeline,
+    CorrespondencePipeline, DirectPoseMethod, Segmentor, PointDescriptor,
+    FeatureFusion, QueryEncoder, TargetEncoder, PoseSolver, CoarseEstimator,
+    PoseRefiner, PoseScorer, Selector,
 )
 
 __version__ = "0.1.0"
 
 __all__ = [
     "Scene", "FrameManifest", "ObjectModel", "CanonFrame", "Detection",
-    "PointFeatures", "PoseHypothesis", "PoseMethod", "Pipeline",
+    "PointFeatures", "PoseHypothesis", "PoseMethod", "correspond_pair",
+    "Pipeline",
     "CorrespondencePipeline", "DirectPoseMethod", "Segmentor",
     "PointDescriptor", "FeatureFusion", "QueryEncoder", "TargetEncoder",
     "PoseSolver", "CoarseEstimator", "PoseRefiner", "PoseScorer", "Selector",

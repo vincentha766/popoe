@@ -85,7 +85,7 @@ class ChampionScorer:
     never a silent skip. With BOTH off the scorer is byte-identical to before
     (``s_icp * s_feat_1 * metric_fit``). S_coarse HELPS YCB-V (+2.5 in replay)
     but HURTS LM-O (-1.9): the 26-rule ablation shows rules do not transfer, so
-    this is a per-DATASET switch (freeze.recipes.stages_for_object / bop_eval), not a
+    this is a per-DATASET switch (make_correspondence_pipeline / bop_eval), not a
     hard-coded default — the first formal carrier of a per-dataset rule."""
 
     def __init__(self, tau_inlier_frac: float = 0.03, size_thr: float = 0.0075,

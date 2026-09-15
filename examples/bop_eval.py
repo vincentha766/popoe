@@ -73,12 +73,14 @@ from popoe.cache import (StageCache, conditional_enc_entries, file_fingerprint,
                          fingerprint)
 from popoe.datasets.bop import bop_layout, default_targets_path
 from popoe import profiling
-from popoe.interfaces import ObjectModel, PointFeatures, PoseHypothesis, Scene
+from popoe.interfaces import (
+    ObjectModel, PointFeatures, PoseHypothesis, Scene, correspond_pair,
+)
 from popoe.freeze.feature_extractor import mesh_shading_key_parts
 from popoe.freeze.recipes import (
     TAU_FRAC, WEIGHTS, YCBV_MERGE_LABELS,
-    best_encoders, best_segmentor, scale_vis, solver_provenance,
-    stages_for_object,
+    best_encoders, best_segmentor, make_correspondence_pipeline, scale_vis,
+    solver_provenance,
 )
 
 IDN = " ".join(f"{v:.6f}" for v in np.eye(3).flatten())
@@ -303,7 +305,7 @@ def resolve_merge(merge_arg, dataset):
     on ycbv and nothing elsewhere: obj ids 19/20 also exist on tless, itodd
     and hb, where the former literal 'ycbv' default silently pooled two
     unrelated objects — and handed them the clamp-specific size-aware scorer
-    (stages_for_object's `size_aware=obj_id in merge`)."""
+    (make_correspondence_pipeline's `size_aware=obj_id in merge`)."""
     if merge_arg == "auto":
         return dict(YCBV_MERGE_LABELS) if dataset == "ycbv" else {}
     if merge_arg == "ycbv":
@@ -943,15 +945,17 @@ def main():
                 raise SystemExit(f"--tau-diameter: obj {obj_id} absent from "
                                  f"{layout['models_dir']}/models_info.json")
             tau_basis = diameters_m[obj_id]
-        stages = stages_for_object(extent, size_aware=obj_id in merge,
-                                   score_coarse=score_coarse,
-                                   use_s_coarse=args.use_s_coarse,
-                                   solver=args.solver, seed=args.seed,
-                                   tau_basis_m=tau_basis,
-                                   render_rerank=args.render_rerank,
-                                   eq5_terms=args.eq5_terms,
-                                   render_score=args.render_score)
-        query_cache[obj_id] = (obj, q, stages)
+        pipe = make_correspondence_pipeline(
+            segmentor, q_enc, t_enc, extent, topk=args.topk,
+            size_aware=obj_id in merge,
+            score_coarse=score_coarse,
+            use_s_coarse=args.use_s_coarse,
+            solver=args.solver, seed=args.seed,
+            tau_basis_m=tau_basis,
+            render_rerank=args.render_rerank,
+            eq5_terms=args.eq5_terms,
+            render_score=args.render_score)
+        query_cache[obj_id] = (obj, q, pipe)
         tau_note = ("" if tau_basis is None else
                     f" diam={tau_basis*1000:.0f}mm "
                     f"tau={TAU_FRAC*tau_basis*1000:.2f}mm "
@@ -1104,7 +1108,7 @@ def main():
 
             for obj_id, inst_count in pending:
                 t_start = time.time()
-                obj, q, (solver, refiner, scorer) = query_cache[obj_id]
+                obj, q, pipe = query_cache[obj_id]
                 frame = q.meta.get("canon_frame")
                 # Hypotheses grouped per detection: one detection ≈ one
                 # candidate instance, and inst_count rows come from distinct
@@ -1139,13 +1143,10 @@ def main():
                         qw = q if w == 1.0 else _reweighted(q, w, vis_split)
                         tw = tgt if w == 1.0 else _reweighted(tgt, w, vis_split)
                         try:
-                            with profiling.stage("solve"):
-                                hyps = list(solver.solve(qw, tw))
+                            hyps = correspond_pair(
+                                qw, tw, scene, obj, pipe.solver, pipe.refiners,
+                                pipe.scorer, frame)
                             for h in hyps:
-                                with profiling.stage("refine"):
-                                    h = refiner.refine(h, scene, obj, qw, tw)
-                                with profiling.stage("score"):
-                                    h = scorer.score(h, qw, tw)
                                 hyps_by_det.setdefault(ci, []).append(h)
                                 if cand_f is not None:
                                     cand_wr.writerow(cand_csv_row(

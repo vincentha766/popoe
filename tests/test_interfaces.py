@@ -5,7 +5,7 @@ import pytest
 import popoe
 from popoe import (
     Scene, ObjectModel, CanonFrame, Detection, PointFeatures, PoseHypothesis,
-    Pipeline, DirectPoseMethod,
+    Pipeline, DirectPoseMethod, correspond_pair,
 )
 
 
@@ -99,6 +99,30 @@ def test_pipeline_run_orchestration():
     pipe.run(scene, obj)
     assert q.calls == 1
     assert np.isclose(pipe.target_encoder.frames[0], 3.0)
+
+
+def test_correspond_pair_matches_pipeline_run():
+    """Pipeline.run is encode + correspond_pair + select, not a second kernel."""
+    qenc, tenc = _QEnc(), _TEnc()
+    pipe = Pipeline(segmentor=_Seg(), query_encoder=qenc, target_encoder=tenc,
+                    solver=_Solver(), refiners=[_RefinerGeom()],
+                    selector=_Selector(), scorer=_Scorer(), topk=2)
+    scene = Scene(np.zeros((4, 4, 3), np.uint8), np.ones((4, 4), np.float32),
+                  np.eye(3))
+    obj = ObjectModel(5, "x.ply", 0.1)
+    best = pipe.run(scene, obj)
+
+    q = qenc.encode_query(obj)
+    frame = q.meta["canon_frame"]
+    cands = []
+    for det in _Seg().segment(scene, obj)[:2]:
+        t = tenc.encode_target(scene, det, obj, frame)
+        cands.extend(correspond_pair(
+            q, t, scene, obj, pipe.solver, pipe.refiners, pipe.scorer, frame))
+    replay = _Selector().select(cands)
+    assert replay is not None and best is not None
+    assert np.isclose(replay.score, best.score)
+    assert np.allclose(replay.R, best.R)
 
 
 class _QEncPca:

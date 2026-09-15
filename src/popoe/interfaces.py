@@ -305,6 +305,35 @@ class PoseMethod(Protocol):
     def run(self, scene: Scene, obj: ObjectModel) -> Optional[PoseHypothesis]: ...
 
 
+def correspond_pair(query: PointFeatures, target: PointFeatures,
+                    scene: Scene, obj: ObjectModel,
+                    solver: PoseSolver,
+                    refiners: Sequence[PoseRefiner],
+                    scorer: Optional[PoseScorer] = None,
+                    frame: CanonFrame | None = None,
+                    ) -> list[PoseHypothesis]:
+    """Post-encode correspondence kernel: solve → refine* → score.
+
+    Shared by ``Pipeline.run`` and the BOP runner. Callers own encoding
+    (including disk cache and visual-weight rescales) and selection
+    (one hyp vs multi-instance NMS).
+    """
+    if frame is None:
+        frame = query.meta.get("canon_frame")
+    with profiling.stage("solve"):
+        hyps = list(solver.solve(query, target, frame))
+    out: list[PoseHypothesis] = []
+    for h in hyps:
+        for r in refiners:
+            with profiling.stage("refine"):
+                h = r.refine(h, scene, obj, query, target)
+        if scorer is not None:
+            with profiling.stage("score"):
+                h = scorer.score(h, query, target)
+        out.append(h)
+    return out
+
+
 @dataclass
 class Pipeline:
     """Correspondence-graph PoseMethod.
@@ -314,8 +343,9 @@ class Pipeline:
     that never build query/target features use ``DirectPoseMethod`` (or
     their own ``PoseMethod.run``).
 
-    The BOP runner (`examples/bop_eval.py`) still does extra work this
-    class does not (weight sweep, disk cache, multi-instance, resume).
+    After encoding, this class calls ``correspond_pair``. The BOP runner
+    (`examples/bop_eval.py`) still owns weight sweep, disk cache,
+    multi-instance, and resume — it uses the same kernel on each (q, t).
     """
     segmentor: Segmentor
     query_encoder: QueryEncoder
@@ -350,16 +380,9 @@ class Pipeline:
                         f"that snapshots its PCA.")
                 install(q.meta["pca_vis"])
             t = self.target_encoder.encode_target(scene, det, obj, frame)
-            with profiling.stage("solve"):
-                hyps = list(self.solver.solve(q, t, frame))
-            for h in hyps:
-                for r in self.refiners:
-                    with profiling.stage("refine"):
-                        h = r.refine(h, scene, obj, q, t)
-                if self.scorer is not None:
-                    with profiling.stage("score"):
-                        h = self.scorer.score(h, q, t)
-                cands.append(h)
+            cands.extend(correspond_pair(
+                q, t, scene, obj, self.solver, self.refiners, self.scorer,
+                frame))
         return self.selector.select(cands)
 
 

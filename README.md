@@ -44,7 +44,9 @@ The library entry is `PoseMethod.run(scene, obj)`. Build the correspondence
 graph with `popoe.freeze.recipes.make_correspondence_pipeline` (returns a
 `Pipeline`); `DirectPoseMethod` is the estimator-graph method (e.g. SAM-6D PEM).
 `examples/bop_eval.py` writes BOP CSVs (cache, weight sweep, resume,
-multi-instance). `scripts/` holds offline A/B helpers, not onboarding.
+multi-instance) and scores each encoded pair with `correspond_pair`, the
+same kernel `Pipeline.run` uses after encode. `scripts/` holds offline
+A/B helpers, not onboarding.
 
 Some tests import OpenCV / pycocotools. Install `.[reference]` as well if
 `pytest tests/` should cover those, not only the contract layer.
