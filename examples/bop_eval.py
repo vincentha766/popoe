@@ -569,8 +569,7 @@ def main():
                     help="After ICP, re-rank PCA-axis flip variants by DINOv2 "
                          "render-vs-scene patch cosine (FreeZe SAR-style; "
                          "popoe.render_rerank.RenderAppearanceReranker). "
-                         "Off by default (headline path unchanged). Measured "
-                         "offline: YCB-V combo_sym full AR flat 0.8275→0.8605. "
+                         "Off by default (tuned identity unchanged). "
                          "Needs CUDA + nvdiffrast + DINOv2. Fresh --out required.")
     ap.add_argument("--render-score", action="store_true",
                     help="Champion selection multiplies in the clamped sar_ti "

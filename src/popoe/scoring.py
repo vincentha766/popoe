@@ -1,8 +1,9 @@
-"""ChampionScorer — the evaluated-best selection rule as a PoseScorer stage.
+"""ChampionScorer — the default selection rule as a PoseScorer stage.
 
 score = s_icp * max(s_feat_1, 0) * (metric_fit if size_aware else 1)
 
-Where the terms come from (all measured, see the reproduction study):
+Where the terms come from (internal measurements below are **not** a
+published AR; see REPRODUCTION.md):
 
   * ``s_icp`` — ICP inlier fitness (geometric agreement), from the refiner.
   * ``s_feat_1`` — mean feature cosine over inliers computed with the fused

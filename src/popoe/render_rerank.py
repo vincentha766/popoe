@@ -1,9 +1,8 @@
 """Render-appearance re-rank of pose hypotheses (FreeZe SAR-style).
 
-Offline measurement (2026-07-29): re-selecting among PCA-axis
-rotational variants by DINOv2 render-vs-scene patch cosine (`sar_ti`) lifts
-YCB-V combo_sym full BOP AR (flat) 0.8275 → **0.8605** (> FreeZe(CNOS) 0.853).
-This module is the **in-pipeline** form of that re-rank.
+Re-selects among PCA-axis rotational variants by DINOv2 render-vs-scene
+patch cosine (`sar_ti`). This is the in-pipeline form of that re-rank;
+it is off by default on ``examples/bop_eval.py``. Not a published AR.
 
 Public API
 ----------

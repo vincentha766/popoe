@@ -324,7 +324,7 @@ class BOPDetectionsSegmentor:
             tag 'bop-detections', which preserves historical `Detection.source`).
         size_select: optional mask-stage size arbitration for confusable
             same-shape pairs (YCB-V clamps). ``None`` (default) keeps detector
-            scores unchanged — formal BOP headline path. ``"soft"`` multiplies
+            scores unchanged — the tuned identity. ``"soft"`` multiplies
             appearance by competitive diameter affinity; ``"nearest"`` keeps
             only masks whose nearest CAD in ``confusable_diameters`` is the
             query (with appearance fallback if none match, unless

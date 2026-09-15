@@ -1,21 +1,23 @@
-"""popoe.recipes — evaluated-best stage configurations, in one place.
+"""popoe.recipes — default stage configurations, in one place.
 
-``best_recipe`` wires the configuration that produced the strongest measured
-numbers in the reproduction study (YCB-V full BOP AR 0.7668 / LM-O 0.6726 with
-the official CNOS-FastSAM detections):
+``best_encoders`` / ``stages_for_object`` wire the tuned Open3D identity
+used by ``examples/bop_eval.py`` when no paper-side flags are set:
 
   * DINOv2 ViT-g intermediate layer (FoundPose depth ratio) + object crop;
   * two-scale GeDi (30% + 40% of diameter, 64-D geometric);
   * fused [vis|geo] at PCA-matched dims, visual-weight sweep at selection time;
-  * 32x32 target sampling grid (the "formal" density; 16 is the fast preset);
+  * 32x32 target sampling grid (16 is the fast preset);
   * Open3D feature-matching RANSAC + ICP, thresholds at 3% of object extent
-    (metric space — equivalent to the canonical-space 0.03 used in the study);
+    (metric space — equivalent to canonical-space 0.03);
   * ChampionScorer (icp * s_feat_1, size-aware for pooled confusable pairs);
   * label pooling for confusable same-shape pairs (YCB-V clamps 19/20).
 
-Lab-only (opt-in, **not** the headline path): mask-stage
-``size_select`` via ``best_segmentor(..., size_select=...)``. Formal
-defaults keep ``size_select=None``.
+This is configuration, not a published AR. Do not cite campaign figures
+from git history of REPRODUCTION.md as the project's public result.
+
+Mask-stage ``size_select`` is opt-in via
+``best_segmentor(..., size_select=...)``. Formal defaults keep
+``size_select=None``.
 
 Heavy models load lazily on first use; everything here is metric-space.
 """
@@ -133,7 +135,7 @@ def best_segmentor(detections_json: str | None = None, topk: int = 2,
     the two must be given.
 
     ``size_select`` is opt-in mask-stage size arbitration for confusable pairs
-    (``None`` default = formal BOP headline path).
+    (``None`` default = the tuned identity).
     """
     if (detections_json is None) == (sources is None):
         raise ValueError("pass exactly one of detections_json or sources")
@@ -330,8 +332,7 @@ def stages_for_object(extent_m: float, size_aware: bool = False,
 
     ``render_rerank``: append :class:`popoe.render_rerank.RenderAppearanceReranker`
     after ICP (SAR-style DINOv2 render-vs-scene re-rank). Off by default
-    so the headline path stays byte-identical; enable for the measured YCB-V
-    combo_sym full-AR lift (0.8275 → 0.8605 flat, offline).
+    so the tuned identity stays byte-identical.
 
     ``render_score``: FreeZeV2.1's third component — the rerank
     stage's winning ``sar_ti`` (input-vs-render DINOv2 appearance score, one
