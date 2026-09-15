@@ -1,23 +1,13 @@
 # Official SAM6D detections (source tag: `sam6d` official line)
 
-Evaluated four-source recipes pin **method 441 "SAM6D"** (mean seg AP 0.481;
-family spread 441/545/466/546 = 5.3pt). Seg batch **6965-6971**
-(2023-12-05 07:46-07:50). ⚠️ 441's method page mixes THREE tasks —
-6951-6957 is 2D detection (boxes), 7088-7094 and 7238-7244 are 6D
-localization (poses). The seg batch was identified by matching per-set AP
-to the leaderboard row (LM-O 0.460). Always check the Task field.
+Evaluated four-source recipes pin **method 441 "SAM6D"** (mean seg AP 0.481; family spread 441/545/466/546 = 5.3pt). Seg batch **6965-6971** (2023-12-05 07:46-07:50). ⚠️ 441's method page mixes THREE tasks — 6951-6957 is 2D detection (boxes), 7088-7094 and 7238-7244 are 6D localization (poses). The seg batch was identified by matching per-set AP to the leaderboard row (LM-O 0.460). Always check the Task field.
 
-Download each submission from the `sub_info` page ("Download submission")
-and save as `sam6d_official_<ds>.json` in this directory.
+Download each submission from the `sub_info` page ("Download submission") and save as `sam6d_official_<ds>.json` in this directory.
 
 ⚠️ **Three SAM6D provenances — never conflate:**
-- `sam6d_official_<ds>.json` — method 441 segmentation files; this is what
-  four-source recipes consume.
-- `sam6d_ism_{lmo,ycbv}.json` — local ISM runs (FastSAM proposals). NOT
-  byte-identical to any official file.
-- Method 546 FastSAM(RGB) (`sub_info` 8003-8009) — a public SAM-6D
-  segmentation batch matching the ISM lineage; hashes below for identity,
-  not wired as `sam6d_official_*`.
+- `sam6d_official_<ds>.json` — method 441 segmentation files; this is what four-source recipes consume.
+- `sam6d_ism_{lmo,ycbv}.json` — local ISM runs (FastSAM proposals). NOT byte-identical to any official file.
+- Method 546 FastSAM(RGB) (`sub_info` 8003-8009) — a public SAM-6D segmentation batch matching the ISM lineage; hashes below for identity, not wired as `sam6d_official_*`.
 
 ## Method 441 seg batch (`sam6d_official_<ds>.json`)
 
@@ -56,8 +46,4 @@ and save as `sam6d_official_<ds>.json` in this directory.
 |---|---|
 | `union_cnos_sam6d_lmo.reference.json` (union-ingestion parity reference, `tests/test_union_reference_xval.py`) | `5c11cf2d5d98db241798f55976c7cdcff9561350cd87cc46040747e599a7c40b` |
 
-Place method-441 files in this directory as `sam6d_official_<ds>.json`.
-Schema per record: `scene_id, image_id, category_id, bbox, score, time,
-segmentation` (an earlier truncated HB download was caught by JSON
-parse-check — always parse after download, size alone lies). Verify with
-`python scripts/freeze_detections.py --check`.
+Place method-441 files in this directory as `sam6d_official_<ds>.json`. Schema per record: `scene_id, image_id, category_id, bbox, score, time, segmentation` (an earlier truncated HB download was caught by JSON parse-check — always parse after download, size alone lies). Verify with `python scripts/freeze_detections.py --check`.
