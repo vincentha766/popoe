@@ -420,7 +420,9 @@ class DirectPoseMethod:
     Optional ``segmentor``: estimate once per detection (estimators that
     ignore ``det`` still work). Correspondence-style ``PoseRefiner`` is
     still out of scope — those signatures require PointFeatures.
-    ``geometric_refiners`` need ``clouds(scene, obj, det) -> (pts_src, pts_tgt)``.
+    ``geometric_refiners`` use ``clouds(scene, obj, det) -> (pts_src, pts_tgt)``.
+    ``clouds`` defaults to :func:`popoe.adapters.icp_clouds` (CAD + depth
+    in metres). Pass an explicit callable to override.
     """
     estimator: CoarseEstimator
     selector: Selector
@@ -434,11 +436,11 @@ class DirectPoseMethod:
                         ) -> list[PoseHypothesis]:
         if not self.geometric_refiners:
             return hyps
-        if self.clouds is None:
-            raise ValueError(
-                "DirectPoseMethod.geometric_refiners need clouds(scene, obj, "
-                "det) -> (pts_src, pts_tgt); PointFeatures are not on this graph")
-        pts_src, pts_tgt = self.clouds(scene, obj, det)
+        clouds_fn = self.clouds
+        if clouds_fn is None:
+            from popoe.adapters import icp_clouds
+            clouds_fn = icp_clouds
+        pts_src, pts_tgt = clouds_fn(scene, obj, det)
         out: list[PoseHypothesis] = []
         for h in hyps:
             for r in self.geometric_refiners:

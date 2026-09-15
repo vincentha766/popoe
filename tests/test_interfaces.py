@@ -232,10 +232,6 @@ def test_direct_pose_method_runs_geometric_refiners():
     scene = Scene(np.zeros((4, 4, 3), np.uint8), np.ones((4, 4), np.float32),
                   np.eye(3))
     obj = ObjectModel(5, "x.ply", 0.1)
-    with pytest.raises(ValueError, match="clouds"):
-        DirectPoseMethod(estimator=_Est(), selector=_Selector(),
-                         geometric_refiners=[geom]).run(scene, obj)
-
     hyp = DirectPoseMethod(
         estimator=_Est(), selector=_Selector(),
         geometric_refiners=[geom], clouds=clouds,
@@ -245,6 +241,36 @@ def test_direct_pose_method_runs_geometric_refiners():
     assert hyp.breakdown["s_icp"] == 0.5
     assert geom.seen == [(src.shape, tgt.shape)]
     assert isinstance(geom, popoe.GeometricRefiner)
+
+
+def test_direct_pose_method_defaults_to_icp_clouds(monkeypatch):
+    class _Est:
+        def estimate(self, scene, obj, det=None):
+            return [PoseHypothesis(np.eye(3), np.zeros(3), 0.4)]
+
+    class _Geom:
+        def __init__(self):
+            self.seen = []
+
+        def refine_geometry(self, pose, scene, obj, pts_src, pts_tgt):
+            self.seen.append((pts_src[0, 0], pts_tgt[0, 0]))
+            return pose
+
+    called = {}
+
+    def fake_icp(scene, obj, det):
+        called["args"] = (obj.obj_id, det)
+        return np.array([[2.0, 0, 0]]), np.array([[3.0, 0, 0]])
+
+    monkeypatch.setattr("popoe.adapters.icp_clouds", fake_icp)
+    geom = _Geom()
+    scene = Scene(np.zeros((4, 4, 3), np.uint8), np.ones((4, 4), np.float32),
+                  np.eye(3))
+    DirectPoseMethod(estimator=_Est(), selector=_Selector(),
+                     geometric_refiners=[geom]).run(
+                         scene, ObjectModel(5, "x.ply", 0.1))
+    assert called["args"] == (5, None)
+    assert geom.seen == [(2.0, 3.0)]
 
 
 def test_freeze_package_exports():

@@ -41,7 +41,7 @@ Scene, ObjectModel ─ (Segmentor?) ─ CoarseEstimator ─ GeometricRefiner* �
 | Pose solve | `PoseSolver` | `solvers.Open3DFeatureRansacSolver` (default) — also GPU RANSAC and TEASER++ |
 | External coarse pose | class | `segmentor_sam6d.SAM6DPemResultsCoarseEstimator` over already-written PEM results |
 | Refine (correspondence) | `PoseRefiner` | `adapters.ICPRefiner` (clouds from encoded features) |
-| Refine (estimator) | `GeometricRefiner` | `adapters.ICPRefiner.refine_geometry` (caller supplies clouds) |
+| Refine (estimator) | `GeometricRefiner` | `adapters.ICPRefiner.refine_geometry`; default clouds: `adapters.icp_clouds` |
 | Score | class | `scoring.ChampionScorer` |
 | Render re-rank (opt.) | `PoseRefiner` chain | `render_rerank.RenderAppearanceReranker` (SAR-style; `--render-rerank`) |
 | Select | function | `adapters.best_hyp` / `select_top_instances` |

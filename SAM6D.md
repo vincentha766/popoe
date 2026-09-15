@@ -122,11 +122,11 @@ from popoe.adapters import BestScoreSelector, ICPRefiner
 method = DirectPoseMethod(estimator=est, selector=BestScoreSelector())
 hyp = method.run(scene, obj)
 
-# Optional geometry-only ICP (no query/target features):
+# Optional geometry-only ICP (no query/target features). Default clouds
+# are popoe.adapters.icp_clouds (CAD + depth, metres):
 # method = DirectPoseMethod(
 #     estimator=est, selector=BestScoreSelector(),
 #     geometric_refiners=[ICPRefiner(tau_icp=0.03)],
-#     clouds=lambda scene, obj, det: (cad_pts, scene_pts),
 # )
 ```
 

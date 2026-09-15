@@ -321,33 +321,14 @@ def resolve_merge(merge_arg, dataset):
 
 
 def dense_mask_cloud(scene, mask, max_pts: int = 3000):
-    """P_T^dense (FreeZeV2 Eq. 6): every valid depth pixel inside the mask,
-    back-projected with the scene intrinsics.
+    """P_T^dense (FreeZeV2 Eq. 6): mask-cropped depth cloud in metres.
 
-    Byte-for-byte the same construction the feature extractor already performs
-    for the GeDi neighbourhood (`pcd_dense` there, `(depth > 0) & mask`, metres,
-    camera frame) — it is rebuilt here because that one is discarded before it
-    can reach ICP, and recomputing it is cheaper than plumbing it through the
-    feature cache (and would have invalidated every cached entry).
-
-    `max_pts` caps the result with a fixed-seed uniform draw (0 = no cap). The
-    draw is seeded per call, so the same mask always yields the same cloud and
-    the run stays reproducible.
-
-    Returns None when the mask has fewer than 4 valid depth pixels; the caller
-    then leaves `pts_dense` unset and ICP falls back to the sparse cloud."""
-    from popoe.adapters import fixed_seed_subsample
-    ys, xs = np.where((scene.depth > 0) & mask)
-    if len(ys) < 4:
-        return None
-    idx = fixed_seed_subsample(len(ys), max_pts)
-    if idx is not None:
-        ys, xs = ys[idx], xs[idx]
-    d = scene.depth[ys, xs]
-    fx, fy = scene.K[0, 0], scene.K[1, 1]
-    cx, cy = scene.K[0, 2], scene.K[1, 2]
-    return np.stack([(xs - cx) * d / fx, (ys - cy) * d / fy, d],
-                    axis=1).astype(np.float32)
+    Delegates to :func:`popoe.adapters.depth_mask_cloud` so the BOP runner
+    and ``DirectPoseMethod`` share one back-projection. Returns None when
+    the mask has fewer than 4 valid depth pixels; the caller then leaves
+    `pts_dense` unset and ICP falls back to the sparse cloud."""
+    from popoe.adapters import depth_mask_cloud
+    return depth_mask_cloud(scene, mask, max_pts=max_pts)
 
 
 def read_frame_images(sdir: Path, im_id: int, layout):

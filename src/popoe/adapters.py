@@ -125,6 +125,70 @@ def resolve_resume(row_stats: dict, target_counts: dict) -> tuple:
     return done, partial
 
 
+def depth_mask_cloud(scene: Scene, mask=None, max_pts: int = 3000):
+    """Back-project ``(depth > 0)`` pixels (optionally inside ``mask``) to
+    metres in the camera frame.
+
+    Same construction as the GeDi neighbourhood cloud and as
+    ``examples.bop_eval.dense_mask_cloud``. ``max_pts`` 0 = no cap; otherwise
+    a fixed-seed draw via :func:`fixed_seed_subsample`. Returns ``None``
+    when fewer than 4 valid pixels (ICP then has no target cloud).
+    """
+    depth = np.asarray(scene.depth)
+    valid = depth > 0
+    if mask is not None:
+        valid = valid & np.asarray(mask, dtype=bool)
+    ys, xs = np.where(valid)
+    if len(ys) < 4:
+        return None
+    idx = fixed_seed_subsample(len(ys), max_pts)
+    if idx is not None:
+        ys, xs = ys[idx], xs[idx]
+    d = depth[ys, xs]
+    fx, fy = float(scene.K[0, 0]), float(scene.K[1, 1])
+    cx, cy = float(scene.K[0, 2]), float(scene.K[1, 2])
+    return np.stack([(xs - cx) * d / fx, (ys - cy) * d / fy, d],
+                    axis=1).astype(np.float32)
+
+
+def cad_surface_cloud(obj: ObjectModel, n_points: int = 3000,
+                      seed: int | None = None) -> np.ndarray:
+    """CAD surface sample in **metres**.
+
+    Sampling is :func:`popoe.freeze.adapters.sample_query_surface` (mesh
+    units — millimetres on BOP). ``ObjectModel.diameter`` is metres; if the
+    sampled extent is more than 10× the diameter the cloud is treated as mm
+    and divided by 1000. Metre meshes (extent already on the diameter
+    scale) are left unchanged.
+    """
+    from popoe.freeze.adapters import sample_query_surface
+    seed = obj.obj_id if seed is None else int(seed)
+    pts = np.asarray(sample_query_surface(obj.mesh_path, n_points, seed),
+                     dtype=np.float64)
+    extent = float(np.ptp(pts, axis=0).max()) if pts.size else 0.0
+    diam = float(obj.diameter)
+    if diam > 0 and extent > 10.0 * diam:
+        pts = pts / 1000.0
+    return pts.astype(np.float32)
+
+
+def icp_clouds(scene: Scene, obj: ObjectModel, det=None, *,
+               n_cad: int = 3000, max_scene: int = 3000):
+    """Default ``DirectPoseMethod.clouds``: CAD (m) and scene (m).
+
+    ``det.mask`` crops the scene cloud when present; otherwise every valid
+    depth pixel is used. Raises if the scene cloud is degenerate.
+    """
+    mask = None if det is None else getattr(det, "mask", None)
+    pts_tgt = depth_mask_cloud(scene, mask, max_pts=max_scene)
+    if pts_tgt is None:
+        raise ValueError(
+            "icp_clouds: fewer than 4 valid depth pixels "
+            f"(obj_id={obj.obj_id})")
+    pts_src = cad_surface_cloud(obj, n_cad)
+    return pts_src, pts_tgt
+
+
 def fixed_seed_subsample(n: int, cap: int):
     """Sorted fixed-seed uniform draw of ``cap`` of ``n`` indices; None = keep
     all. THE single source for P_T^dense subsampling: the paper's Sec. IV-A
