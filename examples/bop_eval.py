@@ -70,7 +70,7 @@ import numpy as np
 from popoe.adapters import resolve_resume, select_top_instances
 from popoe.cache import (StageCache, conditional_enc_entries, file_fingerprint,
                          fingerprint)
-from popoe.datasets.bop import bop_layout, default_targets_path
+from popoe.datasets.bop import default_targets_path, resolve_dataset_layout
 from popoe import profiling
 from popoe.interfaces import (
     ObjectModel, PointFeatures, PoseHypothesis, Scene, correspond_pair,
@@ -286,9 +286,9 @@ def resolve_layout(bop: Path, dataset=None, split=None, models_dir=None):
     modality, models dir, the 'auto' merge), so an unrecognised name is fatal
     rather than defaulted: the rgb/png guess on itodd would not crash — it
     would complete the whole dataset as a clean-looking all-zero CSV."""
-    name = (dataset or bop.name).lower()
     try:
-        return name, bop_layout(name, split=split, models_dir=models_dir)
+        return resolve_dataset_layout(bop, dataset, split=split,
+                                      models_dir=models_dir)
     except ValueError as e:
         # Two ways to get here deserve two hints: telling someone who already
         # passed --dataset to "pass --dataset explicitly" answers nothing.

@@ -10,7 +10,10 @@ import json
 
 import pytest
 
-from popoe.datasets.bop import BOP_LAYOUTS, bop_frame_manifest, bop_layout
+from popoe.datasets.bop import (
+    BOP_LAYOUTS, bop_frame_manifest, bop_layout, depth_image_path,
+    find_instances, resolve_dataset_layout, rgb_image_path, scene_split_dir,
+)
 
 
 def test_seven_core_sets_are_covered():
@@ -73,3 +76,72 @@ def test_frame_manifest_builds_paths_from_layout(tmp_path):
     assert m.depth_path.endswith("depth/000003.tif")
     # depth_scale mm-per-unit -> metres-per-unit
     assert m.depth_scale == pytest.approx(0.1 / 1000.0)
+
+
+def test_resolve_dataset_layout_uses_basename():
+    name, lay = resolve_dataset_layout("/data/tless")
+    assert name == "tless"
+    assert lay["split"] == "test_primesense"
+    assert lay["models_dir"] == "models_cad"
+
+
+def test_resolve_dataset_layout_explicit_name_beats_basename():
+    name, lay = resolve_dataset_layout("/data/itodd_copy", dataset="itodd")
+    assert name == "itodd"
+    assert (lay["img_dir"], lay["img_ext"]) == ("gray", ".tif")
+
+
+def test_path_helpers_follow_layout(tmp_path):
+    _, tless = resolve_dataset_layout(tmp_path / "tless")
+    assert scene_split_dir(tmp_path / "tless", tless, 3).as_posix().endswith(
+        "test_primesense/000003")
+    assert rgb_image_path(tmp_path / "tless", tless, 3, 7).as_posix().endswith(
+        "test_primesense/000003/rgb/000007.png")
+    _, itodd = resolve_dataset_layout(tmp_path / "itodd")
+    assert depth_image_path(tmp_path / "itodd", itodd, 1, 2).as_posix().endswith(
+        "test/000001/depth/000002.tif")
+    assert rgb_image_path(tmp_path / "itodd", itodd, 1, 2).as_posix().endswith(
+        "test/000001/gray/000002.tif")
+
+
+def test_find_instances_uses_primesense_split(tmp_path):
+    root = tmp_path / "tless"
+    sdir = root / "test_primesense" / "000001"
+    (sdir / "mask_visib").mkdir(parents=True)
+    (sdir / "scene_gt.json").write_text(json.dumps(
+        {"5": [{"obj_id": 8}, {"obj_id": 1}]}))
+    (sdir / "mask_visib" / "000005_000000.png").write_bytes(b"x")
+    # A dummy test/ tree must not be consulted for T-LESS.
+    (root / "test" / "000001" / "mask_visib").mkdir(parents=True)
+    (root / "test" / "000001" / "scene_gt.json").write_text(json.dumps(
+        {"9": [{"obj_id": 8}]}))
+    (root / "test" / "000001" / "mask_visib" / "000009_000000.png").write_bytes(b"x")
+    assert find_instances(root, 8, n=5) == [(1, 5, 0)]
+
+
+def test_grasp_load_gt_uses_layout_split(tmp_path):
+    from popoe.metrics import grasp
+
+    root = tmp_path / "tless"
+    sdir = root / "test_primesense" / "000002"
+    sdir.mkdir(parents=True)
+    (sdir / "scene_gt.json").write_text(json.dumps({
+        "4": [{"obj_id": 3, "cam_R_m2c": [1, 0, 0, 0, 1, 0, 0, 0, 1],
+               "cam_t_m2c": [1.0, 2.0, 3.0]}],
+    }))
+    gt = grasp.load_gt(root, [2])
+    assert (2, 4, 3) in gt
+    assert gt[(2, 4, 3)][0]["t"].shape == (3, 1)
+
+
+def test_ar_probe_scene_width_reads_tif_depth(tmp_path):
+    cv2 = pytest.importorskip("cv2")
+    from popoe.metrics.ar import _probe_scene_width
+
+    root = tmp_path / "itodd"
+    sdir = root / "test" / "000001" / "depth"
+    sdir.mkdir(parents=True)
+    img = __import__("numpy").zeros((48, 1280), dtype="uint16")
+    assert cv2.imwrite(str(sdir / "000003.tif"), img)
+    _, layout = resolve_dataset_layout(root)
+    assert _probe_scene_width(root, layout, 1, ["3"]) == 1280.0

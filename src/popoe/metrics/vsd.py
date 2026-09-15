@@ -22,9 +22,17 @@ import nvdiffrast.torch as dr
 
 try:
     from popoe.metrics import aggregate
+    from popoe.datasets.bop import (
+        default_targets_path, depth_image_path, resolve_dataset_layout,
+        scene_split_dir,
+    )
 except ImportError:  # run as a bare file without popoe installed
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from popoe.metrics import aggregate
+    from popoe.datasets.bop import (
+        default_targets_path, depth_image_path, resolve_dataset_layout,
+        scene_split_dir,
+    )
 
 def _bop_misc():
     toolkit = os.environ.get("POPOE_BOP_TOOLKIT")
@@ -118,20 +126,22 @@ def vsd_per_tau(d_est, d_gt, d_scene, diameter_mm, delta_mm=VSD_DELTA_MM, taus=V
     return errs
 
 
-def compute_ar_vsd(csv_path, bop_root, models_eval_dir=None):
+def compute_ar_vsd(csv_path, bop_root, models_eval_dir=None, dataset=None):
     """Read BOP CSV + scene depth + GT, compute AR_VSD.
 
     models_eval_dir: path to the dataset's models_eval folder (uses these meshes
     for VSD, per BOP protocol)
     """
     bop_root = Path(bop_root)
+    ds_name, layout = resolve_dataset_layout(
+        bop_root, dataset or os.environ.get("BOP_DATASET"))
     if models_eval_dir is None:
         models_eval_dir = bop_root / "models_eval"
     models_eval_dir = Path(models_eval_dir)
 
     # N3: dataset-specific VSD visibility delta (ITODD = 5 mm, else 15 mm).
-    delta_mm = aggregate.vsd_delta_mm(bop_root.name)
-    print(f"VSD delta = {delta_mm} mm (dataset={bop_root.name})", flush=True)
+    delta_mm = aggregate.vsd_delta_mm(ds_name)
+    print(f"VSD delta = {delta_mm} mm (dataset={ds_name})", flush=True)
 
     # Load meshes + symmetries + diameters once
     models_info = json.load(open(models_eval_dir / "models_info.json"))
@@ -166,7 +176,8 @@ def compute_ar_vsd(csv_path, bop_root, models_eval_dir=None):
             "multi-instance CSV detected (duplicate (scene,im,obj) rows): "
             "this local VSD scorer assumes one row per target.")
     # M1: missing targets would inflate flat AR.
-    aggregate.assert_csv_covers_targets(keys, bop_root / "test_targets_bop19.json")
+    aggregate.assert_csv_covers_targets(
+        keys, default_targets_path(bop_root, layout["split"]))
     # Index GT + scene depth
     scene_cache = {}
 
@@ -181,12 +192,14 @@ def compute_ar_vsd(csv_path, bop_root, models_eval_dir=None):
 
         key = (scene_id, im_id)
         if key not in scene_cache:
-            scene_dir = bop_root / "test" / f"{scene_id:06d}"
+            scene_dir = scene_split_dir(bop_root, layout, scene_id)
             scene_camera = json.load(open(scene_dir / "scene_camera.json"))
             scene_gt = json.load(open(scene_dir / "scene_gt.json"))
             cam = scene_camera[str(im_id)]
             K = np.array(cam["cam_K"]).reshape(3, 3)
-            depth_raw = cv2.imread(str(scene_dir / "depth" / f"{im_id:06d}.png"), cv2.IMREAD_UNCHANGED)
+            depth_raw = cv2.imread(
+                str(depth_image_path(bop_root, layout, scene_id, im_id)),
+                cv2.IMREAD_UNCHANGED)
             if depth_raw is None:
                 scene_cache[key] = None
                 continue

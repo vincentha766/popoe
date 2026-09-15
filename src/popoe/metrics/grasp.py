@@ -17,11 +17,15 @@ as failures via their large errors.
 
 Usage:
   BOP_PATH=/path/to/ycbv python -m popoe.metrics.grasp preds.csv
-Env: POPOE_BOP_TOOLKIT (thodan/bop_toolkit checkout), BOP_PATH.
+Env: POPOE_BOP_TOOLKIT (thodan/bop_toolkit checkout), BOP_PATH,
+BOP_DATASET (optional; defaults to the BOP_PATH basename; same BOP_LAYOUTS
+table as bop_eval.py).
 """
 import os, sys, csv, json
 from pathlib import Path
 import numpy as np
+
+from popoe.datasets.bop import resolve_dataset_layout, scene_split_dir
 
 
 def _pose_error():
@@ -34,11 +38,12 @@ def _pose_error():
     return pose_error
 
 
-def load_gt(bop_path, scenes):
+def load_gt(bop_path, scenes, dataset=None):
     """(scene_id, im_id, obj_id) -> list of {R, t} ground-truth poses."""
+    _, layout = resolve_dataset_layout(bop_path, dataset)
     gt = {}
     for s in scenes:
-        sdir = bop_path / "test" / f"{s:06d}"
+        sdir = scene_split_dir(bop_path, layout, s)
         scene_gt = json.load(open(sdir / "scene_gt.json"))
         for im_id_str, gts in scene_gt.items():
             for g in gts:
@@ -120,7 +125,7 @@ def main(argv=None):
     print(f"loaded {len(rows)} rows from {csv_path}", flush=True)
 
     scenes = sorted({int(r["scene_id"]) for r in rows})
-    gt = load_gt(bop_path, scenes)
+    gt = load_gt(bop_path, scenes, dataset=os.environ.get("BOP_DATASET"))
     obj = load_models(bop_path)
     err = per_object_errors(rows, gt, obj)
     per_object, summary = aggregate_grasp(err, obj)

@@ -68,6 +68,27 @@ def bop_layout(dataset, split=None, models_dir=None) -> dict:
     return layout
 
 
+def resolve_dataset_layout(bop_root, dataset=None, split=None, models_dir=None):
+    """``(name, layout)`` for a dataset root. Name defaults to the root basename."""
+    root = Path(bop_root)
+    name = (dataset or root.name).lower()
+    return name, bop_layout(name, split=split, models_dir=models_dir)
+
+
+def scene_split_dir(bop_root, layout, scene_id) -> Path:
+    return Path(bop_root) / layout["split"] / f"{int(scene_id):06d}"
+
+
+def rgb_image_path(bop_root, layout, scene_id, im_id) -> Path:
+    return (scene_split_dir(bop_root, layout, scene_id)
+            / layout["img_dir"] / f"{int(im_id):06d}{layout['img_ext']}")
+
+
+def depth_image_path(bop_root, layout, scene_id, im_id) -> Path:
+    return (scene_split_dir(bop_root, layout, scene_id)
+            / "depth" / f"{int(im_id):06d}{layout['depth_ext']}")
+
+
 def default_targets_path(bop_root, split="test") -> Path:
     """Return the conventional BOP target file path for a split."""
 
@@ -119,16 +140,21 @@ def load_bop_scene(bop_root, split, scene_id, im_id) -> Scene:
     )
 
 
-def find_instances(bop_root, obj_id, n=5):
-    """Return up to `n` (scene_id, im_id, gt_idx) triples for `obj_id`."""
+def find_instances(bop_root, obj_id, n=5, dataset=None):
+    """Return up to `n` (scene_id, im_id, gt_idx) triples for `obj_id`.
+
+    Split dir comes from ``BOP_LAYOUTS`` (T-LESS/HB: ``test_primesense``).
+    """
+    _, layout = resolve_dataset_layout(bop_root, dataset)
+    split = layout["split"]
     out = []
-    for p in sorted(glob.glob(f"{bop_root}/test/*/scene_gt.json")):
+    for p in sorted(glob.glob(f"{bop_root}/{split}/*/scene_gt.json")):
         scene_id = int(os.path.basename(os.path.dirname(p)))
         gt = json.load(open(p))
         for im_str, ents in gt.items():
             for gi, e in enumerate(ents):
                 if e["obj_id"] == obj_id:
-                    m = (f"{bop_root}/test/{scene_id:06d}/mask_visib/"
+                    m = (f"{bop_root}/{split}/{scene_id:06d}/mask_visib/"
                          f"{int(im_str):06d}_{gi:06d}.png")
                     if os.path.exists(m):
                         out.append((scene_id, int(im_str), gi))
@@ -137,24 +163,41 @@ def find_instances(bop_root, obj_id, n=5):
     return out
 
 
-def load_inputs(bop_root, scene_id, im_id, gt_idx):
+def load_inputs(bop_root, scene_id, im_id, gt_idx, dataset=None):
     """Return (rgb uint8 HxWx3, depth float32 metres, mask bool, K 3x3, intr dict)."""
     import cv2
 
-    sd = f"{bop_root}/test/{scene_id:06d}"
-    cam = json.load(open(f"{sd}/scene_camera.json"))[str(im_id)]
+    _, layout = resolve_dataset_layout(bop_root, dataset)
+    sd = scene_split_dir(bop_root, layout, scene_id)
+    cam = json.load(open(sd / "scene_camera.json"))[str(im_id)]
     K = np.array(cam["cam_K"], np.float64).reshape(3, 3)
-    rgb = cv2.cvtColor(cv2.imread(f"{sd}/rgb/{im_id:06d}.png"), cv2.COLOR_BGR2RGB)
-    depth = cv2.imread(f"{sd}/depth/{im_id:06d}.png", cv2.IMREAD_UNCHANGED).astype(
-        np.float32) * cam["depth_scale"] / 1000.0
-    mask = cv2.imread(f"{sd}/mask_visib/{im_id:06d}_{gt_idx:06d}.png",
+    img_path = rgb_image_path(bop_root, layout, scene_id, im_id)
+    depth_path = depth_image_path(bop_root, layout, scene_id, im_id)
+    gray = layout["img_dir"] == "gray"
+    img = cv2.imread(str(img_path),
+                     cv2.IMREAD_UNCHANGED if gray else cv2.IMREAD_COLOR)
+    depth_raw = cv2.imread(str(depth_path), cv2.IMREAD_UNCHANGED)
+    if img is None or depth_raw is None:
+        missing = img_path if img is None else depth_path
+        raise FileNotFoundError(str(missing))
+    if gray:
+        if img.ndim == 2:
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    else:
+        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    depth = depth_raw.astype(np.float32) * cam["depth_scale"] / 1000.0
+    mask = cv2.imread(str(sd / "mask_visib" / f"{im_id:06d}_{gt_idx:06d}.png"),
                       cv2.IMREAD_UNCHANGED) > 0
     intr = {"fx": K[0, 0], "fy": K[1, 1], "cx": K[0, 2], "cy": K[1, 2]}
     return rgb, depth, mask, K, intr
 
 
-def load_gt(bop_root, scene_id, im_id, gt_idx):
+def load_gt(bop_root, scene_id, im_id, gt_idx, dataset=None):
     """Return (R_m2c 3x3, t_m2c mm) ground-truth pose."""
-    gt = json.load(open(f"{bop_root}/test/{scene_id:06d}/scene_gt.json"))[str(im_id)][gt_idx]
+    _, layout = resolve_dataset_layout(bop_root, dataset)
+    gt = json.load(open(
+        scene_split_dir(bop_root, layout, scene_id) / "scene_gt.json"
+    ))[str(im_id)][gt_idx]
     return (np.array(gt["cam_R_m2c"], np.float64).reshape(3, 3),
             np.array(gt["cam_t_m2c"], np.float64))

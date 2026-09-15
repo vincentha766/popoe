@@ -18,9 +18,36 @@ import numpy as np, trimesh
 
 try:
     from popoe.metrics import aggregate
+    from popoe.datasets.bop import (
+        default_targets_path, depth_image_path, resolve_dataset_layout,
+        rgb_image_path, scene_split_dir,
+    )
 except ImportError:  # run as a bare file without popoe installed
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from popoe.metrics import aggregate
+    from popoe.datasets.bop import (
+        default_targets_path, depth_image_path, resolve_dataset_layout,
+        rgb_image_path, scene_split_dir,
+    )
+
+
+def _probe_scene_width(bop_root, layout, scene_id, im_ids):
+    """First readable depth/rgb width for this scene, or None."""
+    try:
+        import cv2
+    except ImportError:
+        return None
+    for im_id in im_ids:
+        for path in (
+            depth_image_path(bop_root, layout, scene_id, int(im_id)),
+            rgb_image_path(bop_root, layout, scene_id, int(im_id)),
+        ):
+            if not path.is_file():
+                continue
+            im = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+            if im is not None:
+                return float(im.shape[1])
+    return None
 
 
 def _require_env(name, hint):
@@ -39,12 +66,15 @@ if __name__ == "__main__":
 
     if len(sys.argv) < 2:
         raise SystemExit(
-            "usage: BOP_PATH=/path/to/lmo python -m popoe.metrics.ar preds.csv")
+            "usage: BOP_PATH=/path/to/lmo python -m popoe.metrics.ar preds.csv "
+            "(optional BOP_DATASET=tless when the basename is not a dataset name)")
     CSV_PATH = sys.argv[1]
     # Dataset path is env-overridable so the same script scores LM-O or YCB-V:
     #   BOP_PATH=/path/to/ycbv python -m popoe.metrics.ar preds.csv
     BOP_PATH = Path(_require_env(
         "BOP_PATH", "to the dataset root (e.g. /path/to/lmo)"))
+    ds_name, layout = resolve_dataset_layout(
+        BOP_PATH, os.environ.get("BOP_DATASET"))
 
     # Load rows
     rows = list(csv.DictReader(open(CSV_PATH)))
@@ -62,7 +92,7 @@ if __name__ == "__main__":
             "bop_toolkit, or extend this script with one-to-one GT assignment.")
 
     # M1: flat AR denominators by CSV alone inflate if targets are missing.
-    _targets = BOP_PATH / "test_targets_bop19.json"
+    _targets = default_targets_path(BOP_PATH, layout["split"])
     aggregate.assert_csv_covers_targets(_keys, _targets)
 
     # Default image widths (BOP dataset_params) when no depth/rgb is on disk.
@@ -70,34 +100,19 @@ if __name__ == "__main__":
         "lmo": 640, "lm": 640, "ycbv": 640, "tless": 720, "itodd": 1280,
         "hb": 640, "icbin": 640, "tudl": 640, "hope": 640, "ruapc": 640,
     }
-    _ds_name = BOP_PATH.name.lower()
     _default_w = float(os.environ.get(
-        "BOP_IMAGE_WIDTH", _DATASET_IM_WIDTH.get(_ds_name, aggregate.MSPD_REF_WIDTH)))
+        "BOP_IMAGE_WIDTH", _DATASET_IM_WIDTH.get(ds_name, aggregate.MSPD_REF_WIDTH)))
 
     # Index GT + per-scene image width (for MSPD 640/W normalisation).
     scenes = sorted({int(r["scene_id"]) for r in rows})
     gt_by_scene_im_obj = {}
     scene_im_width = {}  # scene_id -> W
     for s in scenes:
-        sdir = BOP_PATH / "test" / f"{s:06d}"
+        sdir = scene_split_dir(BOP_PATH, layout, s)
         scene_gt = json.load(open(sdir / "scene_gt.json"))
         scene_cam = json.load(open(sdir / "scene_camera.json"))
         # Prefer real image size (depth/rgb) so T-LESS/ITODD get the right W.
-        w = None
-        for im_id_str in scene_gt.keys():
-            for sub in ("depth", "rgb", "gray"):
-                p = sdir / sub / f"{int(im_id_str):06d}.png"
-                if p.is_file():
-                    try:
-                        import cv2
-                        im = cv2.imread(str(p), cv2.IMREAD_UNCHANGED)
-                        if im is not None:
-                            w = float(im.shape[1])
-                            break
-                    except Exception:
-                        pass
-            if w is not None:
-                break
+        w = _probe_scene_width(BOP_PATH, layout, s, scene_gt.keys())
         scene_im_width[s] = w if w is not None else _default_w
         for im_id_str, gts in scene_gt.items():
             im_id = int(im_id_str)

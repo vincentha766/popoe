@@ -114,7 +114,13 @@ def is_runtime_failure(exc: BaseException) -> bool:
 
 @dataclass(frozen=True)
 class Scene:
-    """One RGB-D observation. depth is in METRES (already x depth_scale/1000)."""
+    """One RGB-D observation. ``depth`` is metres.
+
+    Loaders convert raw depth with ``FrameManifest.depth_scale`` (metres per
+    raw unit). BOP ``scene_camera.json`` stores millimetres per raw unit;
+    ``bop_frame_manifest`` divides by 1000 before constructing the manifest.
+    Do not divide ``Scene.depth`` by 1000 again.
+    """
     rgb: np.ndarray                     # (H, W, 3) uint8
     depth: np.ndarray                   # (H, W) float32, metres
     K: np.ndarray                       # (3, 3) camera intrinsics
