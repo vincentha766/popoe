@@ -16,6 +16,7 @@ The reference method is FreeZe-v2-style (DINOv2 + GeDi → RANSAC → ICP → sy
 
 **Docs**: [docs/](docs/README.md) is the index.
 [ARCHITECTURE.md](ARCHITECTURE.md) covers the seams and stage protocols, [docs/invariants.md](docs/invariants.md) the properties that must hold, [docs/sources/](docs/sources/README.md) the external producers, and [scripts/README.md](scripts/README.md) the diagnostics and ablations.
+Patches: [CONTRIBUTING.md](CONTRIBUTING.md). Release notes: [CHANGELOG.md](CHANGELOG.md).
 
 ## Quickstart
 

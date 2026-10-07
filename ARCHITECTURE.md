@@ -39,14 +39,14 @@ Its default flags are the tuned Open3D identity rather than a paper-faithful fre
 | Query features | `QueryEncoder` | `freeze.adapters.FreeZeQueryEncoder` (DINOv2 visual + `PointDescriptor` geometric branch) |
 | Target features | `TargetEncoder` | `freeze.adapters.FreeZeTargetEncoder` |
 | Geometric descriptors | `PointDescriptor` | `freeze.feature_extractor.load_geometric_descriptor` dispatches on `POPOE_GEOM_BACKBONE`: `load_gedi` (default); `descriptors.FPFHDescriptor` |
-| Fusion | class | `freeze.fusion.DinoGeDiFusion` |
+| Fusion | `FeatureFusion` | `freeze.fusion.DinoGeDiFusion` |
 | Pose solve | `PoseSolver` | `solvers.Open3DFeatureRansacSolver` (default) — also GPU RANSAC and TEASER++ |
-| External coarse pose | class | `segmentor_sam6d.SAM6DPemResultsCoarseEstimator` over already-written PEM results |
+| External coarse pose | `CoarseEstimator` | `segmentor_sam6d.SAM6DPemResultsCoarseEstimator` over already-written PEM results |
 | Refine (correspondence) | `PoseRefiner` | `adapters.ICPRefiner` (clouds from encoded features) |
 | Refine (estimator) | `GeometricRefiner` | `adapters.ICPRefiner.refine_geometry`; default clouds: `adapters.icp_clouds` |
-| Score | class | `scoring.ChampionScorer` |
+| Score | `PoseScorer` | `scoring.ChampionScorer` |
 | Render re-rank (opt.) | `PoseRefiner` chain | `render_rerank.RenderAppearanceReranker` (`--render-rerank`) |
-| Select | function | `adapters.best_hyp` / `select_top_instances` |
+| Select | `Selector` | `adapters.best_hyp` / `select_top_instances` (plain functions; `Selector` is for a stateful selector) |
 | Metrics | scripts | `metrics.vsd`, `metrics.ar` |
 
 ## Cross-cutting data (one place for shared conventions)

@@ -11,6 +11,8 @@ Four documents, each with one subject.
 
 [../scripts/README.md](../scripts/README.md) indexes the diagnostics and ablation drivers. They are not entry points for evaluation.
 
+Outside this directory: [../CONTRIBUTING.md](../CONTRIBUTING.md) for submitting a patch, and [../CHANGELOG.md](../CHANGELOG.md) for what changed between versions.
+
 ## Which one to read
 
 - Running the evaluated BOP loop, or installing the dependencies it needs: [../README.md](../README.md).
