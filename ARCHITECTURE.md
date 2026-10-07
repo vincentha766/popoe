@@ -4,7 +4,7 @@ popoe factors 6-DoF pose into a **method** (`PoseMethod.run(scene, obj)`) and **
 A method uses only the stages its graph requires, and an implementation needs only matching method signatures; there is no base class and no registration step.
 
 This file covers the seams.
-The guards that keep a composed run correct are in [docs/invariants.md](docs/invariants.md), and the external producers behind the segmentation stage are in [docs/sources/](docs/sources/README.md).
+The properties a composed run must satisfy are in [docs/invariants.md](docs/invariants.md), and the external producers behind the segmentation stage are in [docs/sources/](docs/sources/README.md).
 
 ## Graphs
 

@@ -30,7 +30,8 @@ muse = ["torch", "transformers", "Pillow", "pycocotools"]
 dev = ["pytest"]
 
 [project.urls]
-Documentation = "https://github.com/vincentha766/popoe/blob/main/ARCHITECTURE.md"
+Documentation = "https://github.com/vincentha766/popoe/tree/main/docs"
+Source = "https://github.com/vincentha766/popoe"
 
 [project.scripts]
 popoe-bop-muse = "popoe.bop_muse:_main"

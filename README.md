@@ -14,7 +14,8 @@ The reference method is FreeZe-v2-style (DINOv2 + GeDi → RANSAC → ICP → sy
 
 > Research code, `v0.1`. Contracts and fusion are CPU-tested. The reference run requires CUDA, GeDi, nvdiffrast, a BOP split, and detection JSONs, none of which are included in a clone.
 
-**Docs**: [ARCHITECTURE.md](ARCHITECTURE.md) (seams and stage protocols) · [docs/invariants.md](docs/invariants.md) (guards that must stay) · [docs/sources/](docs/sources/README.md) (external detection and pose producers) · [scripts/README.md](scripts/README.md) (diagnostics and ablations)
+**Docs**: [docs/](docs/README.md) is the index.
+[ARCHITECTURE.md](ARCHITECTURE.md) covers the seams and stage protocols, [docs/invariants.md](docs/invariants.md) the properties that must hold, [docs/sources/](docs/sources/README.md) the external producers, and [scripts/README.md](scripts/README.md) the diagnostics and ablations.
 
 ## Quickstart
 
@@ -183,7 +184,7 @@ src/popoe/               # method-agnostic pipeline
 examples/                # runnable entry points (table below)
 scripts/                 # diagnostics and ablations — scripts/README.md
 tests/                   # CPU, GPU-free
-docs/                    # invariants, external sources
+docs/                    # invariants, external sources — docs/README.md
 ```
 
 | `examples/` | Role |
