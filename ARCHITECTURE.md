@@ -79,7 +79,8 @@ The FreeZe recipe uses GeDi, but the encoders call only `PointDescriptor.compute
 That makes FPFH a proper hand-crafted control and dGeDi a fast learned control, without touching query/target encoding, fusion, solving, or scoring.
 
 Descriptor radii are in canonical units, where object extent is about 1.0, so GeDi's `r_lrf` and FPFH's radii are directly comparable.
-Role-aware descriptors go through `descriptors.describe(..., role="query"|"target")`; role-blind ones keep the two-argument form.
+A descriptor receives the role it is describing: `compute(pts, pcd, role="query"|"target")`.
+FPFH uses it to orient normals outward on the CAD side and toward the camera on the depth side; a role-blind backbone such as GeDi accepts the argument and ignores it.
 
 ### Scoring is a stage, separate from refinement
 

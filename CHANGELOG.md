@@ -6,7 +6,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- `TrimeshRenderer` claimed to be "always available" but needs rtree, which trimesh imports lazily inside `mesh.ray.intersects_location`.
+  A missing rtree therefore surfaced as `ModuleNotFoundError` partway through a render rather than as an unavailable backend at construction. It is now checked in `__init__`, which raises `RendererUnavailable`, and `rtree` is declared in the `reference` extra.
+- `ARCHITECTURE.md` described role-aware descriptors as going through `descriptors.describe(...)`, a helper removed in 9f12a9f. The role is passed to `PointDescriptor.compute(pts, pcd, role=)`.
+- `tests/test_s_coarse.py` still called `rule_replay.rule_score` with a pandas DataFrame, which 9f12a9f changed to a list of row dicts.
+- Two tests in `tests/test_target_encoding_failures.py` used a descriptor stub whose `compute` lacked the `role` argument that the `PointDescriptor` protocol declares and the extractor passes.
+
+The six tests that previously failed on CPU now pass: 502 passed, 2 skipped.
 
 ## [0.1.0] — 2026-10-07
 

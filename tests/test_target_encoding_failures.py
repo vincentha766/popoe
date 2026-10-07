@@ -58,7 +58,10 @@ def test_gedi_non_singleton_batches_are_unchanged():
 
 
 class _GeoDescriptor:
-    def compute(self, pts, pcd):
+    """A role-blind PointDescriptor: it ignores `role`, but must still accept
+    it, because the extractor passes role="target" on the live path."""
+
+    def compute(self, pts, pcd, role=None):
         n = int(pts.shape[0])
         return np.ones((n, 2), dtype=np.float32)
 

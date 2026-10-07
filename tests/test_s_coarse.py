@@ -184,7 +184,6 @@ def test_use_s_coarse_matches_rule_replay_same_rule():
     recorded term values — the arbitration term and the offline rule are one
     formula."""
     import importlib.util
-    pd = pytest.importorskip("pandas")
     spec = importlib.util.spec_from_file_location(
         "rule_replay",
         __import__("pathlib").Path(__file__).resolve().parents[1]
@@ -204,10 +203,11 @@ def test_use_s_coarse_matches_rule_replay_same_rule():
                    "t_coarse": np.array([0.004, 0.0, 0.0])})  # slight coarse offset
     out = ChampionScorer(size_aware=True, use_s_coarse=True).score(pose, q, t)
 
-    df = pd.DataFrame([{k: out.breakdown[k] if k != "s_icp" else 0.77
-                        for k in ("s_icp", "s_feat_1", "metric_fit", "s_coarse")}])
-    terms = rr.parse_rule("s_icp*s_feat_1*metric_fit*s_coarse", df.columns)
-    assert rr.rule_score(df, terms).iloc[0] == pytest.approx(out.score)
+    # rule_replay is csv-only: a "dump" is a list of row dicts, so one row here.
+    rows = [{k: out.breakdown[k] if k != "s_icp" else 0.77
+             for k in ("s_icp", "s_feat_1", "metric_fit", "s_coarse")}]
+    terms = rr.parse_rule("s_icp*s_feat_1*metric_fit*s_coarse", rows[0].keys())
+    assert rr.rule_score(rows, terms)[0] == pytest.approx(out.score)
 
 
 def test_icp_refiner_keep_coarse_stashes_pre_icp_pose():

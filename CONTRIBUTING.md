@@ -22,7 +22,7 @@ pytest tests/
 
 A behaviour change needs a test that fails before the change and passes after.
 GPU, nvdiffrast, GeDi, OpenCV, Open3D and TEASER++ are absent in CI, so a test that requires one calls `pytest.importorskip("...")` instead of asserting the package is present.
-Six tests currently fail on CPU for reasons unrelated to any pending change, so check whether a failure also occurs on `main` before treating it as yours.
+If a test fails, check whether it also fails on `main` before treating it as yours.
 
 **Commit messages.** An imperative subject under 72 characters, stating what the commit does rather than what the problem was: `Share correspond_pair between Pipeline and bop_eval`, not `fix duplication`.
 Add a body wherever the motivation is not evident from the diff, covering the previous behaviour and what fails without the change.

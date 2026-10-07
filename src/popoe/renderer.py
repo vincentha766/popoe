@@ -11,6 +11,7 @@ the cache key (see cache.py).
 
 import numpy as np
 import torch
+import importlib.util
 import math
 from typing import Tuple, Optional
 
@@ -188,12 +189,24 @@ class NvdiffrastRenderer:
 
 
 class TrimeshRenderer:
-    """CPU ray-casting renderer. Always available; ~100x slower than the GPU
-    rasteriser, and its images are NOT pixel-equivalent to nvdiffrast's."""
+    """CPU ray-casting renderer. ~100x slower than the GPU rasteriser, and its
+    images are NOT pixel-equivalent to nvdiffrast's.
+
+    Needs trimesh plus rtree: `mesh.ray.intersects_location` builds an R-tree
+    over the triangles, and trimesh imports rtree lazily inside that call. A
+    missing rtree would therefore surface as ModuleNotFoundError partway
+    through a render, so it is checked here instead — a stage reports an
+    unavailable backend when it is constructed (see docs/invariants.md)."""
 
     source = 'trimesh'
 
     def __init__(self, H: int = 480, W: int = 480):
+        for mod, why in (("trimesh", "the mesh and ray caster"),
+                         ("rtree", "trimesh's triangle R-tree")):
+            if importlib.util.find_spec(mod) is None:
+                raise RendererUnavailable(
+                    f"TrimeshRenderer needs {mod} ({why}); "
+                    f'install it with pip install -e ".[reference]"')
         self.H = H
         self.W = W
 
