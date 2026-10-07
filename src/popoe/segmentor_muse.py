@@ -5,7 +5,7 @@ ensembles, and the only one with **no public code**. So unlike CNOS / SAM-6D /
 NIDS there is no official producer to adapt: what popoe can offer is a
 reimplementation from the paper, and that distinction is part of the contract,
 not a footnote. The authors' *masks*, unlike their method, are obtainable —
-their BOP submissions are public (see MUSE.md, Upstream Status) — so ``muse``
+their BOP submissions are public (see docs/sources/muse.md, Upstream) — so ``muse``
 names real downloaded files, never anything this module writes.
 
 Naming (same discipline as CNOS's ``cnos`` / ``cnos-lab`` split):
@@ -685,7 +685,7 @@ class MuseSegmentor:
 
         Completeness is the whole point: this is both the per-frame memo key and
         what a `popoe.cache` user keys stored MUSE output on, so a knob missing
-        here aliases two genuinely different configurations (ARCHITECTURE.md —
+        here aliases two genuinely different configurations (docs/invariants.md —
         "anything that selects a method belongs in the cache key"). Hence the
         class DIAMETERS (they drive the size gate, not just the class list),
         every gate field, and each component's public settings.

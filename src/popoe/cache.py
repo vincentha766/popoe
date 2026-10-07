@@ -5,7 +5,8 @@ CONFIGURATION and (b) the CONTENT of its inputs — so a rerun with the same
 config reuses results automatically, and changing any upstream knob
 invalidates exactly the entries it should.
 
-Two invariants (see ARCHITECTURE.md, Stage caching):
+Two invariants (see docs/invariants.md, "Cache keys fingerprint config and
+content"):
 
 1. **Fitted state is part of the key.** Anything FIT during a stage (the
    visual PCA, normalisation stats) makes downstream outputs functions of
