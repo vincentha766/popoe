@@ -1,18 +1,18 @@
 # MUSE
 
 MUSE is a mask source in FreeZe-v2's segmentation ensemble. The paper is public; the authors' code is not.
-There is no official producer to adapt, so popoe carries `popoe.segmentor_muse`, a reimplementation from the paper — which also makes MUSE the only source that is both a live segmentor and its own producer.
+There is no official producer to adapt, so popoe includes `popoe.segmentor_muse`, a reimplementation from the paper. This also makes MUSE the only source that acts both as a live segmentor and as its own producer.
 
-The authors' BOP submissions are public, so the artefacts are obtainable even though the producer code is not. Keep those two facts apart.
+The authors' BOP submissions are public, so the artefacts are obtainable even though the producer code is not. The two facts should not be conflated.
 
-The producer boundary, the shared checks, and `BOPDetectionsSegmentor` usage are in [README.md](README.md).
+The producer boundary, the shared checks, and `BOPDetectionsSegmentor` usage are described in [README.md](README.md).
 
 | Source tag | Meaning |
 |---|---|
 | `muse` | The authors' official artefacts only. Nothing in popoe writes it. |
 | `muse-repro` | This reimplementation (`popoe.segmentor_muse`, `MUSE_SOURCE`) |
 
-Four-way pose comparisons consume the authors' official `muse` JSON. A `muse-repro` number filed under `muse` is a misattribution.
+Four-way pose comparisons use the authors' official `muse` JSON. Recording a `muse-repro` result under `muse` is a misattribution.
 
 ## Upstream
 
@@ -36,7 +36,7 @@ any env (replay)
   detections JSON -> MuseDetectionsSegmentor / BOPDetectionsSegmentor union
 ```
 
-Use the live path on new captures. Use the dumped JSON for evaluation, for multi-source unions, and for anything that must stay reproducible after the fact; replay needs no GPU, no Grounding DINO and no templates.
+Use the live path on new captures. Use the exported JSON for evaluation, for multi-source unions, and for any result that must remain reproducible afterwards; replay requires no GPU, no Grounding DINO and no templates.
 
 ## Environment
 
@@ -49,15 +49,15 @@ export POPOE_SAM2_CKPT=/path/to/sam2_ckpt      # sam2.1_hiera_large.pt lives her
 export TORCH_HOME=/path/to/torch_cache         # optional; caches DINOv2 ViT-G
 ```
 
-Grounding DINO weights come from the HF hub on first use (`IDEA-Research/grounding-dino-base`), so the first run needs network access.
+Grounding DINO weights are fetched from the HF hub on first use (`IDEA-Research/grounding-dino-base`), so the first run requires network access.
 
 ## Register at least two classes
 
-MUSE's relative score is a softmax across all candidate classes, so scoring is joint rather than per-object.
+MUSE's relative score is a softmax over all candidate classes, so scoring is joint rather than per-object.
 With one registered class that term is the constant 1 and `S_joint` degenerates to `beta * S_abs`.
 The library refuses that configuration unless `allow_single_class=True` (CLI: `--allow-single-class`) asks for it explicitly.
 
-This is also why `Segmentor.segment`, a per-object contract, is served from a `(proposal x class)` score matrix computed once per frame: one column per call.
+This is also why `Segmentor.segment`, a per-object contract, is answered from a `(proposal x class)` score matrix computed once per frame, returning one column per call.
 
 ## CLI
 
@@ -87,12 +87,12 @@ popoe-bop-muse \
 
 `popoe-bop-muse` reads `<bop-root>/test_targets_bop19.json` by default, groups repeated BOP targets so each image is processed once, registers every target object found in the full target file, and writes one combined BOP-format detections JSON.
 
-Flag behaviour worth knowing before you trust the output:
+Flag behaviour to be aware of before interpreting the output:
 
-- `--limit-images` limits which frames are processed; it does not shrink the registered class set. `--objs 9,14 --limit-images 10` is a reduced-class smoke run, and its scores are not comparable with a full multi-class run.
+- `--limit-images` restricts which frames are processed; it does not reduce the registered class set. `--objs 9,14 --limit-images 10` is a reduced-class trial run, and its scores are not comparable with a full multi-class run.
 - `--resume` requires `--shard-dir`.
-- `--topk` is floored per class by that object's BOP `inst_count` on the image.
-- `--target-object-only` filters the final combined file only. Leave it off for leaderboard-style segmentation AP.
+- `--topk` is raised per class to at least that object's BOP `inst_count` on the image, so a target with more instances than `--topk` is not truncated.
+- `--target-object-only` filters only the final combined file. Omit it for leaderboard-style segmentation AP.
 - The loader expects the usual BOP RGB-D PNG layout (`rgb/` + `depth/`). ITODD's gray `.tif` split needs a dataset-specific loader.
 
 ## Library use
@@ -109,23 +109,23 @@ dets = seg.segment(scene, obj)          # Detection.source == 'muse-repro'
 records = muse_records(scene, seg)      # the same masks, as a detections JSON
 ```
 
-`Detection.score` is `S_final`; `Detection.descriptor` carries the breakdown in `DESCRIPTOR_FIELDS` order (`s_abs`, `s_rel`, `p_obj`, `extent_m`). As with every segmentor, that score is comparable only within MUSE.
+`Detection.score` is `S_final`, and `Detection.descriptor` holds the breakdown in `DESCRIPTOR_FIELDS` order (`s_abs`, `s_rel`, `p_obj`, `extent_m`). As with every segmentor, that score is comparable only within MUSE.
 
-Proposals are computed once per frame — Grounding DINO + SAM2 would otherwise re-run for every object in the image — and memoised by frame content, not by `scene_id`/`im_id`, which real captures leave at -1.
+Proposals are computed once per frame, since Grounding DINO + SAM2 would otherwise be re-run for every object in the image. They are memoised by frame content rather than by `scene_id`/`im_id`, which real captures leave at -1.
 
 ### Config identity
 
-`MuseSegmentor.config()` is the per-frame memo key and the handle a `popoe.cache` user should key stored MUSE output on. It covers class diameters (they drive the size gate), every `DepthSizeGate` field, and each component's settings.
+`MuseSegmentor.config()` is the per-frame memo key, and the value a `popoe.cache` user should key stored MUSE output on. It covers the class diameters, which determine the size gate, every `DepthSizeGate` field, and each component's settings.
 
 A component may declare its own identity with a `config()` method.
-Do this for any custom component holding public mutable state, or reflection folds that state into the key.
-Template directories are keyed by path rather than content, so point a new directory at edited templates instead of editing PNGs in place.
+Do this for any custom component holding public mutable state; otherwise reflection includes that state in the key.
+Template directories are keyed by path rather than by content, so place edited templates in a new directory instead of modifying the PNGs in place.
 
 Defaults (`alpha=0.5`, `beta=0.8`, `tau=0.02`, `gamma=0.1`, `gem_p=1.5`, prompt `"items."`, GD thresholds 0.15/0.15, SAM2 Hiera-L) match the reference script.
 
 ## Divergences from the paper
 
-This is a port of the method, not a bit-identical replica.
+This is a port of the method rather than a bit-identical replica.
 
 | Paper | Here |
 |---|---|
@@ -133,11 +133,11 @@ This is a port of the method, not a bit-identical replica.
 | Eqs. (2)–(3): cosine on cls and GeM | Default: cosine(cls) + Tanimoto(GeM); optional `patch_sim=cosine` |
 | Naive softmax | Max-subtracted softmax |
 
-Defaults (`mask_rgb=True`, `gem_tokens="all"`) keep only the object region inside the box, per paper §4.1. Opt out with `--no-mask-rgb --gem-tokens fg`.
+The defaults `mask_rgb=True` and `gem_tokens="all"` retain only the object region inside the box, following paper §4.1. Disable them with `--no-mask-rgb --gem-tokens fg`.
 
-Further differences from a typical one-shot reference script: the size gate tests the true union of per-class intervals rather than their hull; proposals are memoised per frame because popoe calls `segment` once per object; models stay resident across frames.
+Further differences from a typical single-run reference script: the size gate tests the true union of per-class intervals rather than their hull; proposals are memoised per frame because popoe calls `segment` once per object; and models remain resident across frames.
 
-Crop windows also differ slightly from the reference (`square_crop` here is exclusive-bbox + PIL BICUBIC), so treat a small `S_abs` margin as a tie.
+Crop windows also differ slightly from the reference, since `square_crop` here uses an exclusive bbox and PIL BICUBIC, so a small `S_abs` margin should be treated as a tie.
 
 ## Verification
 

@@ -1,13 +1,13 @@
 # CNOS
 
-CNOS is a detection producer. popoe consumes the detections JSON it writes; it does not import the official package. The producer boundary, the shared checks, and `BOPDetectionsSegmentor` usage are in [README.md](README.md).
+CNOS is a detection producer. popoe reads the detections JSON it writes and does not import the official package. The producer boundary, the shared checks, and `BOPDetectionsSegmentor` usage are described in [README.md](README.md).
 
 | Source tag | Meaning |
 |---|---|
 | `cnos` | Official CNOS / CNOS-FastSAM producer, including the public BOP default detections |
 | `cnos-lab` | popoe's local recipe: proposal masks, depth size gate, DINOv2 foreground-patch rank |
 
-Local output never takes the `cnos` tag.
+Local output must not be written under the `cnos` tag.
 
 ## Upstream
 
@@ -18,7 +18,7 @@ git submodule update --init --recursive external/cnos
 git -C external/cnos rev-parse HEAD
 ```
 
-The checkout exists for source provenance. It runs in its own environment:
+The checkout serves as source provenance and runs in its own environment:
 
 ```bash
 export POPOE_CNOS_PATH=/path/to/cnos          # defaults to external/cnos
@@ -50,7 +50,7 @@ cd external/cnos && CUDA_VISIBLE_DEVICES=0 python run_inference.py \
   dataset_name=lmo model=cnos_fast model.onboarding_config.rendering_type=pbr
 ```
 
-The official repo writes BOP-style predictions under its configured Hydra log directory. Validate the result without loading the official environment:
+The official repository writes BOP-style predictions under its configured Hydra log directory. Validate the result without loading that environment:
 
 ```bash
 popoe-cnos check --input data/detections/cnos/cnos-fastsam_lmo-test.json
@@ -74,9 +74,9 @@ popoe-cnos custom-infer-command \
   --stability-score-thresh 0.5
 ```
 
-It writes `OUTPUT_DIR/cnos_results/detection.json` and `vis.png`.
+This writes `OUTPUT_DIR/cnos_results/detection.json` and `vis.png`.
 
-That JSON uses placeholder BOP ids (`scene_id=0`, `image_id=0`, `category_id=1`). Stamp it to the frame and object you will evaluate before consuming it:
+That JSON uses placeholder BOP ids (`scene_id=0`, `image_id=0`, `category_id=1`). Assign the frame and object you intend to evaluate before reading it:
 
 ```bash
 popoe-cnos adapt-custom \
@@ -85,7 +85,7 @@ popoe-cnos adapt-custom \
   --scene-id 0 --image-id 42 --category-id 9
 ```
 
-For multi-object output where the JSON already encodes distinct category ids, use `--category-map` with the JSON keys as written — for official custom output that is `1`, not `0`:
+For multi-object output where the JSON already encodes distinct category ids, use `--category-map` with the JSON keys as written. For official custom output that key is `1` rather than `0`:
 
 ```bash
 popoe-cnos adapt-custom \
@@ -99,4 +99,4 @@ The adapted JSON keeps `source="cnos"`.
 ## Local CNOS-lab
 
 `popoe.segmentor_cnos_lab.CNOSLabSegmentor` is the local recipe: proposal masks are filtered by visible 3D extent from depth, then ranked by DINOv2 foreground-patch similarity to templates.
-It is deliberately separate from official CNOS — write its output under its own path, such as `data/detections/cnos_lab/`, and keep `source="cnos-lab"`.
+It is deliberately separate from official CNOS: write its output under its own path, such as `data/detections/cnos_lab/`, and retain `source="cnos-lab"`.

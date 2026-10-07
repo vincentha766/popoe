@@ -1,6 +1,6 @@
 # NIDS-Net
 
-NIDS-Net is a detection producer. popoe consumes the detections JSON it writes through `BOPDetectionsSegmentor(..., source="nids")`; there is no `NIDSNetDetectionsSegmentor`. The producer boundary, the shared checks, and `BOPDetectionsSegmentor` usage are in [README.md](README.md).
+NIDS-Net is a detection producer. popoe reads the detections JSON it writes through `BOPDetectionsSegmentor(..., source="nids")`; there is no `NIDSNetDetectionsSegmentor`. The producer boundary, the shared checks, and `BOPDetectionsSegmentor` usage are described in [README.md](README.md).
 
 ## Upstream
 
@@ -11,7 +11,7 @@ git submodule update --init --recursive external/NIDS-Net
 git -C external/NIDS-Net rev-parse HEAD
 ```
 
-The official repository combines Grounding DINO + SAM proposals, DINOv2 foreground feature averaging and adapters, and often Detectron2 with version-pinned support packages. Keep that runtime separate from popoe.
+The official repository combines Grounding DINO + SAM proposals, DINOv2 foreground feature averaging and adapters, and in most configurations Detectron2 with version-pinned support packages. Keep that runtime separate from popoe.
 
 ## BOP mode
 
@@ -39,7 +39,7 @@ print(d["scene_id"], d["image_id"], d["category_id"], d["score"], m.shape, m.dty
 PY
 ```
 
-Mask export may need to be enabled in the official prediction path — a boxes-only file will load but carries no masks.
+Mask export may have to be enabled explicitly in the official prediction path. A boxes-only file loads successfully but contains no masks.
 
 ## Real scene mode
 
@@ -57,7 +57,7 @@ Save a frame manifest for the capture:
 }
 ```
 
-If the raw NIDS output is already BOP-like and includes masks, popoe reads it directly. If it is Detectron2/COCO-style or missing `scene_id`, normalise it first with `popoe-nids-adapt` (`popoe.segmentor_nids.adapt_nidsnet_json`):
+If the raw NIDS output is already in BOP form and includes masks, popoe reads it directly. If it is Detectron2/COCO-style, or lacks `scene_id`, normalise it first with `popoe-nids-adapt` (`popoe.segmentor_nids.adapt_nidsnet_json`):
 
 ```bash
 popoe-nids-adapt \
@@ -95,4 +95,4 @@ response: [ { "scene_id": 0, "image_id": 42, "category_id": 9,
               "mask": {"format": "rle", "size": [H, W], "counts": "..."} } ]
 ```
 
-popoe's pose service accepts a frame manifest plus detections and runs the pose pipeline. It does not import NIDS-Net.
+popoe's pose service accepts a frame manifest together with detections and runs the pose pipeline. It does not import NIDS-Net.

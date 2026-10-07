@@ -1,6 +1,6 @@
 # Detection and pose sources
 
-Four external methods feed popoe. Each runs in its own environment, writes a file, and popoe consumes that file. popoe does not import any of them.
+Four external methods supply input to popoe. Each runs in its own environment and writes a file, which popoe then reads. popoe does not import any of them.
 
 | Source tag | Producer | Artefact | How-to |
 |---|---|---|---|
@@ -24,21 +24,21 @@ popoe env/service
   RGB-D frame manifest + detections JSON -> 6D pose
 ```
 
-A detections JSON carries only 2D information: `scene_id`, `image_id`, `category_id`, `score`, `bbox`, and `segmentation` (real captures may use `mask` or `mask_path` instead). Depth never travels in it. Depth stays in the frame manifest and is loaded into `Scene.depth` in metres.
+A detections JSON contains only 2D information: `scene_id`, `image_id`, `category_id`, `score`, `bbox`, and `segmentation` (real captures may use `mask` or `mask_path` instead). It never contains depth. Depth is held in the frame manifest and loaded into `Scene.depth` in metres.
 
-SAM-6D's PEM half is the exception: it produces full poses rather than detections, with `t` in millimetres, which popoe converts to metres when building a `PoseHypothesis`.
+SAM-6D's PEM half is the exception: it produces full poses rather than detections, with `t` in millimetres, which popoe converts to metres when constructing a `PoseHypothesis`.
 
-Producer dependencies — Hydra, Grounding DINO, SAM / FastSAM, Detectron2, version-pinned support packages — move much faster than the pose backend, so they are deliberately absent from popoe's `pyproject.toml`.
+Producer dependencies such as Hydra, Grounding DINO, SAM / FastSAM, Detectron2 and their version-pinned support packages change far more frequently than the pose backend, so they are deliberately excluded from popoe's `pyproject.toml`.
 Give each producer its own conda or uv environment.
 On a single-GPU workstation, run them serially: run the producer, let that process exit and release GPU memory, then run popoe.
 
 ## Source naming
 
-Official tags (`cnos`, `sam6d`, `nids`, `muse`) are reserved for artefacts the original authors published. Reimplementations write their own tag (`cnos-lab`, `muse-repro`). Keeping them apart is what stops a reimplementation's number from being cited as the official method's.
+Official tags (`cnos`, `sam6d`, `nids`, `muse`) are reserved for artefacts published by the original authors. A reimplementation writes its own tag, `cnos-lab` or `muse-repro`. Separating them is what prevents a result produced by a reimplementation from being cited as the official method's.
 
 ## Consuming a file
 
-Every file-backed detection source goes through one class, with the tag passed explicitly so provenance survives into scoring and logs:
+Every file-backed detection source is read through one class, with the tag passed explicitly so that provenance is preserved in scoring and logs:
 
 ```python
 from popoe.segmentor_detections import BOPDetectionsSegmentor
@@ -60,8 +60,8 @@ Checks that apply to every source:
 
 - object IDs match the CAD set popoe consumes;
 - `scene_id` / `image_id` match the frame manifest;
-- masks are present, not just boxes (BOP method pages list detection-only batches next to segmentation batches — check the Task field);
+- masks are present rather than boxes alone, since BOP method pages list detection-only batches alongside segmentation batches; check the Task field;
 - the submodule commit is recorded before reproducing results;
 - the source tag is the right one for who produced the file.
 
-File identity is pinned per directory: `data/detections/<source>/PROVENANCE.md` holds the download and SHA256s, and `python scripts/freeze_detections.py --check` verifies what is on disk.
+File identity is pinned per directory. `data/detections/<source>/PROVENANCE.md` records the download location and SHA256s, and `python scripts/freeze_detections.py --check` verifies the files on disk against them.

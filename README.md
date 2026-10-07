@@ -1,6 +1,6 @@
 # popoe — Pipeline Of Pose Estimation
 
-A modular **6-DoF object pose** framework, evaluated on **BOP**. Stages sit behind small `Protocol` contracts so a segmentor, backbone, solver, or scorer can grow without rewriting the rest.
+A modular **6-DoF object pose** framework, evaluated on **BOP**. Each stage is defined by a small `Protocol` contract, so a segmentor, backbone, solver, or scorer can be extended or replaced without rewriting the rest.
 
 ```
 ObjectModel (CAD) ─┬─ QueryEncoder ──────────── q, CanonFrame ─┐
@@ -10,9 +10,9 @@ Scene (RGB-D, K) ──┴──────────────────
 
 The reference method is FreeZe-v2-style (DINOv2 + GeDi → RANSAC → ICP → symmetry-aware scoring) with several `PoseSolver` implementations.
 
-**Scope**: a pose library — BOP datasets, metrics, evaluated recipes. Grasping, HTTP, and robot stacks belong elsewhere and should call these contracts.
+**Scope**: a pose library, covering BOP datasets, metrics, and evaluated recipes. Grasping, HTTP services, and robot stacks belong in separate packages that call these contracts.
 
-> Research code, `v0.1`. Contracts and fusion are CPU-tested. The reference run needs CUDA, GeDi, nvdiffrast, a BOP split, and detection JSONs; none of those ship in a clone.
+> Research code, `v0.1`. Contracts and fusion are CPU-tested. The reference run requires CUDA, GeDi, nvdiffrast, a BOP split, and detection JSONs, none of which are included in a clone.
 
 **Docs**: [ARCHITECTURE.md](ARCHITECTURE.md) (seams and stage protocols) · [docs/invariants.md](docs/invariants.md) (guards that must stay) · [docs/sources/](docs/sources/README.md) (external detection and pose producers) · [scripts/README.md](scripts/README.md) (diagnostics and ablations)
 
@@ -33,13 +33,13 @@ pytest tests/                   # CPU; GPU / nvdiffrast / GeDi / OpenCV / Open3D
 
 CI installs `.[dev,reference]` and runs the same CPU suite.
 
-`PoseMethod.run(scene, obj)` is the library entry. See [Writing a stage](#writing-a-stage) for the contracts, and [ARCHITECTURE.md](ARCHITECTURE.md) for how the two method graphs are composed.
+`PoseMethod.run(scene, obj)` is the library entry point. See [Writing a stage](#writing-a-stage) for the contracts, and [ARCHITECTURE.md](ARCHITECTURE.md) for how the two method graphs are composed.
 
 ## Install
 
 ### External dependencies (not on PyPI)
 
-Clone these yourself and export the env vars. Unset means empty — there is no implicit host path.
+Clone these yourself and export the environment variables. An unset variable resolves to empty rather than to a default host path.
 
 | Component | Env var | Notes |
 |-----------|---------|-------|
@@ -51,7 +51,7 @@ Clone these yourself and export the env vars. Unset means empty — there is no 
 
 DINOv2 comes from `torch.hub` (`TORCH_HOME`). Licences: [NOTICE](NOTICE) — each upstream keeps its own, so verify before use.
 
-Producer checkouts are optional and only needed to regenerate artefacts:
+Producer checkouts are optional, and required only to regenerate artefacts:
 
 ```bash
 git submodule update --init --recursive external/cnos external/NIDS-Net external/SAM-6D
@@ -65,7 +65,7 @@ Units: CAD vertices in **mm**; unprojected depth and output `t` in **metres**. B
 
 ### Detection files
 
-The JSONs under `data/detections/` are not in git. Each directory ships a `PROVENANCE.md` with downloads and SHA256s, plus a `MANIFEST.sha256`. Place the files, then verify:
+The JSONs under `data/detections/` are not tracked in git. Each directory contains a `PROVENANCE.md` with download locations and SHA256s, plus a `MANIFEST.sha256`. Place the files, then verify:
 
 ```bash
 python scripts/freeze_detections.py --check
@@ -73,19 +73,19 @@ python scripts/freeze_detections.py --check
 
 Which producer writes which file, and what each source tag means: [docs/sources/](docs/sources/README.md).
 
-### Encoder knobs
+### Encoder variables
 
-`POPOE_QUERY_POINTS`, `POPOE_TARGET_GRID`, `POPOE_DINO_LAYER`, `POPOE_TWO_SCALE_GEDI`, `POPOE_VIS_DIM`, `POPOE_GEOM_BACKBONE` and friends are recorded in the eval cache key.
+`POPOE_QUERY_POINTS`, `POPOE_TARGET_GRID`, `POPOE_DINO_LAYER`, `POPOE_TWO_SCALE_GEDI`, `POPOE_VIS_DIM`, `POPOE_GEOM_BACKBONE` and the other encoder variables are recorded in the eval cache key.
 Changing one without a new `--cache` replays stale features — see [docs/invariants.md](docs/invariants.md#cache-keys-fingerprint-config-and-content).
 
 ## Three identities
 
-Mixing these up is how wrong numbers get cited.
+Conflating these is the most common cause of a misattributed number.
 
 | Identity | What it is | Entry |
 |----------|------------|--------|
 | **Evaluated default** | Tuned Open3D: `ChampionScorer`, mask floor 100, IoU dedupe 0.9, tau from sampled query extent, ICP on the sparse grid, `--render-backend nvdiffrast`. Not a paper-faithful freeze. | `examples/bop_eval.py` with no paper-side flags |
-| **Paper-side flags** | Opt-in FreeZe-v2 knobs: `--eq5-terms`, `--tau-diameter`, `--icp-dense`, `--solver gpu-feat`, `--min-mask-pixels 0`, `--mask-iou-dedupe` above 1, … | `examples/bop_eval.py --help` |
+| **Paper-side flags** | Opt-in FreeZe-v2 parameters: `--eq5-terms`, `--tau-diameter`, `--icp-dense`, `--solver gpu-feat`, `--min-mask-pixels 0`, `--mask-iou-dedupe` above 1, … | `examples/bop_eval.py --help` |
 | **Parity oracle** | Byte-identity of the historical `RansacSolver` + `FreeZeScorer` against `examples/freezev2_monolith.py`. Not the BOP loop. | `examples/pipeline_selfcheck.py` |
 
 There are no frozen headline BOP numbers in this repository. Do not cite internal or unpublished runs as popoe results.
@@ -103,7 +103,7 @@ python examples/bop_eval.py \
     --cache /path/to/popoe_cache_ycbv
 ```
 
-Pass exactly one of `--detections` or `--sources name=path,...`. Paper-side knobs are on `--help`.
+Pass exactly one of `--detections` or `--sources name=path,...`. Paper-side flags are listed under `--help`.
 
 Score the CSV:
 
@@ -136,14 +136,14 @@ seg = BOPDetectionsSegmentor(sources={
 }, topk=2)
 ```
 
-Records are `{scene_id, image_id, category_id, score, segmentation}` with COCO RLE masks; real captures may use `mask` or `mask_path` instead. They are always 2D — depth travels with the frame, via `popoe.datasets.frames` (`FrameManifest.depth_scale` is metres per raw unit).
+Records are `{scene_id, image_id, category_id, score, segmentation}` with COCO RLE masks; real captures may use `mask` or `mask_path` instead. They are always 2D. Depth is carried by the frame loader, `popoe.datasets.frames`, where `FrameManifest.depth_scale` gives metres per raw unit.
 
 Official source tags (`cnos`, `sam6d`, `nids`, `muse`) are reserved for the original authors' artefacts; reimplementations write `cnos-lab` / `muse-repro`. Downloads, per-producer setup and the full tag table: [docs/sources/](docs/sources/README.md).
 
 Two quick checks:
 
 ```bash
-python examples/union_smoke.py --dataset ycbv    # multi-source union loads
+python examples/union_smoke.py --dataset ycbv    # the multi-source union loads
 python examples/bop_seg_eval.py                  # 2D mask AP, not 6-DoF
 ```
 
@@ -160,7 +160,7 @@ popoe.Scene, popoe.ObjectModel, popoe.CanonFrame
 popoe.Detection, popoe.PointFeatures, popoe.PoseHypothesis
 ```
 
-A new method implements `PoseMethod.run`. A new stage drops into `make_correspondence_pipeline` → `Pipeline`, or into `DirectPoseMethod` — there is no registry. Conformance is structural: match the signature, skip the base class.
+A new method implements `PoseMethod.run`. A new stage is passed to `make_correspondence_pipeline` → `Pipeline`, or to `DirectPoseMethod`; there is no registry. Conformance is structural, so an implementation matches the signature without subclassing anything.
 
 ```python
 from popoe import PointFeatures, PoseHypothesis
@@ -172,7 +172,7 @@ class MySolver:  # popoe.PoseSolver by structure
         return [PoseHypothesis(R=R, t=t, score=..., breakdown={"s_coarse": ...})]
 ```
 
-Two rules a new stage inherits: a missing backend raises `BackendUnavailable` instead of substituting a weaker method, and a solver only proposes — `ChampionScorer` disposes. Both are spelled out in [docs/invariants.md](docs/invariants.md).
+Two rules apply to any new stage. A missing backend raises `BackendUnavailable` instead of substituting a weaker method, and a solver only generates hypotheses — selecting among them is the scorer's responsibility. Both are stated in full in [docs/invariants.md](docs/invariants.md).
 
 ## Layout
 
@@ -191,13 +191,13 @@ docs/                    # invariants, external sources
 | `bop_eval.py` | The evaluated BOP loop |
 | `bop_time_normalize.py` | Shared per-image time for a submission |
 | `bop_seg_eval.py` | COCO mask AP on detections |
-| `union_smoke.py` | Multi-source detection union smoke test |
+| `union_smoke.py` | GPU-free check of the multi-source detection union |
 | `pipeline_selfcheck.py` | Parity oracle |
 | `freezev2_monolith.py` | Reference monolith the oracle compares against |
 | `solver_swap_demo.py` | Solver ranking on GT instances |
 | `rule_replay.py` | Replay arbitration rules over a `--cand-csv` dump |
 
-Ablation drivers and diagnostics live under `scripts/` and are indexed in [scripts/README.md](scripts/README.md). None of them is the eval entry.
+Ablation drivers and diagnostics are under `scripts/` and indexed in [scripts/README.md](scripts/README.md). None of them is the eval entry point.
 
 ## License
 

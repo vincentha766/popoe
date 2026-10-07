@@ -1,13 +1,13 @@
 # scripts/
 
-Diagnostics and ablation drivers. None of these is the evaluated BOP entry — that is `examples/bop_eval.py`. Most need a finished CSV, a `--cand-csv` dump, or a BOP split.
+Diagnostics and ablation drivers. None of these is the evaluated BOP entry point; that is `examples/bop_eval.py`. Most require a completed CSV, a `--cand-csv` dump, or a BOP split.
 
 ## Identity and gates
 
 | Script | What it does |
 |--------|----------------|
 | `freeze_detections.py` | Materialize or verify `data/detections/` against `MANIFEST.sha256` (no symlinks; hashes bound to paths) |
-| `make_gt_detections.py` | Emit BOP `mask_visib` as a detections JSON — a perception upper bound, not submittable |
+| `make_gt_detections.py` | Emit BOP `mask_visib` as a detections JSON: a perception upper bound, not a submittable result |
 | `check_rerank_symmetry.py` | Fail if `--render-rerank` inflates flip `s_icp` |
 
 ## Segmentation A/B (CPU)
@@ -25,7 +25,7 @@ Diagnostics and ablation drivers. None of these is the evaluated BOP entry — t
 | Script | What it does |
 |--------|----------------|
 | `coarse_vs_refined.py` | Champion pre-ICP vs post-ICP poses from a `--cand-csv` |
-| `pose_ab_instances.py` | Per-instance AR delta: what a pose change fixed, and what it broke |
+| `pose_ab_instances.py` | Per-instance AR delta: which instances a pose change improved and which it regressed |
 | `flip_rescore_ab.py` | Whether the live score prefers an explicit 180° flip |
 | `perview_probe.py` | Per-view DINOv2 matching vs the stored view-mean |
 | `sar_render_compare.py` | Symmetry-aware render re-rank vs the live score |
@@ -35,8 +35,8 @@ Diagnostics and ablation drivers. None of these is the evaluated BOP entry — t
 | Script | What it does |
 |--------|----------------|
 | `ablation_geom_backbone.sh` | Visual-only / GeDi / FPFH geometric-branch ablation |
-| `run_fpfh_ablation_pod.sh` | Driver for that ablation on a GPU host |
-| `fidelity_ab_run.sh` | `--icp-dense` and `--tau-diameter` priced separately |
+| `run_fpfh_ablation_pod.sh` | Driver for the same ablation on a GPU host |
+| `fidelity_ab_run.sh` | Cost of `--icp-dense` and `--tau-diameter` measured separately |
 | `vcolor_ab_run.sh` | Vertex-colour CAD shading vs UV-only |
 
-Runnable entry points live in `examples/` and are indexed in [README.md](../README.md#layout).
+Runnable entry points are in `examples/` and indexed in [README.md](../README.md#layout).

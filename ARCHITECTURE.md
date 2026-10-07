@@ -1,7 +1,7 @@
 # Architecture
 
 popoe factors 6-DoF pose into a **method** (`PoseMethod.run(scene, obj)`) and **optional stage** Protocols in [src/popoe/interfaces.py](src/popoe/interfaces.py).
-A method uses only the stages its graph needs, and an implementation only needs matching method signatures — there is no base class and no registration step.
+A method uses only the stages its graph requires, and an implementation needs only matching method signatures; there is no base class and no registration step.
 
 This file covers the seams.
 The guards that keep a composed run correct are in [docs/invariants.md](docs/invariants.md), and the external producers behind the segmentation stage are in [docs/sources/](docs/sources/README.md).
@@ -49,11 +49,11 @@ Its default flags are the tuned Open3D identity rather than a paper-faithful fre
 | Select | function | `adapters.best_hyp` / `select_top_instances` |
 | Metrics | scripts | `metrics.vsd`, `metrics.ar` |
 
-## Cross-cutting data (conventions live in one place)
+## Cross-cutting data (one place for shared conventions)
 
 `Scene`, `ObjectModel`, and `CanonFrame` are built once and threaded through the pipeline.
-They carry the conventions that would otherwise be re-derived per module and drift apart.
-`FrameManifest` sits one step earlier, as the file-level input boundary.
+They hold the conventions that would otherwise be re-derived in each module and diverge.
+`FrameManifest` precedes them as the file-level input boundary.
 
 **Units.** Mesh vertices are in mm. Depth-unprojected points and the output `t` are in metres, and BOP CSVs convert back to mm at the edge.
 
@@ -69,7 +69,7 @@ The frame is an output of query encoding, since it depends on the sampled points
 ### Fusion is its own component
 
 `[w·L2(PCA(f_vis)), L2(f_geo)]` used to be copy-pasted inside both encoders.
-Extracting `DinoGeDiFusion` turns the whole pure-geometric / pure-visual / fused ablation into a one-liner, `DinoGeDiFusion(vis_weight=0.0 | 1.0 | ...)`.
+Extracting `DinoGeDiFusion` reduces the whole pure-geometric / pure-visual / fused ablation to a single constructor argument, `DinoGeDiFusion(vis_weight=0.0 | 1.0 | ...)`.
 
 It also lets query and target share one fusion instance, so the visual PCA fit on the query side is reused on the target side.
 
@@ -81,7 +81,7 @@ That makes FPFH a proper hand-crafted control and dGeDi a fast learned control, 
 Descriptor radii are in canonical units, where object extent is about 1.0, so GeDi's `r_lrf` and FPFH's radii are directly comparable.
 Role-aware descriptors go through `descriptors.describe(..., role="query"|"target")`; role-blind ones keep the two-argument form.
 
-### Scoring is a stage, not part of the refiner
+### Scoring is a stage, separate from refinement
 
 `PoseScorer` owns the whole feature-scoring concern: the fine re-score at the refined pose, and how the evidence combines.
 
@@ -91,28 +91,28 @@ The combination rule belongs to the implementation rather than the pipeline.
 `ICPRefiner` only moves geometry and reports `s_icp`, so a new solver or refiner never re-implements the scoring rule.
 The RANSAC-internal inlier score stays inside the solver, where it ranks hypotheses rather than producing a final score.
 
-### A solver only proposes; the scorer disposes
+### A solver generates hypotheses; the scorer selects among them
 
 See [§Pluggability](#pluggability--the-posesolver-stage).
 
-### No stage hides a fallback
+### No stage substitutes a backend silently
 
 A stage whose backend is missing raises `interfaces.BackendUnavailable`.
 Substitution is the caller's policy, and whatever ran is recorded in `Detection.source`.
-The full rule and its consequences: [docs/invariants.md](docs/invariants.md#no-hidden-fallbacks).
+The full rule and its consequences: [docs/invariants.md](docs/invariants.md#no-silent-backend-substitution).
 
 ### Separable stages are cacheable stages
 
 `popoe.cache` keys every stage output by a fingerprint of the stage config, the input content, and the keys of any upstream fits it depends on.
-The same configuration then reuses work, and a changed knob invalidates exactly the entries it should.
+An unchanged configuration then reuses earlier work, and a changed parameter invalidates exactly the entries it should.
 The three parts that have to hold: [docs/invariants.md](docs/invariants.md#cache-keys-fingerprint-config-and-content).
 
 ## Pluggability — the PoseSolver stage
 
 Three `PoseSolver` implementations run through the identical encoders → refiner → scorer chain.
-A solver may return several hypotheses and leave the choice to `ChampionScorer`, so "geometry proposes, features dispose" is reachable as pure composition, with no new scoring code.
+A solver may return several hypotheses and leave the choice to `ChampionScorer`, so letting geometry generate candidates and features select among them requires only composition, not new scoring code.
 
-One naming caution before the table of solvers. `feature_aware_score` is the *mean* cosine over inliers, which is not paper Eq. 5 with its fixed `|P_T|` denominator; the count term arrives separately as `s_icp`.
+One point of naming, before the solvers themselves. `feature_aware_score` is the *mean* cosine over inliers, which differs from paper Eq. 5 and its fixed `|P_T|` denominator; the count term is supplied separately as `s_icp`.
 GPU RANSAC's `fitness="feature"` is the Eq. 5 form, and that is a different function.
 
 **`solvers.Open3DFeatureRansacSolver`** — Open3D's C++ correspondence RANSAC.
@@ -128,7 +128,7 @@ Features are the w=1 canonical space.
 **`solvers.TeaserSolver`** — TEASER++ (Yang, Shi & Carlone, T-RO 2021).
 It prunes the correspondence pool with a pairwise TIM max-clique and solves rotation by GNC-TLS, deterministically and with no RNG.
 Correspondences come from the same Eq. 3 per-target top-k cosine NN pool as `GPURansacSolver` (w=1 features), and `tau_inlier` doubles as TEASER's noise bound.
-The import is deferred to `.solve`, so construction stays dep-light.
+The import is deferred to `.solve`, so constructing the solver does not require the TEASER++ package.
 
 [examples/solver_swap_demo.py](examples/solver_swap_demo.py) is the comparison that ranks the three against each other.
 The default solver stays `o3d`; the others are independent configurations.
@@ -137,7 +137,7 @@ That ranking is not a performance claim for popoe. A raw rotation-angle median o
 
 ## Segmentation backends
 
-Every entry satisfies the same `Segmentor` protocol and stamps its origin into `Detection.source`.
+Every entry satisfies the same `Segmentor` protocol and records its origin in `Detection.source`.
 A **file** backend replays an artefact another process wrote; a **live** backend runs the models itself.
 Per-source how-to, environments and artefact provenance: [docs/sources/](docs/sources/README.md).
 
@@ -154,18 +154,19 @@ Per-source how-to, environments and artefact provenance: [docs/sources/](docs/so
 | `segmentor.DepthSegmentor` | `depth-cc` | live — depth connected components; no model, no GPU |
 
 CNOS-FastSAM, SAM-6D ISM and NIDS-Net all publish the same artefact, a detections JSON, so they are different named producers rather than separate pose-backend code paths.
-Official checkouts are pinned under `external/` for source provenance but still run in their own environments, with popoe-side adapters consuming the files.
+Official checkouts are pinned under `external/` for source provenance but still execute in their own environments, and popoe-side adapters read the resulting files.
 `segmentor_detections.DetectionSource` `(name, path)` is the config handle: select a backend by name, and compose several into one `BOPDetectionsSegmentor`.
 
-`topk` is per `(source, label)`, so a top-M union keeps M candidates per source.
+`topk` applies per `(source, label)`, so a top-M union retains M candidates per source.
 The union across sources is unfiltered: `iou_dedupe` is scoped per source, two backends proposing the same region both survive, and the feature-aware scorer decides between them.
-The detections loader hardens stringified records and both RLE forms, and raises loudly on a type error — `"1" in [1]` is the silent miss it prevents.
+The detections loader coerces stringified records and accepts both RLE forms, and raises on a type it cannot interpret.
+The failure this prevents is silent rather than loud: with `category_id == "1"` and labels `[1]`, the membership test is simply false, so the image yields no candidates while appearing to contain no instance of the object.
 
-MUSE occupies both forms at once, `MuseSegmentor` live and `MuseDetectionsSegmentor` for file replay, because there is no public producer to adapt.
+MUSE takes both forms at once, `MuseSegmentor` for live inference and `MuseDetectionsSegmentor` for file replay, because there is no public producer to adapt.
 Two design points follow from scoring classes *jointly* rather than independently.
 
 **Classes are registered up front.** `Segmentor.segment` is a per-object contract, but MUSE's relative score is a softmax across all candidate classes, so the segmentor computes a `(proposal x class)` score matrix once and serves one column per call.
-A single registered class makes that score the constant 1, which reduces the method to `beta * S_abs`, so that configuration has to be asked for explicitly with `allow_single_class=True`.
+A single registered class makes that score the constant 1, which reduces the method to `beta * S_abs`, so that configuration must be requested explicitly with `allow_single_class=True`.
 
 **Proposals are per-frame.** Grounding DINO + SAM2 would otherwise re-run for every object in one image.
 Results are memoised by frame content rather than by `scene_id`/`im_id`, which real captures leave at -1 — the same content-addressing invariant the cache follows.
