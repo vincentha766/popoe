@@ -42,7 +42,8 @@ A query that needed no reduction hands over `pca_vis="identity"`, not `None`. Ar
 
 `scale_vis` and `ChampionScorer.s_feat_1` are specified against w=1 features, so extraction must pin `fusion.vis_weight = 1.0`. An env default of 0.5 leaking in makes every sweep weight half its label.
 
-`scale_vis` splits fused `[vis | geo]` at `vis_dim`, taken from the caller that knows the features (`enc_cfg['vis_dim']` or `pca_vis.n_components`) rather than from `POPOE_VIS_DIM` — that env var is only the fusion default. `vis_dim=None` keeps equal halves, the geo-matched mainline of 64-D + 64-D. A wrong boundary is refused rather than guessed.
+`scale_vis` splits fused `[vis | geo]` at `vis_dim`, taken from the caller that knows the features (`enc_cfg['vis_dim']` or `pca_vis.n_components`) rather than from `POPOE_VIS_DIM` — that env var is only the fusion default.
+`vis_dim=None` keeps equal halves, the geo-matched mainline of 64-D + 64-D, and a wrong boundary is refused rather than guessed.
 
 Tests that touch fusion knobs must not inherit a dirty shell, since `POPOE_VIS_DIM` in the environment changes fused width.
 

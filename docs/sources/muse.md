@@ -1,6 +1,7 @@
 # MUSE
 
-MUSE is a mask source in FreeZe-v2's segmentation ensemble. The paper is public; the authors' code is not. There is no official producer to adapt, so popoe carries `popoe.segmentor_muse`, a reimplementation from the paper — which also makes MUSE the only source that is both a live segmentor and its own producer.
+MUSE is a mask source in FreeZe-v2's segmentation ensemble. The paper is public; the authors' code is not.
+There is no official producer to adapt, so popoe carries `popoe.segmentor_muse`, a reimplementation from the paper — which also makes MUSE the only source that is both a live segmentor and its own producer.
 
 The authors' BOP submissions are public, so the artefacts are obtainable even though the producer code is not. Keep those two facts apart.
 
@@ -17,7 +18,9 @@ Four-way pose comparisons consume the authors' official `muse` JSON. A `muse-rep
 
 - Paper: [arXiv:2510.17866](https://arxiv.org/abs/2510.17866) (Cho, Park & Oh).
 - Code: none published.
-- Masks: the authors' public BOP submissions, all seven BOP-Classic-Core sets, saved under `data/detections/muse/` as `muse-full_<ds>-test.json`. IDs and SHA256s: [`data/detections/muse/PROVENANCE.md`](../../data/detections/muse/PROVENANCE.md). The BOP method page also lists a detection (bbox-only) batch; those files have no masks.
+- Masks: the authors' public BOP submissions, all seven BOP-Classic-Core sets, saved under `data/detections/muse/` as `muse-full_<ds>-test.json`.
+  IDs and SHA256s: [`data/detections/muse/PROVENANCE.md`](../../data/detections/muse/PROVENANCE.md).
+  The BOP method page also lists a detection (bbox-only) batch; those files have no masks.
 - Training-free by construction: Grounding DINO (Swin-B, prompt "items") → SAM2 (Hiera-L) → DINOv2 template matching (GeM patch + joint score).
 
 ## The three paths
@@ -50,7 +53,9 @@ Grounding DINO weights come from the HF hub on first use (`IDEA-Research/groundi
 
 ## Register at least two classes
 
-MUSE's relative score is a softmax across all candidate classes, so scoring is joint, not per-object. With one registered class that term is the constant 1 and `S_joint` degenerates to `beta * S_abs`. The library refuses that configuration unless `allow_single_class=True` (CLI: `--allow-single-class`) asks for it explicitly.
+MUSE's relative score is a softmax across all candidate classes, so scoring is joint rather than per-object.
+With one registered class that term is the constant 1 and `S_joint` degenerates to `beta * S_abs`.
+The library refuses that configuration unless `allow_single_class=True` (CLI: `--allow-single-class`) asks for it explicitly.
 
 This is also why `Segmentor.segment`, a per-object contract, is served from a `(proposal x class)` score matrix computed once per frame: one column per call.
 
@@ -112,7 +117,9 @@ Proposals are computed once per frame — Grounding DINO + SAM2 would otherwise 
 
 `MuseSegmentor.config()` is the per-frame memo key and the handle a `popoe.cache` user should key stored MUSE output on. It covers class diameters (they drive the size gate), every `DepthSizeGate` field, and each component's settings.
 
-A component may declare its own identity with a `config()` method. Do this for any custom component holding public mutable state, or reflection folds that state into the key. Template directories are keyed by path, not content, so point a new directory at edited templates rather than editing PNGs in place.
+A component may declare its own identity with a `config()` method.
+Do this for any custom component holding public mutable state, or reflection folds that state into the key.
+Template directories are keyed by path rather than content, so point a new directory at edited templates instead of editing PNGs in place.
 
 Defaults (`alpha=0.5`, `beta=0.8`, `tau=0.02`, `gamma=0.1`, `gem_p=1.5`, prompt `"items."`, GD thresholds 0.15/0.15, SAM2 Hiera-L) match the reference script.
 

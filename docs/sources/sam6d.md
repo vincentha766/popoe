@@ -1,6 +1,8 @@
 # SAM-6D
 
-SAM-6D has two halves, and they enter popoe through different contracts. ISM is a detection producer like CNOS and NIDS-Net. PEM is a full-pose producer, so it is not a `Segmentor` at all — `segmentor_sam6d.SAM6DPemResultsCoarseEstimator` adapts its output to `PoseHypothesis` through the `CoarseEstimator` contract.
+SAM-6D has two halves, and they enter popoe through different contracts.
+ISM is a detection producer like CNOS and NIDS-Net.
+PEM is a full-pose producer, so it is not a `Segmentor` at all — `segmentor_sam6d.SAM6DPemResultsCoarseEstimator` adapts its output to `PoseHypothesis` through the `CoarseEstimator` contract.
 
 The producer boundary, the shared checks, and `BOPDetectionsSegmentor` usage are in [README.md](README.md).
 

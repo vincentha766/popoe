@@ -75,7 +75,8 @@ Which producer writes which file, and what each source tag means: [docs/sources/
 
 ### Encoder knobs
 
-`POPOE_QUERY_POINTS`, `POPOE_TARGET_GRID`, `POPOE_DINO_LAYER`, `POPOE_TWO_SCALE_GEDI`, `POPOE_VIS_DIM`, `POPOE_GEOM_BACKBONE` and friends are recorded in the eval cache key. Changing one without a new `--cache` replays stale features — see [docs/invariants.md](docs/invariants.md#cache-keys-fingerprint-config-and-content).
+`POPOE_QUERY_POINTS`, `POPOE_TARGET_GRID`, `POPOE_DINO_LAYER`, `POPOE_TWO_SCALE_GEDI`, `POPOE_VIS_DIM`, `POPOE_GEOM_BACKBONE` and friends are recorded in the eval cache key.
+Changing one without a new `--cache` replays stale features — see [docs/invariants.md](docs/invariants.md#cache-keys-fingerprint-config-and-content).
 
 ## Three identities
 
@@ -110,7 +111,9 @@ Score the CSV:
 python -m popoe.metrics.ar      # needs POPOE_BOP_TOOLKIT, BOP_PATH; optional BOP_DATASET
 ```
 
-`metrics.ar`, `metrics.vsd`, `metrics.grasp` and `bop_eval.py` all share `BOP_LAYOUTS`. The local AR/VSD helpers score one row per target and hard-fail on multi-instance CSVs; 1–1 assignment for those needs the official bop_toolkit. A submission also needs one shared per-image time, which `examples/bop_time_normalize.py` writes.
+`metrics.ar`, `metrics.vsd`, `metrics.grasp` and `bop_eval.py` all share `BOP_LAYOUTS`.
+The local AR/VSD helpers score one row per target and hard-fail on multi-instance CSVs; 1–1 assignment for those needs the official bop_toolkit.
+A submission also needs one shared per-image time, which `examples/bop_time_normalize.py` writes.
 
 Solver ranking on GT instances (needs `models_eval/`) — not detections, and not the BOP loop:
 

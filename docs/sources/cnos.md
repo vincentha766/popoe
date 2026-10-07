@@ -98,4 +98,5 @@ The adapted JSON keeps `source="cnos"`.
 
 ## Local CNOS-lab
 
-`popoe.segmentor_cnos_lab.CNOSLabSegmentor` is the local recipe: proposal masks are filtered by visible 3D extent from depth, then ranked by DINOv2 foreground-patch similarity to templates. It is deliberately separate from official CNOS — write its output under its own path, such as `data/detections/cnos_lab/`, and keep `source="cnos-lab"`.
+`popoe.segmentor_cnos_lab.CNOSLabSegmentor` is the local recipe: proposal masks are filtered by visible 3D extent from depth, then ranked by DINOv2 foreground-patch similarity to templates.
+It is deliberately separate from official CNOS — write its output under its own path, such as `data/detections/cnos_lab/`, and keep `source="cnos-lab"`.

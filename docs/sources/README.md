@@ -28,7 +28,9 @@ A detections JSON carries only 2D information: `scene_id`, `image_id`, `category
 
 SAM-6D's PEM half is the exception: it produces full poses rather than detections, with `t` in millimetres, which popoe converts to metres when building a `PoseHypothesis`.
 
-Producer dependencies — Hydra, Grounding DINO, SAM / FastSAM, Detectron2, version-pinned support packages — move much faster than the pose backend, so they are deliberately absent from popoe's `pyproject.toml`. Give each producer its own conda or uv environment. On a single-GPU workstation, run them serially: run the producer, let that process exit and release GPU memory, then run popoe.
+Producer dependencies — Hydra, Grounding DINO, SAM / FastSAM, Detectron2, version-pinned support packages — move much faster than the pose backend, so they are deliberately absent from popoe's `pyproject.toml`.
+Give each producer its own conda or uv environment.
+On a single-GPU workstation, run them serially: run the producer, let that process exit and release GPU memory, then run popoe.
 
 ## Source naming
 
