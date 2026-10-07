@@ -13,9 +13,21 @@ jobs:
         with:
           python-version: "3.12"
       - name: System libs for OpenCV / Open3D
-        run: sudo apt-get update && sudo apt-get install -y libgl1 libglib2.0-0
+        # libOpen3D.so pulls in libEGL/libGL/libX11/libudev/libusb even for
+        # CPU-only use, and open3d.pybind fails to load without them. Without
+        # libegl1 the six open3d-gated modules raise ImportError at import,
+        # which importorskip does not catch (it skips on ModuleNotFoundError),
+        # so they become collection errors and pytest exits 2.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgl1 libglib2.0-0 libegl1 libx11-6 libudev1 libusb-1.0-0
       - name: Install (CPU reference + pytest)
         run: pip install -e ".[dev,reference]"
+      - name: Verify the open3d-gated modules import
+        # A guard against the failure above returning silently: if open3d
+        # cannot load, the suite would skip 59 tests and still report success.
+        run: python -c "import open3d, cv2, trimesh, rtree; print('open3d', open3d.__version__)"
       - name: CPU tests
         run: pytest tests/ -q --tb=short
         # GPU / nvdiffrast / GeDi / teaserpp skip via importorskip.

@@ -6,7 +6,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- CI had never passed, including on the commit that introduced it. `libOpen3D.so` links `libEGL`, `libX11`, `libudev` and `libusb` even for CPU-only use, and the workflow installed only `libgl1` and `libglib2.0-0`, so `open3d.pybind` failed to load.
+  The six open3d-gated test modules then raised `ImportError` at import time. `pytest.importorskip` skips on `ModuleNotFoundError`, not on a shared-library `ImportError`, so those modules became collection errors and pytest exited 2 with nothing run.
+  The workflow now installs the full set, and a separate step imports open3d, cv2, trimesh and rtree before the suite runs — without it, a regression here would skip 59 tests and still report success.
 
 ## [0.1.0] — 2026-10-07
 
