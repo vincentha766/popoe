@@ -6,15 +6,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Version
 
 ## [Unreleased]
 
-### Fixed
-
-- `TrimeshRenderer` claimed to be "always available" but needs rtree, which trimesh imports lazily inside `mesh.ray.intersects_location`.
-  A missing rtree therefore surfaced as `ModuleNotFoundError` partway through a render rather than as an unavailable backend at construction. It is now checked in `__init__`, which raises `RendererUnavailable`, and `rtree` is declared in the `reference` extra.
-- `ARCHITECTURE.md` described role-aware descriptors as going through `descriptors.describe(...)`, a helper removed in 9f12a9f. The role is passed to `PointDescriptor.compute(pts, pcd, role=)`.
-- `tests/test_s_coarse.py` still called `rule_replay.rule_score` with a pandas DataFrame, which 9f12a9f changed to a list of row dicts.
-- Two tests in `tests/test_target_encoding_failures.py` used a descriptor stub whose `compute` lacked the `role` argument that the `PointDescriptor` protocol declares and the extractor passes.
-
-The six tests that previously failed on CPU now pass: 502 passed, 2 skipped.
+Nothing yet.
 
 ## [0.1.0] — 2026-10-07
 
@@ -22,7 +14,7 @@ First public release. It is tagged but not published to PyPI, so there is no whe
 
 The `main` branch was already public and untagged before this point, so the Changed, Removed and Fixed entries below are relative to that tree rather than to an earlier release.
 
-Contracts and the fusion layer are CPU-tested. The reference run requires CUDA, GeDi, nvdiffrast, a BOP split, and detection JSONs, none of which are included in a clone.
+Contracts and the fusion layer are CPU-tested: 502 passed, 2 skipped. The reference run requires CUDA, GeDi, nvdiffrast, a BOP split, and detection JSONs, none of which are included in a clone.
 There are no frozen headline BOP numbers in this release; see [README.md](README.md#three-identities) for what each configuration is.
 
 ### Added
@@ -41,6 +33,7 @@ There are no frozen headline BOP numbers in this release; see [README.md](README
 - Per-dataset BOP layouts in `popoe.datasets.bop.BOP_LAYOUTS`, shared by `bop_eval.py` and the local `metrics.ar` / `metrics.vsd` / `metrics.grasp` scorers. T-LESS and HB use `test_primesense`; ITODD uses gray `.tif`.
 - `scripts/freeze_detections.py` as a detection-file identity gate, with `PROVENANCE.md` and `MANIFEST.sha256` per source directory.
 - GitHub Actions CPU workflow: `pytest` with GPU extras skipped via `importorskip`.
+- `rtree` in the `reference` extra. It is not a trimesh dependency, but trimesh's CPU ray caster needs it.
 - `CONTRIBUTING.md`, stating the constraints a patch has to respect alongside the failure each one prevents, and `CHANGELOG.md`.
 
 ### Changed
@@ -64,6 +57,11 @@ There are no frozen headline BOP numbers in this release; see [README.md](README
 - The detections loader was documented as raising "loudly" on a type error, which inverts the point. The failure it prevents is silent: `"1" in [1]` is false, so the image yields no candidates and appears to contain no instance of the object.
 - `--topk` was documented as floored per class by `inst_count`, which reads as a cap. `bop_muse.py` computes `max(topk, inst_count)`, so a target with more instances than `--topk` is not truncated.
 - Four rows of the stage table in `ARCHITECTURE.md` listed "class" or "function" where a Protocol exists: `FeatureFusion`, `CoarseEstimator`, `PoseScorer` and `Selector`.
+- `ARCHITECTURE.md` described role-aware descriptors as going through `descriptors.describe(...)`, a helper removed in 9f12a9f. The role is passed to `PointDescriptor.compute(pts, pcd, role=)`.
+- `TrimeshRenderer` documented itself as "always available" but needs rtree, which trimesh imports lazily inside `mesh.ray.intersects_location`.
+  A missing rtree therefore surfaced as `ModuleNotFoundError` partway through a render rather than as an unavailable backend at construction, where the availability contract requires it. The constructor now checks and raises `RendererUnavailable`.
+- `tests/test_s_coarse.py` called `rule_replay.rule_score` with a pandas DataFrame, which 9f12a9f changed to a list of row dicts.
+- Two tests in `tests/test_target_encoding_failures.py` used a descriptor stub whose `compute` lacked the `role` argument that the `PointDescriptor` protocol declares and the extractor passes.
 
 [Unreleased]: https://github.com/vincentha766/popoe/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/vincentha766/popoe/releases/tag/v0.1.0
